@@ -1,0 +1,244 @@
+﻿â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                  DOMAIN SETUP GUIDE - clearPanel
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+This guide explains how to add a domain and make it accessible on the internet.
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    OPTION 1: Using Cloudflare DNS
+                    (Recommended - Easy & Free)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+STEP 1: Add Domain to clearPanel
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+1. Log in to clearPanel: https://clearPanel.sefion.cloud
+2. Go to "Domains" module
+3. Click "Add Domain"
+4. Enter your domain name (e.g., "mydomain.com")
+5. Click "Create"
+
+This creates:
+   â€¢ Folder: /home/sefion/Domains/mydomain.com/
+   â€¢ DNS Zone with default records in clearPanel
+
+STEP 2: Point Domain to Cloudflare Nameservers
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Go to your domain registrar (GoDaddy, Namecheap, etc.) and change 
+nameservers to Cloudflare's:
+
+   ns1.cloudflare.com
+   ns2.cloudflare.com
+
+(You'll get specific nameservers when you add the domain to Cloudflare)
+
+STEP 3: Add Domain to Cloudflare
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+1. Login to Cloudflare: https://dash.cloudflare.com
+2. Click "Add a Site"
+3. Enter your domain name
+4. Choose "Free" plan
+5. Cloudflare will scan existing DNS records
+6. Click "Continue"
+7. Copy the nameservers shown and update them at your registrar
+8. Click "Done, check nameservers"
+
+STEP 4: Add DNS Records in Cloudflare
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+In Cloudflare Dashboard â†’ DNS â†’ Records, add:
+
+A Record:
+   Type: A
+   Name: @ (or your domain)
+   IPv4 address: 204.83.99.245
+   Proxy status: DNS only (grey cloud)
+   TTL: Auto
+
+CNAME Record (for www):
+   Type: CNAME
+   Name: www
+   Target: @ (or your domain)
+   Proxy status: DNS only (grey cloud)
+   TTL: Auto
+
+STEP 5: Install & Configure Web Server
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+On your server (where clearPanel is running), install Nginx or Apache.
+
+For Nginx:
+   sudo apt update
+   sudo apt install nginx -y
+
+Create config file: /etc/nginx/sites-available/mydomain.com
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+server {
+    listen 80;
+    server_name mydomain.com www.mydomain.com;
+    
+    root /home/sefion/Domains/mydomain.com;
+    index index.html index.htm index.php;
+    
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    
+    # PHP support (optional)
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+    }
+}
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+Enable the site:
+   sudo ln -s /etc/nginx/sites-available/mydomain.com /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl reload nginx
+
+STEP 6: Add Website Files
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Upload your website to: /home/sefion/Domains/mydomain.com/
+
+Example test file:
+   echo "<h1>Welcome to mydomain.com</h1>" > /home/sefion/Domains/mydomain.com/index.html
+
+STEP 7: Test Your Domain
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Visit: http://mydomain.com
+
+If it works, proceed to add SSL/HTTPS:
+   sudo apt install certbot python3-certbot-nginx
+   sudo certbot --nginx -d mydomain.com -d www.mydomain.com
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    OPTION 2: Using Your Own DNS Server
+                    (Advanced - Full Control)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+If you want to run your own DNS server instead of Cloudflare:
+
+STEP 1: Install BIND9 DNS Server
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   sudo apt update
+   sudo apt install bind9 bind9utils bind9-doc -y
+
+STEP 2: Configure DNS Zone
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+Create zone file: /etc/bind/zones/db.mydomain.com
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+$TTL    3600
+@       IN      SOA     ns1.mydomain.com. admin.mydomain.com. (
+                        2025111201 ; Serial
+                        3600       ; Refresh
+                        1800       ; Retry
+                        604800     ; Expire
+                        3600 )     ; Negative Cache TTL
+
+@       IN      NS      ns1.mydomain.com.
+@       IN      NS      ns2.mydomain.com.
+@       IN      A       204.83.99.245
+www     IN      A       204.83.99.245
+ns1     IN      A       204.83.99.245
+ns2     IN      A       204.83.99.245
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+Add to /etc/bind/named.conf.local:
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+zone "mydomain.com" {
+    type master;
+    file "/etc/bind/zones/db.mydomain.com";
+};
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+Restart BIND:
+   sudo systemctl restart bind9
+   sudo systemctl enable bind9
+
+STEP 3: Register Nameservers at Registrar
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+At your domain registrar, set nameservers to:
+   ns1.mydomain.com (pointing to 204.83.99.245)
+   ns2.mydomain.com (pointing to 204.83.99.245)
+
+Note: You need to register these as "glue records" first.
+
+STEP 4: Open DNS Port
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   sudo ufw allow 53/tcp
+   sudo ufw allow 53/udp
+
+Configure router port forwarding:
+   External Port: 53 (TCP & UDP)
+   Internal IP: 172.16.1.211
+   Internal Port: 53 (TCP & UDP)
+
+Then follow Steps 5-6 from Option 1 for web server setup.
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    QUICK REFERENCE
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Your Server Info:
+   Public IP: 204.83.99.245
+   Local IP: 172.16.1.211
+   
+clearPanel Access:
+   URL: https://clearPanel.sefion.cloud
+   Username: admin
+   Password: admin123
+
+Domain Folders:
+   Main domain: /home/sefion/public_html/
+   Other domains: /home/sefion/Domains/[domain-name]/
+
+DNS Options:
+   âœ… Cloudflare DNS (Recommended) - Free, fast, DDoS protection
+   âš ï¸  Own DNS Server - Full control, requires setup & maintenance
+
+Web Server:
+   Install: sudo apt install nginx
+   Config: /etc/nginx/sites-available/
+   Document root: /home/sefion/Domains/[domain]/
+
+SSL/HTTPS:
+   Install: sudo apt install certbot python3-certbot-nginx
+   Generate: sudo certbot --nginx -d yourdomain.com
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    RECOMMENDED WORKFLOW
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+For beginners or quick setup:
+1. Use Cloudflare DNS (Option 1)
+2. Point domain nameservers to Cloudflare
+3. Add DNS records in Cloudflare dashboard
+4. Install Nginx and create virtual host
+5. Upload website files via clearPanel file manager
+6. Add SSL with certbot
+
+Benefits:
+âœ“ Easy to set up
+âœ“ Free SSL certificates
+âœ“ DDoS protection
+âœ“ Fast global DNS
+âœ“ DNS management in Cloudflare dashboard or clearPanel
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Need help? Common issues:
+
+DNS not propagating?
+â†’ Wait 24-48 hours for full propagation
+â†’ Check with: https://dnschecker.org
+
+Domain not loading?
+â†’ Verify Nginx is running: sudo systemctl status nginx
+â†’ Check DNS records: dig yourdomain.com
+â†’ Check web server logs: sudo tail -f /var/log/nginx/error.log
+
+Port 80/443 blocked?
+â†’ Check firewall: sudo ufw status
+â†’ Allow ports: sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+â†’ Check router port forwarding
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>clearPanel - File Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-container">
+        <div class="login-box">
+            <h1>🖥️ clearPanel</h1>
+            <h2>File Manager</h2>
+            <form id="loginForm">
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div id="loginError" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="mainApp" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>🖥️ clearPanel</h1>
+            </div>
+            <div class="header-right">
+                <span id="currentUser"></span>
+                <button id="logoutBtn" class="btn-logout">Logout</button>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button id="uploadBtn" class="btn btn-primary">📤 Upload</button>
+            <button id="newFolderBtn" class="btn btn-primary">📁 New Folder</button>
+            <button id="refreshBtn" class="btn">🔄 Refresh</button>
+            <button id="homeBtn" class="btn">🏠 Home</button>
+            <div class="separator"></div>
+            <button id="deleteBtn" class="btn btn-danger" disabled>🗑️ Delete</button>
+            <button id="renameBtn" class="btn" disabled>✏️ Rename</button>
+            <button id="downloadBtn" class="btn" disabled>⬇️ Download</button>
+        </div>
+
+        <!-- Breadcrumb -->
+        <div class="breadcrumb" id="breadcrumb">
+            <span class="breadcrumb-item" data-path="/">Root</span>
+        </div>
+
+        <!-- File Manager -->
+        <div class="container">
+            <div class="file-list" id="fileList">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span id="statusText">Ready</span>
+            <span id="itemCount">0 items</span>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Upload File</h2>
+            <input type="file" id="fileInput" multiple>
+            <div id="uploadProgress"></div>
+            <button id="uploadConfirmBtn" class="btn btn-primary">Upload</button>
+        </div>
+    </div>
+
+    <!-- New Folder Modal -->
+    <div id="newFolderModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>New Folder</h2>
+            <input type="text" id="folderName" placeholder="Folder name">
+            <button id="createFolderBtn" class="btn btn-primary">Create</button>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="renameModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Rename</h2>
+            <input type="text" id="newName" placeholder="New name">
+            <button id="renameConfirmBtn" class="btn btn-primary">Rename</button>
+        </div>
+    </div>
+
+    <!-- Text Editor Modal -->
+    <div id="editorModal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close">&times;</span>
+            <h2 id="editorTitle">Edit File</h2>
+            <textarea id="fileContent"></textarea>
+            <button id="saveFileBtn" class="btn btn-primary">Save</button>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

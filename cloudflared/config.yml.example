@@ -1,0 +1,15 @@
+﻿# Example Cloudflare Tunnel config for clearPanel
+# Copy to ~/.cloudflared/config.yml and adjust values
+
+# Replace with your tunnel ID (from `cloudflared tunnel list`)
+tunnel: YOUR_TUNNEL_ID
+
+# Replace USERNAME and YOUR_TUNNEL_ID
+credentials-file: /home/USERNAME/.cloudflared/YOUR_TUNNEL_ID.json
+
+# Map your panel hostname to the local backend
+ingress:
+  - hostname: panel.example.com
+    service: http://localhost:3334
+  - service: http_status:404
+

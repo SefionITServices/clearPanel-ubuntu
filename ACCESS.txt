@@ -1,0 +1,130 @@
+﻿â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+â•‘                  clearPanel - Server Access Information           â•‘
+â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+âœ… SERVER IS NOW RUNNING AND ACCESSIBLE!
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ“ ACCESS URLS
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+ðŸ  Local Network (Same WiFi/LAN):
+   http://172.16.1.211:3334
+
+ðŸŒ Internet (After Port Forwarding):
+   http://204.83.99.245:3334
+
+ðŸ’» Localhost (On this computer):
+   http://localhost:3334
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+âš ï¸  TO ACCESS FROM INTERNET - REQUIRED STEPS
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+1ï¸âƒ£  ROUTER PORT FORWARDING (Most Important!)
+   
+   â–¶ Access your router's admin panel:
+     â€¢ Usually: http://192.168.1.1 or http://192.168.0.1
+     â€¢ Login with router admin credentials
+   
+   â–¶ Find "Port Forwarding" or "Virtual Server" section
+   
+   â–¶ Add new port forwarding rule:
+     External Port: 3334
+     Internal IP:   172.16.1.211
+     Internal Port: 3334
+     Protocol:      TCP
+   
+   â–¶ Save and apply settings
+
+2ï¸âƒ£  TEST EXTERNAL ACCESS
+   
+   From a different network (mobile data, friend's house):
+   â€¢ Visit: http://204.83.99.245:3334
+   â€¢ Or run: curl http://204.83.99.245:3334/api/auth/status
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ” DEFAULT LOGIN CREDENTIALS
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+   Username: admin
+   Password: admin123
+
+   âš ï¸  CHANGE THESE IMMEDIATELY!
+   Edit: /home/hasim/Documents/project/clearPanel/backend/.env
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ”§ SERVER MANAGEMENT
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+ðŸ“‚ Project Location:
+   /home/hasim/Documents/project/clearPanel
+
+â–¶ï¸  Start Server:
+   ./start-online.sh
+
+â¹ï¸  Stop Server:
+   pkill -f "node dist/main.js"
+
+ðŸ”„ Restart Server:
+   pkill -f "node dist/main.js" && cd backend && node dist/main.js &
+
+ðŸ“Š View Logs:
+   tail -f logs/backend.log
+
+ðŸ” Check Status:
+   lsof -i :3334
+   curl http://localhost:3334/api/auth/status
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ›¡ï¸  SECURITY RECOMMENDATIONS
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+ðŸ”´ CRITICAL (Do ASAP):
+   âœ“ Change default admin password
+   âœ“ Update SESSION_SECRET in .env
+   âœ“ Enable firewall: sudo ufw enable
+
+ðŸŸ¡ IMPORTANT (For Production):
+   âœ“ Set up HTTPS with SSL certificate
+   âœ“ Use nginx reverse proxy
+   âœ“ Implement rate limiting
+   âœ“ Regular security updates
+
+ðŸŸ¢ RECOMMENDED:
+   âœ“ Use PM2 for process management
+   âœ“ Set up monitoring and alerts
+   âœ“ Configure automated backups
+   âœ“ Use strong firewall rules
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ“š DOCUMENTATION
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+Full deployment guide: DEPLOY.md
+Nginx config example: nginx.conf.example
+
+For detailed setup instructions and troubleshooting:
+   cat DEPLOY.md
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+ðŸ†˜ TROUBLESHOOTING
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+Can't access from internet?
+   1. Verify port forwarding in router
+   2. Check firewall: sudo ufw status
+   3. Test locally first: curl http://localhost:3334
+   4. Verify server is running: lsof -i :3334
+   5. Check logs: tail -f logs/backend.log
+
+Server not starting?
+   1. Check if port is in use: lsof -ti:3334
+   2. Kill old process: pkill -f "node dist/main.js"
+   3. Rebuild: cd backend && npm run build
+   4. Check logs for errors
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+Generated: 2025-11-11
+

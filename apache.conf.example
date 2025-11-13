@@ -1,0 +1,64 @@
+﻿<VirtualHost *:80>
+    ServerName your-domain.com
+    ServerAlias www.your-domain.com
+
+    # Redirect HTTP to HTTPS (uncomment after setting up SSL)
+    # Redirect permanent / https://your-domain.com/
+
+    # Proxy settings for clearPanel
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+
+    # WebSocket support (if needed)
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} =websocket [NC]
+    RewriteRule /(.*)           ws://localhost:3000/$1 [P,L]
+    RewriteCond %{HTTP:Upgrade} !=websocket [NC]
+    RewriteRule /(.*)           http://localhost:3000/$1 [P,L]
+
+    # Headers
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+
+    # Logs
+    ErrorLog ${APACHE_LOG_DIR}/clearPanel_error.log
+    CustomLog ${APACHE_LOG_DIR}/clearPanel_access.log combined
+
+    # File upload size limit (100MB)
+    LimitRequestBody 104857600
+</VirtualHost>
+
+# HTTPS configuration (after SSL setup with certbot)
+# <VirtualHost *:443>
+#     ServerName your-domain.com
+#     ServerAlias www.your-domain.com
+#
+#     SSLEngine on
+#     SSLCertificateFile /etc/letsencrypt/live/your-domain.com/fullchain.pem
+#     SSLCertificateKeyFile /etc/letsencrypt/live/your-domain.com/privkey.pem
+#
+#     # Proxy settings
+#     ProxyPreserveHost On
+#     ProxyPass / http://localhost:3000/
+#     ProxyPassReverse / http://localhost:3000/
+#
+#     # WebSocket support
+#     RewriteEngine On
+#     RewriteCond %{HTTP:Upgrade} =websocket [NC]
+#     RewriteRule /(.*)           ws://localhost:3000/$1 [P,L]
+#     RewriteCond %{HTTP:Upgrade} !=websocket [NC]
+#     RewriteRule /(.*)           http://localhost:3000/$1 [P,L]
+#
+#     # Headers
+#     RequestHeader set X-Forwarded-Proto "https"
+#     RequestHeader set X-Forwarded-Port "443"
+#
+#     # Logs
+#     ErrorLog ${APACHE_LOG_DIR}/clearPanel_ssl_error.log
+#     CustomLog ${APACHE_LOG_DIR}/clearPanel_ssl_access.log combined
+#
+#     # File upload size
+#     LimitRequestBody 104857600
+# </VirtualHost>
+

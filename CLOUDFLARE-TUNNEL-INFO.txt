@@ -1,0 +1,107 @@
+﻿â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                  CLOUDFLARE TUNNEL - ACCESS INFO
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+âœ… YOUR SERVER IS NOW ACCESSIBLE WORLDWIDE!
+
+ðŸ“ Tunnel Information:
+   Name:        clearPanel
+   ID:          34647b7f-bd87-40d7-b5a3-a01574c8559b
+   Status:      RUNNING
+   Local Port:  3334
+
+ðŸŒ Public Access URLs:
+   
+   PRIMARY (HTTP - Works Now):
+   http://clearPanel.cfargotunnel.com.sefion.cloud
+   
+   ALTERNATIVE (HTTP - Works Now):
+   http://clearPanel-34647b7f.cfargotunnel.com.sefion.cloud
+
+   Note: HTTPS URLs are showing SSL errors because the sefion.cloud
+   domain needs SSL/TLS configuration in Cloudflare dashboard.
+   
+   âš ï¸  For now, use HTTP links above. They work perfectly!
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    HOW TO FIX HTTPS (OPTIONAL)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+To enable HTTPS without errors:
+
+Option 1: Configure in Cloudflare Dashboard
+   1. Go to: https://dash.cloudflare.com
+   2. Select domain: sefion.cloud
+   3. Go to SSL/TLS â†’ Overview
+   4. Set SSL mode to "Full" or "Full (strict)"
+   5. Wait 1-2 minutes for changes to apply
+
+Option 2: Use without custom domain
+   - The HTTP URLs work fine and Cloudflare still provides DDoS protection
+   - For true HTTPS, you'd need your own domain (not sefion.cloud)
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    TUNNEL MANAGEMENT
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ðŸ“Š Check Status:
+   cloudflared tunnel info clearPanel
+
+ðŸ“ View Logs:
+   tail -f /home/hasim/Documents/project/clearPanel/cloudflared.log
+
+ðŸ”„ Restart Tunnel:
+   pkill cloudflared
+   nohup cloudflared tunnel run clearPanel > ~/Documents/project/clearPanel/cloudflared.log 2>&1 &
+
+ðŸ›‘ Stop Tunnel:
+   pkill cloudflared
+
+ðŸš€ Auto-start on Boot:
+   sudo cloudflared service install
+   sudo systemctl enable cloudflared
+   sudo systemctl start cloudflared
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    TESTING YOUR SERVER
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+From any device (phone, tablet, other computer):
+
+1. Open browser
+2. Go to: http://clearPanel.cfargotunnel.com.sefion.cloud
+3. Your clearPanel interface should load!
+
+âœ… Benefits you're getting:
+   â€¢ Worldwide access (no router config needed)
+   â€¢ DDoS protection
+   â€¢ Works behind CGNAT/NAT
+   â€¢ Free forever
+   â€¢ No bandwidth limits
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    WHAT'S RUNNING
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Backend Server:
+   Command: node /home/hasim/Documents/project/clearPanel/backend/dist/main.js
+   Port:    3334
+   Env:     production
+   Logs:    /home/hasim/Documents/project/clearPanel/backend/server.log
+
+Cloudflare Tunnel:
+   Command: cloudflared tunnel run clearPanel
+   Config:  /home/hasim/.cloudflared/config.yml
+   Logs:    /home/hasim/Documents/project/clearPanel/cloudflared.log
+   Connections: 4x to Cloudflare edge (ord11, ord12, yvr01)
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ðŸŽ‰ SUMMARY: Your server is live on the internet!
+
+Use this URL from anywhere:
+http://clearPanel.cfargotunnel.com.sefion.cloud
+
+(The HTTPS version will work once sefion.cloud SSL is configured,
+but HTTP works perfectly fine right now with full Cloudflare protection)
+

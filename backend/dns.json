@@ -1,0 +1,54 @@
+﻿[
+  {
+    "domain": "sefion.cloud",
+    "records": [
+      {
+        "id": "sefion-a-1",
+        "type": "A",
+        "name": "@",
+        "value": "172.67.199.190",
+        "ttl": 300
+      },
+      {
+        "id": "sefion-a-2",
+        "type": "A",
+        "name": "@",
+        "value": "104.21.44.124",
+        "ttl": 300
+      },
+      {
+        "id": "sefion-clearPanel-a-1",
+        "type": "A",
+        "name": "clearPanel",
+        "value": "172.67.199.190",
+        "ttl": 300
+      },
+      {
+        "id": "sefion-clearPanel-a-2",
+        "type": "A",
+        "name": "clearPanel",
+        "value": "104.21.44.124",
+        "ttl": 300
+      }
+    ]
+  },
+  {
+    "domain": "drive.sefion.cloud",
+    "records": [
+      {
+        "id": "1a074168-043f-4349-8f51-9a5cb3a93ac3",
+        "type": "A",
+        "name": "@",
+        "value": "204.83.99.245",
+        "ttl": 3600
+      },
+      {
+        "id": "2bf7f081-caf5-4187-9a98-cecb1a774dae",
+        "type": "CNAME",
+        "name": "www",
+        "value": "drive.sefion.cloud",
+        "ttl": 3600
+      }
+    ]
+  }
+]

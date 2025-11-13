@@ -1,0 +1,373 @@
+﻿â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    clearPanel - PLUG & PLAY HOSTING CONTROL PANEL
+                           Installation & Setup Guide
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+WHAT IS clearPanel?
+---------------
+clearPanel is a modern, lightweight hosting control panel that you can install on
+any VPS. It automatically configures web servers, DNS, and makes domains 
+accessible on the internet with minimal manual configuration.
+
+FEATURES:
+âœ… Auto-create nginx virtual hosts when domains are added
+âœ… Built-in DNS zone manager  
+âœ… Automatic folder structure creation
+âœ… DNS setup instructions generated automatically
+âœ… File manager for easy uploads
+âœ… Terminal access
+âœ… Domain deletion with cleanup
+âœ… Web-based UI with modern design
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        INSTALLATION ON NEW VPS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+SYSTEM REQUIREMENTS:
+-------------------
+- Ubuntu 20.04+ / Debian 10+ (or similar Linux distribution)
+- 1GB+ RAM
+- Node.js 20+
+- Public IP address
+- Root or sudo access
+
+INSTALLATION STEPS:
+-------------------
+
+1. UPDATE SYSTEM
+   sudo apt update && sudo apt upgrade -y
+
+2. INSTALL NODE.JS
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt install -y nodejs
+
+3. INSTALL NGINX (Required for web server automation)
+   sudo apt install -y nginx
+   sudo systemctl enable nginx
+   sudo systemctl start nginx
+
+4. CLONE clearPanel
+   cd /opt
+   git clone https://github.com/SefionITServices/clearPanel.git
+   cd clearPanel
+
+5. INSTALL DEPENDENCIES
+   cd backend && npm install
+   cd ../frontend && npm install
+
+6. BUILD FRONTEND
+   npm run build
+
+7. BUILD BACKEND
+   cd ../backend && npm run build
+
+8. CONFIGURE ENVIRONMENT
+   cd backend
+   cp .env.example .env
+   nano .env
+
+   Update these values:
+   PORT=3334
+   NODE_ENV=production
+   SERVER_IP=<YOUR_VPS_PUBLIC_IP>
+   ROOT_PATH=/home/sefion
+   DOMAINS_ROOT=/home/sefion/Domains
+   SESSION_SECRET=<generate_random_string>
+
+9. CREATE DIRECTORY STRUCTURE
+   sudo mkdir -p /home/sefion/Domains
+   sudo mkdir -p /home/sefion/public_html
+   sudo chown -R $USER:$USER /home/sefion
+
+10. CREATE SYSTEMD SERVICE
+    sudo tee /etc/systemd/system/clearPanel.service > /dev/null << 'EOF'
+[Unit]
+Description=clearPanel Control Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/clearPanel/backend
+Environment="NODE_ENV=production"
+Environment="PORT=3334"
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+11. START clearPanel
+    sudo systemctl daemon-reload
+    sudo systemctl enable clearPanel
+    sudo systemctl start clearPanel
+
+12. CHECK STATUS
+    sudo systemctl status clearPanel
+
+13. CONFIGURE FIREWALL
+    sudo ufw allow 80/tcp     # HTTP
+    sudo ufw allow 443/tcp    # HTTPS (for SSL later)
+    sudo ufw allow 3334/tcp   # clearPanel UI
+    sudo ufw enable
+
+14. ACCESS clearPanel
+    Open browser: http://YOUR_VPS_IP:3334
+    Default credentials: admin / admin (change immediately!)
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        HOW IT WORKS - DOMAIN AUTOMATION
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+WHEN YOU ADD A DOMAIN IN clearPanel:
+---------------------------------
+
+1. âœ… Folder Created
+   /home/sefion/Domains/yourdomain.com/
+
+2. âœ… Nginx Virtual Host Created Automatically
+   /etc/nginx/sites-available/yourdomain.com
+   /etc/nginx/sites-enabled/yourdomain.com â†’ symlink
+   
+3. âœ… Nginx Reloaded
+   Domain is now ready to serve on port 80
+
+4. âœ… DNS Zone Created (in clearPanel's database)
+   A record: yourdomain.com â†’ YOUR_SERVER_IP
+   CNAME: www â†’ yourdomain.com
+
+5. âœ… DNS Instructions Provided
+   Shows you exactly what A records to add at your domain registrar
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        ADDING A DOMAIN - COMPLETE WORKFLOW
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+STEP 1: ADD DOMAIN IN clearPanel
+-----------------------------
+1. Login to clearPanel: http://YOUR_VPS_IP:3334
+2. Go to Tools â†’ Domains
+3. Click "Create A New Domain"
+4. Enter domain name: example.com
+5. Click "Add"
+
+RESULT:
+- âœ… Folder created: /home/sefion/Domains/example.com/
+- âœ… Nginx virtual host configured
+- âœ… DNS zone created in clearPanel
+- âœ… DNS instructions displayed
+
+STEP 2: ADD DNS RECORDS AT REGISTRAR (One-time, 2 minutes)
+-----------------------------------------------------------
+clearPanel will show you these instructions. Copy and paste them at your registrar:
+
+Go to your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.)
+Add these DNS records:
+
+Type: A
+Name: @ (or leave blank)
+Value: YOUR_SERVER_IP
+TTL: 3600
+
+Type: A
+Name: www  
+Value: YOUR_SERVER_IP
+TTL: 3600
+
+Save and wait 5-30 minutes for DNS propagation.
+
+STEP 3: UPLOAD YOUR WEBSITE
+----------------------------
+Option A - Via clearPanel File Manager:
+1. Go to File Manager in clearPanel
+2. Navigate to: Domains/example.com/
+3. Upload your index.html and website files
+
+Option B - Via SCP:
+scp -r /local/website/* user@YOUR_SERVER_IP:/home/sefion/Domains/example.com/
+
+Option C - Via SSH:
+ssh user@YOUR_SERVER_IP
+cd /home/sefion/Domains/example.com
+nano index.html
+<create your page>
+
+STEP 4: ACCESS YOUR SITE
+-------------------------
+After DNS propagates (5-30 minutes):
+http://example.com
+http://www.example.com
+
+DONE! Your domain is live on the internet! ðŸŽ‰
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        API ENDPOINTS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+DOMAINS:
+--------
+POST   /api/domains              # Create domain (auto-creates vhost)
+GET    /api/domains              # List all domains
+GET    /api/domains/:id/dns-instructions  # Get DNS setup guide
+DELETE /api/domains/:id          # Delete domain (removes vhost)
+
+WEBSERVER:
+----------
+GET    /api/webserver/status              # Check nginx status
+POST   /api/webserver/install             # Install nginx
+POST   /api/webserver/vhost/:domain       # Create virtual host
+DELETE /api/webserver/vhost/:domain       # Remove virtual host
+GET    /api/webserver/dns-instructions/:domain  # DNS guide
+
+DNS:
+----
+GET    /api/dns/zones                     # List all DNS zones
+GET    /api/dns/zones/:domain             # Get zone records
+POST   /api/dns/zones/:domain/records     # Add DNS record
+PUT    /api/dns/zones/:domain/records/:id # Update record
+DELETE /api/dns/zones/:domain/records/:id # Delete record
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        UPGRADING TO SSL (HTTPS)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+After your domain's DNS is working, add free SSL with Let's Encrypt:
+
+1. INSTALL CERTBOT
+   sudo apt install -y certbot python3-certbot-nginx
+
+2. GET SSL CERTIFICATE
+   sudo certbot --nginx -d example.com -d www.example.com
+
+3. AUTO-RENEWAL
+   Certbot automatically configures renewal. Test it:
+   sudo certbot renew --dry-run
+
+4. RESULT
+   Your site is now accessible at https://example.com âœ…
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        TROUBLESHOOTING
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ISSUE: Domain shows nginx default page
+FIX:
+- Check if files exist: ls -la /home/sefion/Domains/yourdomain.com/
+- Check nginx config: sudo nginx -t
+- Check nginx error log: sudo tail -f /var/log/nginx/yourdomain.com-error.log
+
+ISSUE: Domain shows "This site can't be reached"
+FIX:
+- Check DNS propagation: dig yourdomain.com +short
+- Verify A record points to YOUR_SERVER_IP
+- Wait 30 minutes for DNS to propagate globally
+- Check https://dnschecker.org/#A/yourdomain.com
+
+ISSUE: Nginx not installed
+FIX:
+sudo apt install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+# Then restart clearPanel
+sudo systemctl restart clearPanel
+
+ISSUE: Permission denied creating folders
+FIX:
+sudo mkdir -p /home/sefion/Domains
+sudo chown -R $USER:$USER /home/sefion
+
+ISSUE: Port 80 already in use
+FIX:
+# Check what's using port 80
+sudo lsof -i :80
+# Usually Apache
+sudo systemctl stop apache2
+sudo systemctl disable apache2
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        DIFFERENCE FROM OTHER PANELS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+clearPanel vs cPanel/Plesk:
+-----------------------
+âœ… Free and open source
+âœ… Lightweight (runs on 1GB RAM)
+âœ… Modern React UI
+âœ… Simple setup (no license needed)
+âœ… Git-based deployment
+âŒ No email server (add separately if needed)
+âŒ No database management yet (coming soon)
+
+clearPanel vs Manual Setup:
+-----------------------
+âœ… Auto-creates nginx configs
+âœ… Auto-generates DNS instructions
+âœ… Web-based file manager
+âœ… Centralized domain management
+âœ… No need to SSH for every domain
+âœ… Automatic folder structure
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        PRODUCTION DEPLOYMENT
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+SECURE YOUR INSTALLATION:
+-------------------------
+
+1. CHANGE DEFAULT PASSWORD
+   Login â†’ Settings â†’ Change password
+
+2. USE CLOUDFLARE TUNNEL (Optional but recommended)
+   - Provides HTTPS for clearPanel UI
+   - No need to expose port 3334
+   - See CLOUDFLARE-TUNNEL-INFO.txt
+
+3. FIREWALL
+   sudo ufw allow 80/tcp
+   sudo ufw allow 443/tcp
+   sudo ufw allow 22/tcp    # SSH only
+   sudo ufw deny 3334/tcp   # Block direct access (use Cloudflare Tunnel)
+   sudo ufw enable
+
+4. KEEP UPDATED
+   cd /opt/clearPanel
+   git pull
+   cd frontend && npm install && npm run build
+   cd ../backend && npm install && npm run build
+   sudo systemctl restart clearPanel
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        NEXT STEPS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+1. âœ… Install clearPanel on your VPS (see above)
+2. âœ… Add your first domain
+3. âœ… Upload website files
+4. âœ… Configure DNS at your registrar
+5. â³ Wait 5-30 minutes for DNS propagation
+6. âœ… Access your site
+7. âœ… Add SSL certificate with certbot
+8. âœ… Repeat for more domains!
+
+SUPPORT:
+--------
+- Documentation: /home/hasim/Documents/project/clearPanel/README.md
+- Domain Setup: DOMAIN-SETUP-GUIDE.txt
+- Issues: https://github.com/SefionITServices/clearPanel/issues
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                        CURRENT SERVER STATUS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+âœ… clearPanel Backend: RUNNING (port 3334)
+âš ï¸  Nginx: NOT INSTALLED (install for full automation)
+âœ… Server IP: 204.83.99.245
+âœ… Web Server Module: LOADED
+âœ… Auto-vhost: READY (installs nginx when first domain added)
+
+Next: Install nginx or add domain (clearPanel will help with nginx setup)
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+

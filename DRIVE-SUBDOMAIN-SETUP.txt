@@ -1,0 +1,203 @@
+﻿â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    DRIVE.SEFION.CLOUD SETUP GUIDE
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+SUBDOMAIN: drive.sefion.cloud
+STATUS: âœ… Cloudflare Tunnel configured, Web server running
+ACCESS: Will be available at https://drive.sefion.cloud after DNS setup
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                          WHAT HAS BEEN DONE
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+1. âœ… Cloudflare Tunnel Configuration Updated
+   - Added drive.sefion.cloud â†’ http://localhost:8080
+   - Tunnel restarted with new config
+   - 4 edge connections active
+
+2. âœ… Web Server Started
+   - Python HTTP server running on port 8080
+   - Serving: /home/sefion/Domains/drive.sefion.cloud
+   - Test page created (index.html)
+
+3. âœ… Local Testing Works
+   - http://localhost:8080 â†’ âœ… Working
+   - Cloudflare Tunnel: âœ… Active
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    FINAL STEP: ADD DNS RECORD IN CLOUDFLARE
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+To make drive.sefion.cloud accessible on the internet, add a DNS record in
+Cloudflare Dashboard:
+
+STEP-BY-STEP:
+-------------
+
+1. Go to Cloudflare Dashboard:
+   https://dash.cloudflare.com
+
+2. Select your domain: sefion.cloud
+
+3. Go to "DNS" section â†’ "Records"
+
+4. Click "Add record"
+
+5. Fill in the following:
+   
+   Type:    CNAME
+   Name:    drive
+   Target:  34647b7f-bd87-40d7-b5a3-a01574c8559b.cfargotunnel.com
+   Proxy:   âœ… Proxied (orange cloud)
+   TTL:     Auto
+
+6. Click "Save"
+
+ALTERNATIVE (A Record):
+-----------------------
+If you prefer A records:
+
+   Type:    A
+   Name:    drive
+   IPv4:    172.67.199.190  (or 104.21.44.124)
+   Proxy:   âœ… Proxied
+   TTL:     Auto
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         VERIFY IT'S WORKING
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+After adding the DNS record (wait 1-2 minutes for propagation):
+
+1. Open browser and visit:
+   https://drive.sefion.cloud
+
+2. You should see:
+   "ðŸš€ Drive.Sefion.Cloud - Site is live and accessible!"
+
+3. Check from command line:
+   curl https://drive.sefion.cloud
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         CLOUDFLARE TUNNEL DETAILS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Tunnel ID:      34647b7f-bd87-40d7-b5a3-a01574c8559b
+Tunnel Name:    clearPanel
+
+Current Routes:
+- clearPanel.sefion.cloud â†’ http://localhost:3334 (clearPanel)
+- drive.sefion.cloud  â†’ http://localhost:8080 (Drive)
+
+Config File:    ~/.cloudflared/config.yml
+Logs:           /tmp/cloudflared.log
+
+Tunnel Status:
+- Check: ps aux | grep cloudflared
+- Restart: pkill cloudflared && cloudflared tunnel run clearPanel &
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         WEB SERVER MANAGEMENT
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Current Server: Python HTTP Server (port 8080)
+Document Root:  /home/sefion/Domains/drive.sefion.cloud
+
+CHECK STATUS:
+curl http://localhost:8080
+
+STOP SERVER:
+pkill -f "python3 -m http.server 8080"
+
+START SERVER:
+cd /home/sefion/Domains/drive.sefion.cloud
+python3 -m http.server 8080 > /tmp/drive-server.log 2>&1 &
+
+VIEW LOGS:
+tail -f /tmp/drive-server.log
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         UPLOAD YOUR FILES
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+Upload files to:
+/home/sefion/Domains/drive.sefion.cloud/
+
+Example:
+cp /path/to/your/files/* /home/sefion/Domains/drive.sefion.cloud/
+
+Or use clearPanel File Manager:
+1. Login to https://clearPanel.sefion.cloud
+2. Go to File Manager
+3. Navigate to: Domains/drive.sefion.cloud/
+4. Upload your files
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                    UPGRADE TO PRODUCTION SERVER (OPTIONAL)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+For production use, replace Python server with Nginx or Apache:
+
+INSTALL NGINX:
+sudo apt update
+sudo apt install nginx
+
+CREATE NGINX CONFIG:
+sudo tee /etc/nginx/sites-available/drive.sefion.cloud > /dev/null << 'EOF'
+server {
+    listen 8080;
+    server_name drive.sefion.cloud;
+    
+    root /home/sefion/Domains/drive.sefion.cloud;
+    index index.html index.htm;
+    
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+EOF
+
+ENABLE SITE:
+sudo ln -s /etc/nginx/sites-available/drive.sefion.cloud /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         TROUBLESHOOTING
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ISSUE: drive.sefion.cloud shows 404 or doesn't load
+FIX:
+1. Check DNS record exists in Cloudflare
+2. Wait 5 minutes for DNS propagation
+3. Clear browser cache
+4. Check Cloudflare Tunnel: ps aux | grep cloudflared
+5. Check web server: curl http://localhost:8080
+
+ISSUE: Cloudflare Tunnel not running
+FIX:
+cloudflared tunnel run clearPanel > /tmp/cloudflared.log 2>&1 &
+
+ISSUE: Web server not responding on port 8080
+FIX:
+cd /home/sefion/Domains/drive.sefion.cloud
+python3 -m http.server 8080 > /tmp/drive-server.log 2>&1 &
+
+ISSUE: Port 8080 already in use
+FIX:
+lsof -i :8080
+kill <PID>
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                         CURRENT STATUS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+âœ… Cloudflare Tunnel: RUNNING (4 connections)
+âœ… Web Server: RUNNING on port 8080
+âœ… Test Page: CREATED
+â³ DNS Record: PENDING (add in Cloudflare Dashboard)
+
+NEXT STEP: Add CNAME record in Cloudflare Dashboard as shown above
+
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
