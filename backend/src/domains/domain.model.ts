@@ -3,4 +3,5 @@ export interface Domain {
   name: string;
   folderPath: string;
   createdAt: Date;
+  nameservers?: string[];
 }

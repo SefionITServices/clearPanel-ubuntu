@@ -23,7 +23,7 @@ export default function DomainsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', folderPath: '' });
+  const [form, setForm] = useState({ name: '', folderPath: '', nameservers: '' });
 
   // Simulate forceHttps and redirects for demo
   useEffect(() => {
@@ -52,10 +52,27 @@ export default function DomainsPage() {
 
   const handleAdd = async () => {
     try {
+      const nameserverList = form.nameservers
+        .split(/\r?\n|,/)
+        .map(ns => ns.trim())
+        .filter(ns => ns.length > 0);
+
+      const payload: Record<string, any> = {
+        name: form.name,
+      };
+
+      if (form.folderPath.trim()) {
+        payload.folderPath = form.folderPath.trim();
+      }
+
+      if (nameserverList.length > 0) {
+        payload.nameservers = nameserverList;
+      }
+
       const response = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
@@ -64,7 +81,7 @@ export default function DomainsPage() {
       }
       
       setAddOpen(false);
-      setForm({ name: '', folderPath: '' });
+  setForm({ name: '', folderPath: '', nameservers: '' });
       // Refresh
       const data = await fetch('/api/domains').then(r => r.json());
       setDomains(
@@ -200,6 +217,16 @@ export default function DomainsPage() {
                 onChange={e => setForm(f => ({ ...f, folderPath: e.target.value }))}
                 fullWidth
                 placeholder="/home/example.com"
+              />
+              <TextField
+                label="Nameservers (optional)"
+                value={form.nameservers}
+                onChange={e => setForm(f => ({ ...f, nameservers: e.target.value }))}
+                fullWidth
+                multiline
+                minRows={2}
+                placeholder={"ns1.example.com\nns2.example.com"}
+                helperText="Enter one per line or separate with commas. Leave blank to use default ns1/ns2 for this domain."
               />
             </Stack>
           </DialogContent>

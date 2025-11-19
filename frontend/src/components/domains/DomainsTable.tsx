@@ -32,6 +32,7 @@ export interface DomainRow {
   isMain?: boolean;
   redirectsTo?: string;
   forceHttps?: boolean;
+  nameservers?: string[];
 }
 
 interface Props {
@@ -87,15 +88,22 @@ export function DomainsTable({
                 />
               </TableCell>
               <TableCell>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Link href={`http://${row.name}`} target="_blank" underline="hover" sx={{ fontWeight: 600 }}>
-                    {row.name}
-                  </Link>
-                  <OpenInNewIcon fontSize="small" color="action" />
-                  {row.isMain && (
-                    <Box component="span" sx={{ ml: 1, bgcolor: 'primary.main', color: 'white', px: 1, borderRadius: 1, fontSize: 12, fontWeight: 500 }}>
-                      Main Domain
-                    </Box>
+                <Stack spacing={0.5}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <Link href={`http://${row.name}`} target="_blank" underline="hover" sx={{ fontWeight: 600 }}>
+                      {row.name}
+                    </Link>
+                    <OpenInNewIcon fontSize="small" color="action" />
+                    {row.isMain && (
+                      <Box component="span" sx={{ ml: 1, bgcolor: 'primary.main', color: 'white', px: 1, borderRadius: 1, fontSize: 12, fontWeight: 500 }}>
+                        Main Domain
+                      </Box>
+                    )}
+                  </Stack>
+                  {Array.isArray(row.nameservers) && row.nameservers.length > 0 && (
+                    <Typography variant="caption" color="text.secondary">
+                      NS: {row.nameservers.join(', ')}
+                    </Typography>
                   )}
                 </Stack>
               </TableCell>

@@ -19,39 +19,112 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
-// Note: Backend defaults to ~/clearpanel-domains/{domain} if no path provided
-// Leaving folderPath empty will use backend defaults
-const MAIN_USER_HOME = '/home/user/clearpanel-domains';  // Example path shown in UI
-const MAIN_PUBLIC_HTML = `${MAIN_USER_HOME}/public_html`;
-const MAIN_DOMAIN = 'example.com';
+// Backend defaults to ~/clearpanel-domains/{domain} if no path provided.
+// We dynamically discover the primary domain to offer an accurate shared-path option.
+
+interface DomainInfo {
+  name: string;
+  folderPath: string;
+}
 
 export default function DomainCreatePage() {
   const navigate = useNavigate();
   const [domain, setDomain] = useState('');
   const [shareRoot, setShareRoot] = useState(false);
-  const [folderPath, setFolderPath] = useState('');
+  const [customFolderPath, setCustomFolderPath] = useState('');
+  const [sharedFolderPath, setSharedFolderPath] = useState('');
   const [subdomain, setSubdomain] = useState('');
+  const [nameservers, setNameservers] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [primaryDomain, setPrimaryDomain] = useState<DomainInfo | null>(null);
+  const [loadingPrimaryDomain, setLoadingPrimaryDomain] = useState(true);
+  const [primaryDomainError, setPrimaryDomainError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDomains = async () => {
+      try {
+        const response = await fetch('/api/domains');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch domains (${response.status})`);
+        }
+        const data = await response.json();
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          const primary = data[0] as DomainInfo;
+          setPrimaryDomain(primary);
+          if (shareRoot) {
+            setSharedFolderPath(primary.folderPath);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error('Failed to determine primary domain:', message);
+          setPrimaryDomainError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPrimaryDomain(false);
+        }
+      }
+    };
+
+    loadDomains();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Keep folderPath in sync when domain changes (if not sharing root)
   useEffect(() => {
     if (!shareRoot) {
-      // Leave empty to use backend default, or show example path
-      setFolderPath(''); // Backend will auto-assign
+      setCustomFolderPath('');
     }
-    setSubdomain(domain); // simple mirror; could strip TLD if needed
+    setSubdomain(domain);
   }, [domain, shareRoot]);
+
+  useEffect(() => {
+    if (shareRoot && primaryDomain?.folderPath) {
+      setSharedFolderPath(primaryDomain.folderPath);
+    }
+  }, [shareRoot, primaryDomain]);
+
+  const handleShareRootToggle = (checked: boolean) => {
+    setShareRoot(checked);
+    if (!checked) {
+      setSharedFolderPath('');
+    } else if (primaryDomain?.folderPath) {
+      setSharedFolderPath(primaryDomain.folderPath);
+    }
+  };
 
   const handleSubmit = async (createAnother: boolean) => {
     if (!domain) return;
     setSubmitting(true);
     try {
       // Only send folderPath if shareRoot is true or user explicitly set a custom path
-      const payload: { name: string; folderPath?: string } = { name: domain };
+      const payload: { name: string; folderPath?: string; nameservers?: string[] } = { name: domain };
+      const trimmedSharedPath = sharedFolderPath.trim();
+      const trimmedCustomPath = customFolderPath.trim();
+
       if (shareRoot) {
-        payload.folderPath = MAIN_PUBLIC_HTML;
-      } else if (folderPath && folderPath.trim()) {
-        payload.folderPath = folderPath.trim();
+        if (!trimmedSharedPath) {
+          alert('Enter the document root path you want to share, or disable "Share document root".');
+          return;
+        }
+        payload.folderPath = trimmedSharedPath;
+      } else if (trimmedCustomPath) {
+        payload.folderPath = trimmedCustomPath;
+      }
+
+      const customNameservers = nameservers
+        .split(/\r?\n|,/)
+        .map((ns) => ns.trim())
+        .filter((ns) => ns.length > 0);
+
+      if (customNameservers.length > 0) {
+        payload.nameservers = customNameservers;
       }
       // If folderPath is empty/undefined, backend uses default: ~/clearpanel-domains/{domain}
       
@@ -73,9 +146,11 @@ export default function DomainCreatePage() {
       
       if (createAnother) {
         setDomain('');
-        setFolderPath('');
+        setCustomFolderPath('');
+        setSharedFolderPath('');
         setShareRoot(false);
         setSubdomain('');
+        setNameservers('');
       } else {
         navigate('/domains');
       }
@@ -126,11 +201,28 @@ export default function DomainCreatePage() {
                 {/* Share root */}
                 <Box>
                   <FormControlLabel
-                    control={<Checkbox checked={shareRoot} onChange={(e) => setShareRoot(e.target.checked)} />}
+                    control={
+                      <Checkbox
+                        checked={shareRoot}
+                        onChange={(e) => handleShareRootToggle(e.target.checked)}
+                        disabled={submitting}
+                      />
+                    }
                     label={
                       <Typography variant="body2">
-                        Share document root (<Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>{MAIN_PUBLIC_HTML}</Typography>) with "{MAIN_DOMAIN}".
-                        <Typography component="span" variant="body2" sx={{ ml: 0.5, fontWeight: 500 }}>This setting is permanent.</Typography>
+                        Share document root (
+                        <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace' }}>
+                          {primaryDomain?.folderPath || (loadingPrimaryDomain ? 'Loading…' : 'Enter existing path')}
+                        </Typography>
+                        ) with “{primaryDomain?.name || 'primary domain'}”.
+                        <Typography component="span" variant="body2" sx={{ ml: 0.5, fontWeight: 500 }}>
+                          This setting is permanent.
+                        </Typography>
+                        {!primaryDomain && primaryDomainError && !loadingPrimaryDomain && (
+                          <Typography component="span" variant="body2" color="error" sx={{ ml: 0.5 }}>
+                            (Unable to auto-detect primary domain path: {primaryDomainError})
+                          </Typography>
+                        )}
                       </Typography>
                     }
                   />
@@ -143,17 +235,30 @@ export default function DomainCreatePage() {
                     <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
                   </Stack>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    {shareRoot 
-                      ? 'Using shared document root directory.'
+                    {shareRoot
+                      ? primaryDomain?.folderPath
+                        ? `Sharing existing directory at ${primaryDomain.folderPath}.`
+                        : 'Enter the full path of the document root you want to share with another domain.'
                       : 'Leave empty to use auto-generated path (~/clearpanel-domains/{domain}), or specify a custom directory.'
                     }
                   </Typography>
                   <TextField
                     fullWidth
-                    value={shareRoot ? MAIN_PUBLIC_HTML : folderPath}
-                    onChange={(e) => setFolderPath(e.target.value)}
-                    disabled={shareRoot || submitting}
-                    placeholder="Leave empty for auto-path or enter custom path"
+                    value={shareRoot ? sharedFolderPath : customFolderPath}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (shareRoot) {
+                        setSharedFolderPath(value);
+                      } else {
+                        setCustomFolderPath(value);
+                      }
+                    }}
+                    disabled={submitting}
+                    placeholder={
+                      shareRoot
+                        ? primaryDomain?.folderPath || 'Enter existing document root path'
+                        : 'Leave empty for auto-path or enter custom path'
+                    }
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
@@ -161,6 +266,26 @@ export default function DomainCreatePage() {
                         </InputAdornment>
                       ),
                     }}
+                  />
+                </Box>
+
+                {/* Nameservers */}
+                <Box>
+                  <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
+                    <Typography variant="subtitle2" fontWeight={600}>Nameservers (Optional)</Typography>
+                    <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    Provide custom nameservers if you want to use branded hostnames. Enter one per line or separate with commas. Leave blank to use the default ns1/ns2.{domain ? ` (Default: ns1.${domain}, ns2.${domain})` : ''}
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    value={nameservers}
+                    onChange={(e) => setNameservers(e.target.value)}
+                    disabled={submitting}
+                    placeholder={`ns1.${domain || 'example.com'}\nns2.${domain || 'example.com'}`}
                   />
                 </Box>
 
@@ -181,7 +306,7 @@ export default function DomainCreatePage() {
                       disabled={submitting}
                     />
                     <TextField
-                      value={`.${MAIN_DOMAIN}`}
+                      value={primaryDomain ? `.${primaryDomain.name}` : '.example.com'}
                       disabled
                       sx={{ width: 180 }}
                     />

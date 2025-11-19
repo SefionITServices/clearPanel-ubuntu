@@ -4,9 +4,10 @@ import { DomainsController } from './domains.controller';
 import { DnsModule } from '../dns/dns.module';
 import { WebServerModule } from '../webserver/webserver.module';
 import { DnsServerModule } from '../dns-server/dns-server.module';
+import { ServerModule } from '../server/server.module';
 
 @Module({
-  imports: [DnsModule, WebServerModule, DnsServerModule],
+  imports: [DnsModule, WebServerModule, DnsServerModule, ServerModule],
   providers: [DomainsService],
   controllers: [DomainsController],
 })

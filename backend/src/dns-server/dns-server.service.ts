@@ -16,8 +16,7 @@ export interface DnsServerStatus {
 }
 
 export interface NameserverInfo {
-  ns1: string;
-  ns2: string;
+  nameservers: string[];
   ip: string;
   instructions: string;
 }
@@ -113,17 +112,43 @@ export class DnsServerService {
     }
   }
 
-  async createZone(domain: string, serverIp?: string): Promise<{ success: boolean; message: string }> {
+  async createZone(domain: string, serverIp?: string, nameservers?: string[]): Promise<{ success: boolean; message: string }> {
     const status = await this.getStatus();
     if (!status.installed) {
       return { success: false, message: 'BIND9 is not installed. Please install it first.' };
     }
 
     const ip = serverIp || this.configService.get<string>('SERVER_IP') || '0.0.0.0';
+    const nsList = Array.from(
+      new Set(
+        (nameservers && nameservers.length ? nameservers : [`ns1.${domain}`, `ns2.${domain}`])
+          .map(ns => ns.trim())
+          .filter(ns => ns.length > 0)
+          .map(ns => (ns.endsWith('.') ? ns.slice(0, -1) : ns))
+      ),
+    );
     const serial = this.generateSerial();
     const zoneFile = path.join(this.zonesPath, `db.${domain}`);
 
+    const nsRecords = nsList
+      .map(ns => `@       IN  NS      ${(ns.endsWith('.') ? ns : `${ns}.`)}`)
+      .join('\n');
+
+    const suffix = `.${domain}`;
+    const nsARecords = nsList
+      .map(ns => (ns.endsWith('.') ? ns.slice(0, -1) : ns))
+      .filter(ns => ns.toLowerCase().endsWith(suffix.toLowerCase()))
+      .map(ns => {
+        const label = ns.slice(0, -suffix.length) || '@';
+        return label === '@' ? null : `${label.padEnd(8)} IN  A       ${ip}`;
+      })
+      .filter((line): line is string => Boolean(line))
+      .join('\n');
+
     try {
+      // Ensure the zones directory exists before writing the zone file.
+      await execAsync(`sudo mkdir -p ${this.zonesPath}`);
+
       // Create zone file content
       const zoneContent = `
 ; Zone file for ${domain}
@@ -136,12 +161,10 @@ $TTL 86400
         86400 )     ; Minimum TTL
 
 ; Name servers
-@       IN  NS      ns1.${domain}.
-@       IN  NS      ns2.${domain}.
+${nsRecords}
 
 ; A records for nameservers
-ns1     IN  A       ${ip}
-ns2     IN  A       ${ip}
+${nsARecords || '; (external nameserver hostnames – no local A records created)'}
 
 ; Main domain A record
 @       IN  A       ${ip}
@@ -204,23 +227,30 @@ www     IN  A       ${ip}
     }
   }
 
-  async getNameserverInstructions(domain: string): Promise<NameserverInfo> {
+  async getNameserverInstructions(domain: string, nameservers?: string[]): Promise<NameserverInfo> {
     const ip = this.configService.get<string>('SERVER_IP') || '0.0.0.0';
-    
+    const nsList = (nameservers && nameservers.length ? nameservers : [`ns1.${domain}`, `ns2.${domain}`])
+      .map(ns => (ns.endsWith('.') ? ns.slice(0, -1) : ns));
+
+    const bullet = nsList
+      .map((ns, idx) => `   - Nameserver ${idx + 1}: ${ns}`)
+      .join('\n');
+
+    const glue = nsList
+      .map(ns => `   - ${ns} → ${ip}`)
+      .join('\n');
+
     return {
-      ns1: `ns1.${domain}`,
-      ns2: `ns2.${domain}`,
+      nameservers: nsList,
       ip,
       instructions: `
 To use this VPS as your DNS server:
 
 1. At your domain registrar, set custom nameservers:
-   - Nameserver 1: ns1.${domain}
-   - Nameserver 2: ns2.${domain}
+${bullet}
 
 2. Create glue records (required):
-   - ns1.${domain} → ${ip}
-   - ns2.${domain} → ${ip}
+${glue}
 
 3. DNS propagation may take 24-48 hours.
 

@@ -109,6 +109,29 @@ export default function DomainsListView() {
       ),
     },
     {
+      field: 'nameservers',
+      headerName: 'Nameservers',
+      flex: 1,
+      minWidth: 200,
+      renderCell: (params) => {
+        const list = Array.isArray(params.value) ? params.value.filter((ns: string) => !!ns) : [];
+        if (!list.length) {
+          return (
+            <Typography variant="body2" color="text.secondary">
+              Default (ns1/ns2)
+            </Typography>
+          );
+        }
+        return (
+          <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+            {list.map((ns: string) => (
+              <Chip key={ns} label={ns} size="small" variant="outlined" />
+            ))}
+          </Stack>
+        );
+      },
+    },
+    {
       field: 'folderPath',
       headerName: 'Document Root',
       flex: 1,

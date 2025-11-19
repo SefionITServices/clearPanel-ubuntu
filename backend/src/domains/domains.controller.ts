@@ -3,7 +3,7 @@ import { DomainsService } from './domains.service';
 import { DnsService } from '../dns/dns.service';
 import { WebServerService } from '../webserver/webserver.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
-import { ConfigService } from '@nestjs/config';
+import { ServerSettingsService } from '../server/server-settings.service';
 
 @Controller('domains')
 export class DomainsController {
@@ -12,18 +12,21 @@ export class DomainsController {
     private readonly dnsService: DnsService,
     private readonly webServerService: WebServerService,
     private readonly dnsServerService: DnsServerService,
-    private readonly configService: ConfigService
+    private readonly serverSettingsService: ServerSettingsService,
   ) {}
 
   @Post()
-  async addDomain(@Body() body: { name: string; folderPath?: string }) {
-    const domain = await this.domainsService.addDomain(body.name, body.folderPath);
+  async addDomain(@Body() body: { name: string; folderPath?: string; nameservers?: string[] }) {
+    const { domain, logs } = await this.domainsService.addDomain(body.name, body.folderPath, body.nameservers);
     // Return combined info with DNS zone for convenience
     const zone = await this.dnsService.getZone(body.name);
-    const serverIp = this.configService.get<string>('SERVER_IP') || '0.0.0.0';
+    const serverIp = await this.serverSettingsService.getServerIp();
     const dnsInstructions = this.webServerService.getDNSInstructions(body.name, serverIp);
-    const nameserverInfo = await this.dnsServerService.getNameserverInstructions(body.name);
-    return { domain, dnsZone: zone, dnsInstructions, nameserverInfo };
+    const nameserverInfo = await this.dnsServerService.getNameserverInstructions(
+      domain.name,
+      domain.nameservers,
+    );
+    return { domain, dnsZone: zone, dnsInstructions, nameserverInfo, automationLogs: logs };
   }
 
   @Get()
@@ -38,7 +41,7 @@ export class DomainsController {
     if (!domain) {
       return { success: false, message: 'Domain not found' };
     }
-    const serverIp = this.configService.get<string>('SERVER_IP') || '0.0.0.0';
+    const serverIp = await this.serverSettingsService.getServerIp();
     const dnsInstructions = this.webServerService.getDNSInstructions(domain.name, serverIp);
     return { domain: domain.name, serverIp, instructions: dnsInstructions };
   }
@@ -54,6 +57,11 @@ export class DomainsController {
     if (!result) {
       return { success: false, message: 'Domain not found' };
     }
-    return { success: true, message: 'Domain deleted successfully', domain: result };
+    return {
+      success: true,
+      message: 'Domain deleted successfully',
+      domain: result.domain,
+      automationLogs: result.logs,
+    };
   }
 }

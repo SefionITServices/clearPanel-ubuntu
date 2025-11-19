@@ -1,0 +1,9 @@
+{
+  "primaryDomain": "mainserver.in",
+  "serverIp": "204.83.99.245",
+  "nameservers": [
+    "ns1.mainserver.in",
+    "ns2.mainserver.in"
+  ],
+  "updatedAt": "2025-11-18T21:00:25.889Z"
+}

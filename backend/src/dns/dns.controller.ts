@@ -16,12 +16,19 @@ export class DnsController {
   }
 
   @Post('zones/:domain/records')
-  async addRecord(@Param('domain') domain: string, @Body() body: { type: 'A'|'CNAME'|'MX'|'TXT'; name: string; value: string; ttl?: number; priority?: number }) {
+  async addRecord(
+    @Param('domain') domain: string,
+    @Body() body: { type: 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS'; name: string; value: string; ttl?: number; priority?: number },
+  ) {
     return this.dnsService.addRecord(domain, { type: body.type, name: body.name, value: body.value, ttl: body.ttl ?? 3600, priority: body.priority });
   }
 
   @Put('zones/:domain/records/:id')
-  async updateRecord(@Param('domain') domain: string, @Param('id') id: string, @Body() body: { type?: 'A'|'CNAME'|'MX'|'TXT'; name?: string; value?: string; ttl?: number; priority?: number }) {
+  async updateRecord(
+    @Param('domain') domain: string,
+    @Param('id') id: string,
+    @Body() body: { type?: 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS'; name?: string; value?: string; ttl?: number; priority?: number },
+  ) {
     return this.dnsService.updateRecord(domain, id, body);
   }
 
