@@ -26,7 +26,7 @@ Follow these steps in order on the server. Skip any item you have already comple
    ```bash
    sudo mkdir -p /opt
    cd /opt
-   sudo git clone https://github.com/SefionITServices/clearPanel.git clearpanel
+   sudo git clone https://github.com/SefionITServices/clearPanel-ubuntu.git clearpanel
    sudo chown -R $USER:$USER /opt/clearpanel
    cd /opt/clearpanel
    ```

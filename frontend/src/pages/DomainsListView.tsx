@@ -19,7 +19,7 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { useNavigate } from 'react-router-dom';
 import SearchIcon from '@mui/icons-material/Search';
 import HomeIcon from '@mui/icons-material/Home';
@@ -96,7 +96,7 @@ export default function DomainsListView() {
       headerName: 'Domain',
       flex: 1.2,
       minWidth: 220,
-      renderCell: (params) => (
+      renderCell: (params: GridRenderCellParams) => (
         <Stack direction="row" alignItems="center" spacing={1}>
           <Link href={`http://${params.value}`} target="_blank" underline="hover" sx={{ fontWeight: 600 }}>
             {params.value}
@@ -113,7 +113,7 @@ export default function DomainsListView() {
       headerName: 'Nameservers',
       flex: 1,
       minWidth: 200,
-      renderCell: (params) => {
+      renderCell: (params: GridRenderCellParams) => {
         const list = Array.isArray(params.value) ? params.value.filter((ns: string) => !!ns) : [];
         if (!list.length) {
           return (
@@ -136,7 +136,7 @@ export default function DomainsListView() {
       headerName: 'Document Root',
       flex: 1,
       minWidth: 180,
-      renderCell: (params) => (
+      renderCell: (params: GridRenderCellParams) => (
         <Stack direction="row" alignItems="center" spacing={1}>
           <HomeIcon fontSize="small" color="action" />
           <Typography variant="body2" sx={{ fontWeight: 500 }}>{params.value}</Typography>
@@ -148,7 +148,7 @@ export default function DomainsListView() {
       headerName: 'Redirects To',
       flex: 1,
       minWidth: 160,
-      renderCell: (params) => (
+      renderCell: (params: GridRenderCellParams) => (
         <Typography variant="body2" color="text.secondary">
           {params.value}
         </Typography>
@@ -159,7 +159,7 @@ export default function DomainsListView() {
       headerName: 'Force HTTPS Redirect',
       flex: 1,
       minWidth: 180,
-      renderCell: (params) => (
+      renderCell: (params: GridRenderCellParams) => (
         <Stack direction="row" alignItems="center" spacing={1}>
           <Switch checked={!!params.value} size="small" />
           <Typography variant="caption" color={params.value ? 'primary' : 'text.secondary'}>
@@ -178,7 +178,7 @@ export default function DomainsListView() {
       minWidth: 260,
       sortable: false,
       filterable: false,
-      renderCell: (params) => (
+      renderCell: (params: GridRenderCellParams) => (
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" size="small" startIcon={<BuildIcon />}>
             Manage
