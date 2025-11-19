@@ -68,24 +68,31 @@ sudo dnf install -y git
 
 ```bash
 cd /opt
-sudo git clone https://github.com/SefionITServices/clearPanel.git clearpanel
+sudo git clone https://github.com/SefionITServices/clearPanel-ubuntu.git clearpanel
 cd clearpanel
 ```
 
 ## Step 6: Install Dependencies
 
 ```bash
-# Install main dependencies
-sudo npm install
-
 # Install backend dependencies
 cd backend
 sudo npm install
+
+# Install frontend dependencies
+cd ../frontend
+sudo npm install
+
+# Return to project root for the next steps
+cd ..
 ```
 
 ## Step 7: Configure Environment
 
 ```bash
+# Move into the backend directory if you're not already there
+cd backend
+
 # Create environment file from example
 sudo cp .env.example .env
 
@@ -124,6 +131,9 @@ openssl rand -hex 32
 
 **Save and exit:** Press `Ctrl+X`, then `Y`, then `Enter`
 
+# Return to the project root for later steps
+cd ..
+
 ## Step 8: Create System User
 
 ```bash
@@ -144,9 +154,16 @@ sudo chown -R sefion:sefion /home/sefion
 ```bash
 cd /opt/clearpanel/backend
 sudo npm run build
+
+# Build frontend assets that the backend serves
+cd ../frontend
+sudo npm run build
+
+# Return to backend so the service can use the compiled files
+cd ../backend
 ```
 
-**Expected output:** Should see "Webpack compiled successfully"
+**Expected output:** TypeScript compilation should finish without errors and Vite should emit a hashed asset bundle under `backend/public/assets/`
 
 ## Step 10: Set Up Systemd Service
 
@@ -235,59 +252,49 @@ sudo systemctl start nginx
 
 ## Step 13: Configure Nginx Reverse Proxy
 
-**Create nginx configuration:**
+**Create nginx configuration (Ubuntu/Debian layout):**
 ```bash
 sudo nano /etc/nginx/sites-available/clearpanel
 ```
 
-**Paste this configuration:**
+**Paste this configuration and adjust `server_name` to your domain or IP:**
 ```nginx
 server {
-    listen 80;
-    server_name 204.83.99.245;  # Your VPS IP or domain
+  listen 80;
+  server_name panel.example.com; # Replace with your domain or VPS IP
 
-        proxy_pass http://localhost:3334;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        
-        # Increase timeout for large file uploads
-        proxy_read_timeout 300;
-        proxy_connect_timeout 300;
-     cp /opt/clearpanel/backend/.env $BACKUP_DIR/env_$DATE.bak
-    }
+  client_max_body_size 200m;
+
+  location / {
+    proxy_pass http://127.0.0.1:3334;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+    proxy_read_timeout 300;
+    proxy_connect_timeout 300;
+  }
 }
 ```
 
-**For Ubuntu/Debian (using sites-enabled):**
+**Enable the site on Ubuntu/Debian:**
 ```bash
-# Enable the site
 sudo ln -s /etc/nginx/sites-available/clearpanel /etc/nginx/sites-enabled/
-
-# Remove default site
 sudo rm /etc/nginx/sites-enabled/default
-     sudo chmod +x /opt/clearpanel/backup.sh
-# Test configuration
-sudo nginx -t
-
-# Reload nginx
-sudo systemctl reload nginx
 ```
 
-**For CentOS/AlmaLinux:**
+**On CentOS/AlmaLinux, copy the file into `conf.d`:**
 ```bash
-# Copy to conf.d
 sudo cp /etc/nginx/sites-available/clearpanel /etc/nginx/conf.d/clearpanel.conf
+```
 
-# Test configuration
+**Validate and reload nginx:**
+```bash
 sudo nginx -t
-
-# Reload nginx
 sudo systemctl reload nginx
 ```
 
@@ -369,7 +376,17 @@ curl http://localhost:3334/api/dns-server/status
 }
 ```
 
-## Step 17: Create Your First Domain
+## Step 17: Configure Custom Nameservers (Optional but Recommended)
+
+1. Sign in to clearPanel and click **Nameservers** in the sidebar.
+2. Enter your **Primary Domain** (for example, `mycompany.com`) and the VPS **Server IP**.
+3. Supply the nameserver hostnames you want to brand (defaults to `ns1`/`ns2` are auto-generated if left empty).
+4. Click **Save Configuration**. The backend updates `server-settings.json`, regenerates DNS templates, and prints registrar instructions on success.
+5. Use the instructions shown in the UI when registering glue records with your domain registrar.
+
+> Tip: You can revisit this page anytime to rotate IP addresses or add additional nameserver hostnames.
+
+## Step 18: Create Your First Domain
 
 **Via Web Interface:**
 1. Login to clearPanel
@@ -393,7 +410,7 @@ curl -X POST http://localhost:3334/api/domains \
   -d '{"domain":"mywebsite.com"}'
 ```
 
-## Step 18: Configure Domain at Registrar
+## Step 19: Configure Domain at Registrar
 
 After creating your domain, follow these steps at your domain registrar (GoDaddy, Namecheap, etc.):
 
@@ -424,7 +441,7 @@ IP Address: 204.83.99.245
 - DNS changes take 24-48 hours to propagate worldwide
 - Some registrars are faster (1-4 hours)
 
-## Step 19: Upload Website Files
+## Step 20: Upload Website Files
 
 **Via File Manager (Web Interface):**
 1. Click "Files" in sidebar
@@ -445,7 +462,7 @@ cd /home/sefion/Domains/mywebsite.com/
 put -r ./my-website/*
 ```
 
-## Step 20: Verify DNS Resolution
+## Step 21: Verify DNS Resolution
 
 **After propagation period, test DNS:**
 
@@ -472,7 +489,7 @@ mywebsite.com.  86400  IN  NS  ns1.mywebsite.com.
 mywebsite.com.  86400  IN  NS  ns2.mywebsite.com.
 ```
 
-## Step 21: Install SSL Certificate (Optional but Recommended)
+## Step 22: Install SSL Certificate (Optional but Recommended)
 
 **Install Certbot:**
 
@@ -502,7 +519,7 @@ sudo certbot --nginx -d mywebsite.com -d www.mywebsite.com
 sudo certbot renew --dry-run
 ```
 
-## Step 22: Set Up Automatic Backups (Optional)
+## Step 23: Set Up Automatic Backups (Optional)
 
 **Create backup script:**
 ```bash
@@ -705,12 +722,12 @@ sudo tail -f /var/log/nginx/error.log
 
 ## Next Steps
 
-1. âœ… Add more domains
-2. âœ… Set up email server (future feature)
-3. âœ… Configure additional DNS records (MX, TXT, etc.)
-4. âœ… Set up monitoring and alerting
-5. âœ… Configure automated backups
-6. âœ… Install additional security tools
+- Add more domains
+- Set up email server (future feature)
+- Configure additional DNS records (MX, TXT, etc.)
+- Set up monitoring and alerting
+- Configure automated backups
+- Install additional security tools
 
 ## Support
 
