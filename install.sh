@@ -30,10 +30,15 @@ if command -v apt-get &> /dev/null; then
     apt-get install -y software-properties-common
     # Add NodeSource repository for latest Node.js
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs nginx git curl ufw
+    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx
     # Enable and configure UFW firewall
     ufw --force enable
     ufw allow OpenSSH
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    ufw allow 3334/tcp
+    ufw allow 53/tcp
+    ufw allow 53/udp
 else
     echo -e "${RED}This script is designed for Ubuntu/Zorin OS systems only${NC}"
     echo -e "${RED}Please use the AlmaLinux version for RHEL-based systems${NC}"
@@ -63,6 +68,7 @@ fi
 echo -e "${YELLOW}📁 Creating installation directory...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data"
+mkdir -p "$INSTALL_DIR/data/domains"
 
 # Copy current directory to install location (if not already there)
 if [ "$PWD" != "$INSTALL_DIR" ]; then
@@ -108,6 +114,7 @@ ADMIN_PASSWORD=admin123
 
 # File Manager Settings
 ROOT_PATH=/opt/clearpanel/data
+DOMAINS_ROOT=/opt/clearpanel/data/domains
 ALLOWED_EXTENSIONS=*
 MAX_FILE_SIZE=104857600
 EOF
@@ -126,6 +133,19 @@ echo -e "${YELLOW}🌐 Configuring nginx...${NC}"
 cp "$INSTALL_DIR/nginx.conf.example" "/etc/nginx/sites-available/clearpanel" 2>/dev/null || \
     cp "$INSTALL_DIR/nginx.conf.example" "/etc/nginx/conf.d/clearpanel.conf"
 
+# Update nginx config to work with IP access (change server_name to _ for default server)
+NGINX_CONF_FILE=""
+if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
+    NGINX_CONF_FILE="/etc/nginx/sites-available/clearpanel"
+elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
+    NGINX_CONF_FILE="/etc/nginx/conf.d/clearpanel.conf"
+fi
+
+if [ -n "$NGINX_CONF_FILE" ]; then
+    # Replace server_name with _ to allow IP access
+    sed -i 's/server_name your-domain.com www.your-domain.com;/server_name _;/' "$NGINX_CONF_FILE"
+fi
+
 if [ -d "/etc/nginx/sites-enabled" ]; then
     ln -sf "/etc/nginx/sites-available/clearpanel" "/etc/nginx/sites-enabled/clearpanel"
     rm -f /etc/nginx/sites-enabled/default
@@ -133,6 +153,44 @@ fi
 
 # Test and reload nginx
 nginx -t && systemctl enable nginx && systemctl restart nginx
+
+# Configure BIND9 DNS server
+echo -e "${YELLOW}🌐 Configuring BIND9 DNS server...${NC}"
+# Create zones directory
+mkdir -p /etc/bind/zones
+
+# Add clearpanel user to bind group for zone file management
+usermod -a -G bind "$SERVICE_USER" 2>/dev/null || true
+
+# Set permissions: bind group can write, others can read
+chown -R bind:bind /etc/bind/zones 2>/dev/null || chown -R root:root /etc/bind/zones
+chmod 775 /etc/bind/zones
+chmod g+s /etc/bind/zones  # Set group sticky bit so new files inherit group
+
+# Also allow clearpanel to write to named.conf.local (for zone configuration)
+chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
+chgrp bind /etc/bind/named.conf.local 2>/dev/null || true
+
+# Configure sudoers to allow clearpanel user to reload/restart BIND9 without password
+cat > /etc/sudoers.d/clearpanel-bind9 << 'EOF'
+# Allow clearpanel user to manage BIND9 service
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload bind9
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart bind9
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload named
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart named
+EOF
+chmod 440 /etc/sudoers.d/clearpanel-bind9
+
+# Enable and start BIND9
+systemctl enable bind9
+systemctl start bind9
+
+# Verify BIND9 is running
+if systemctl is-active --quiet bind9; then
+    echo -e "${GREEN}✓ BIND9 DNS server is running${NC}"
+else
+    echo -e "${YELLOW}⚠ BIND9 service may need manual configuration${NC}"
+fi
 
 # Start clearPanel service
 echo -e "${YELLOW}🚀 Starting clearPanel service...${NC}"
@@ -146,6 +204,7 @@ if systemctl is-active --quiet clearpanel; then
     echo -e "${GREEN}✅ Installation successful!${NC}"
     echo ""
     echo -e "${GREEN}clearPanel is now running${NC}"
+    echo -e "${GREEN}BIND9 DNS server is installed and ready${NC}"
     echo ""
     echo -e "${YELLOW}⚠️  IMPORTANT NEXT STEPS:${NC}"
     echo "1. Edit /opt/clearpanel/backend/.env and change:"
@@ -162,15 +221,25 @@ if systemctl is-active --quiet clearpanel; then
     echo "   sudo systemctl restart clearpanel"
     echo "   sudo systemctl restart nginx"
     echo ""
-    echo "4. (Optional) Setup SSL with Let's Encrypt:"
-    echo "   sudo certbot --nginx -d your-domain.com"
+    echo "4. Setup SSL with Let's Encrypt:"
+    echo "   sudo ./setup-ssl.sh"
+    echo "   Or manually: sudo certbot --nginx -d your-domain.com"
     echo ""
-    echo -e "${GREEN}Access your panel at: http://your-server-ip${NC}"
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    echo -e "${GREEN}Access your panel at: http://$SERVER_IP${NC}"
     echo ""
     echo "Useful commands:"
     echo "  View logs: sudo journalctl -u clearpanel -f"
     echo "  Restart: sudo systemctl restart clearpanel"
     echo "  Stop: sudo systemctl stop clearpanel"
+    echo ""
+    echo -e "${YELLOW}🔍 Troubleshooting if panel is not accessible:${NC}"
+    echo "1. Check service status: sudo systemctl status clearpanel"
+    echo "2. Check if port is listening: sudo ss -tulpn | grep 3334"
+    echo "3. Check firewall: sudo ufw status"
+    echo "4. Check nginx: sudo systemctl status nginx"
+    echo "5. Test locally: curl http://localhost:3334/api/auth/status"
+    echo "6. View service logs: sudo journalctl -u clearpanel -n 50"
     echo ""
 else
     echo -e "${RED}❌ Installation failed - service is not running${NC}"

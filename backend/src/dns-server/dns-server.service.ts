@@ -147,11 +147,17 @@ export class DnsServerService {
 
     try {
       // Ensure the zones directory exists before writing the zone file.
-      await execAsync(`sudo mkdir -p ${this.zonesPath}`);
+      try {
+        await fs.mkdir(this.zonesPath, { recursive: true });
+      } catch (error: any) {
+        // Directory might already exist, that's okay
+        if (error.code !== 'EEXIST') {
+          throw error;
+        }
+      }
 
       // Create zone file content
-      const zoneContent = `
-; Zone file for ${domain}
+      const zoneContent = `; Zone file for ${domain}
 $TTL 86400
 @   IN  SOA ns1.${domain}. admin.${domain}. (
         ${serial}   ; Serial
@@ -171,10 +177,15 @@ ${nsARecords || '; (external nameserver hostnames – no local A records created
 www     IN  A       ${ip}
 `;
 
-      // Write zone file
-      await execAsync(`sudo bash -c 'echo "${zoneContent.replace(/'/g, "'\\''")} " > ${zoneFile}'`);
-      await execAsync(`sudo chown bind:bind ${zoneFile} || sudo chown named:named ${zoneFile} || true`);
-      await execAsync(`sudo chmod 644 ${zoneFile}`);
+      // Write zone file using Node.js fs instead of sudo
+      await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+      
+      // Try to set ownership (may fail if not root, but that's okay if permissions are set correctly)
+      try {
+        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`);
+      } catch {
+        // Ignore chown errors - file permissions should be sufficient
+      }
 
       // Add zone to named.conf.local
       await this.addZoneToConfig(domain, zoneFile);
@@ -202,8 +213,15 @@ www     IN  A       ${ip}
       // Remove zone from named.conf.local
       await this.removeZoneFromConfig(domain);
 
-      // Delete zone file
-      await execAsync(`sudo rm -f ${zoneFile}`);
+      // Delete zone file using Node.js fs
+      try {
+        await fs.unlink(zoneFile);
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') {
+          // File doesn't exist is okay, other errors should be reported
+          throw error;
+        }
+      }
 
       // Reload BIND
       await this.reload();
@@ -219,11 +237,33 @@ www     IN  A       ${ip}
   async reload(): Promise<void> {
     const serviceName = await this.getServiceName();
     try {
-      await execAsync(`sudo systemctl reload ${serviceName}`);
-      this.logger.log('BIND9 reloaded successfully');
+      // Try without sudo first (if user has permissions)
+      try {
+        await execAsync(`systemctl reload ${serviceName}`);
+        this.logger.log('BIND9 reloaded successfully');
+        return;
+      } catch {
+        // If that fails, try with sudo (may fail due to NoNewPrivileges)
+        try {
+          await execAsync(`sudo systemctl reload ${serviceName}`);
+          this.logger.log('BIND9 reloaded successfully');
+          return;
+        } catch (sudoError) {
+          this.logger.warn('BIND9 reload failed, trying restart', sudoError);
+          // Try restart without sudo
+          try {
+            await execAsync(`systemctl restart ${serviceName}`);
+            return;
+          } catch {
+            // Last resort: try restart with sudo
+            await execAsync(`sudo systemctl restart ${serviceName}`);
+          }
+        }
+      }
     } catch (error) {
-      this.logger.warn('BIND9 reload failed, trying restart', error);
-      await execAsync(`sudo systemctl restart ${serviceName}`);
+      this.logger.error('BIND9 reload/restart failed completely', error);
+      // Don't throw - zone files are created, just need manual reload
+      this.logger.warn('Zone files created but BIND9 needs manual reload. Run: sudo systemctl reload bind9');
     }
   }
 
@@ -270,22 +310,48 @@ zone "${domain}" {
 
     // Check if zone already exists
     try {
-      const { stdout } = await execAsync(`sudo grep -q 'zone "${domain}"' ${this.namedConfPath} && echo exists || echo new`);
-      if (stdout.trim() === 'exists') {
+      const content = await fs.readFile(this.namedConfPath, 'utf8');
+      if (content.includes(`zone "${domain}"`)) {
         this.logger.log(`Zone ${domain} already in config, skipping`);
         return;
       }
-    } catch (error) {
-      // File might not exist or grep failed, continue
+    } catch (error: any) {
+      // File might not exist, that's okay - we'll create it
+      if (error.code !== 'ENOENT') {
+        this.logger.warn(`Error checking config file: ${error.message}`);
+      }
     }
 
-    await execAsync(`sudo bash -c 'echo "${zoneBlock.replace(/'/g, "'\\''")} " >> ${this.namedConfPath}'`);
+    // Append zone block to config file using Node.js fs
+    try {
+      await fs.appendFile(this.namedConfPath, zoneBlock, 'utf8');
+    } catch (error: any) {
+      // If append fails, try to read and write the whole file
+      let content = '';
+      try {
+        content = await fs.readFile(this.namedConfPath, 'utf8');
+      } catch {
+        // File doesn't exist, start with empty content
+      }
+      await fs.writeFile(this.namedConfPath, content + zoneBlock, 'utf8');
+    }
   }
 
   private async removeZoneFromConfig(domain: string): Promise<void> {
-    // Remove zone block from named.conf.local
-    const sedCmd = `sudo sed -i '/^zone "${domain}"/,/^};/d' ${this.namedConfPath}`;
-    await execAsync(sedCmd);
+    // Remove zone block from named.conf.local using Node.js
+    try {
+      const content = await fs.readFile(this.namedConfPath, 'utf8');
+      // Remove zone block using regex
+      const zoneRegex = new RegExp(`zone\\s+"${domain.replace(/\./g, '\\.')}"\\s+{[^}]*};\\s*`, 'gs');
+      const newContent = content.replace(zoneRegex, '');
+      await fs.writeFile(this.namedConfPath, newContent, 'utf8');
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        this.logger.error(`Failed to remove zone from config: ${error.message}`);
+        throw error;
+      }
+      // File doesn't exist, nothing to remove
+    }
   }
 
   private async getServiceName(): Promise<string> {
