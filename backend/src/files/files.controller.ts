@@ -7,7 +7,7 @@ import path from 'path';
 
 @Controller('files')
 export class FilesController {
-  constructor(private readonly files: FilesService) {}
+  constructor(private readonly files: FilesService) { }
 
   private ensureAuth(req: Request, res: Response) {
     if (!(req.session as any)?.isAuthenticated) {
@@ -21,7 +21,8 @@ export class FilesController {
   async list(@Query('path') path: string, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
-      const data = await this.files.list(path || '');
+      const username = (req.session as any).username;
+      const data = await this.files.list(username, path || '');
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -32,7 +33,8 @@ export class FilesController {
   async mkdir(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
-      const data = await this.files.mkdir(body.path || '', body.name);
+      const username = (req.session as any).username;
+      const data = await this.files.mkdir(username, body.path || '', body.name);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -54,7 +56,8 @@ export class FilesController {
     const results: Array<{ name: string; ok: boolean; error?: string }> = [];
     for (const f of files) {
       try {
-        await this.files.writeFile(dest, f.originalname, f.buffer, false);
+        const username = (req.session as any).username;
+        await this.files.writeFile(username, dest, f.originalname, f.buffer, false);
         results.push({ name: f.originalname, ok: true });
       } catch (e: any) {
         results.push({ name: f.originalname, ok: false, error: e.message });
@@ -68,7 +71,8 @@ export class FilesController {
     if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
-      const info = await this.files.getFileInfo(p);
+      const username = (req.session as any).username;
+      const info = await this.files.getFileInfo(username, p);
       if (info.stat.isDirectory()) {
         return res.status(400).json({ success: false, error: 'Cannot download a directory' });
       }
@@ -89,8 +93,9 @@ export class FilesController {
     try {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
-      const zip = this.files.createArchiveStream(paths);
-  zip.on('error', (err: any) => {
+      const username = (req.session as any).username;
+      const zip = this.files.createArchiveStream(username, paths);
+      zip.on('error', (err: any) => {
         if (!res.headersSent) res.status(500);
         res.end(`Archive error: ${err.message}`);
       });
@@ -111,7 +116,8 @@ export class FilesController {
     const results: Array<{ path: string; ok: boolean; error?: string }> = [];
     for (const p of targets) {
       try {
-        const r = await this.files.remove(p);
+        const username = (req.session as any).username;
+        const r = await this.files.remove(username, p);
         results.push({ path: p, ok: true });
       } catch (e: any) {
         results.push({ path: p, ok: false, error: e.message });
@@ -127,7 +133,8 @@ export class FilesController {
       return res.status(400).json({ success: false, error: 'path and newName required' });
     }
     try {
-      const data = await this.files.rename(body.path, body.newName);
+      const username = (req.session as any).username;
+      const data = await this.files.rename(username, body.path, body.newName);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -143,7 +150,143 @@ export class FilesController {
       return res.status(400).json({ success: false, error: 'paths[] and dest required' });
     }
     try {
-      const data = await this.files.move(targets, dest);
+      const username = (req.session as any).username;
+      const data = await this.files.move(username, targets, dest);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('copy')
+  async copy(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    const sources: string[] = body.sources || [];
+    const destination: string = body.destination;
+    if (!Array.isArray(sources) || sources.length === 0 || !destination) {
+      return res.status(400).json({ success: false, error: 'sources[] and destination required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.copy(username, sources, destination);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('chmod')
+  async chmod(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.path || !body.mode) {
+      return res.status(400).json({ success: false, error: 'path and mode required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.chmod(username, body.path, body.mode);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('read')
+  async read(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!p) return res.status(400).json({ success: false, error: 'path required' });
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.readFile(username, p);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('raw')
+  async raw(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!p) return res.status(400).json({ success: false, error: 'path required' });
+    try {
+      const username = (req.session as any).username;
+      const fullPath = this.files.getAbsolutePath(p, username);
+      return res.sendFile(fullPath);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('disk-usage')
+  async getDiskUsage(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    const username = (req.session as any).username;
+    const usage = await this.files.getDiskUsage(username);
+    return res.json({ success: true, ...usage });
+  }
+
+  @Post('write')
+  async write(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.path || body.content === undefined) {
+      return res.status(400).json({ success: false, error: 'path and content required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.writeFileContent(username, body.path, body.content);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('create')
+  async create(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.path) {
+      return res.status(400).json({ success: false, error: 'path required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.createFile(username, body.path, body.content || '');
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('info')
+  async info(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!p) return res.status(400).json({ success: false, error: 'path required' });
+    try {
+      const username = (req.session as any).username;
+      const info = await this.files.getFileInfo(username, p);
+      const stat = info.stat;
+      return res.json({
+        success: true,
+        name: path.basename(p),
+        path: p,
+        type: stat.isDirectory() ? 'directory' : 'file',
+        size: stat.size,
+        modified: stat.mtime,
+        permissions: stat.mode.toString(8).slice(-3),
+        owner: stat.uid,
+        group: stat.gid,
+      });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('extract')
+  async extract(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.archive || !body.destination) {
+      return res.status(400).json({ success: false, error: 'archive and destination required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.extract(username, body.archive, body.destination);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });

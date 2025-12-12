@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put, Delete, Param } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Delete, Param, Req } from '@nestjs/common';
 import { DomainsService } from './domains.service';
 import { DnsService } from '../dns/dns.service';
 import { WebServerService } from '../webserver/webserver.service';
@@ -13,11 +13,17 @@ export class DomainsController {
     private readonly webServerService: WebServerService,
     private readonly dnsServerService: DnsServerService,
     private readonly serverSettingsService: ServerSettingsService,
-  ) {}
+  ) { }
 
   @Post()
-  async addDomain(@Body() body: { name: string; folderPath?: string; nameservers?: string[] }) {
-    const { domain, logs } = await this.domainsService.addDomain(body.name, body.folderPath, body.nameservers);
+  async addDomain(@Body() body: { name: string; folderPath?: string; nameservers?: string[] }, @Req() req: any) {
+    const username = req.session.username;
+    const { domain, logs, mailDomain, mailAutomationLogs } = await this.domainsService.addDomain(
+      username,
+      body.name,
+      body.folderPath,
+      body.nameservers,
+    );
     // Return combined info with DNS zone for convenience
     const zone = await this.dnsService.getZone(body.name);
     const serverIp = await this.serverSettingsService.getServerIp();
@@ -26,7 +32,15 @@ export class DomainsController {
       domain.name,
       domain.nameservers,
     );
-    return { domain, dnsZone: zone, dnsInstructions, nameserverInfo, automationLogs: logs };
+    return {
+      domain,
+      dnsZone: zone,
+      dnsInstructions,
+      nameserverInfo,
+      automationLogs: logs,
+      mailDomain,
+      mailAutomationLogs,
+    };
   }
 
   @Get()
@@ -62,6 +76,7 @@ export class DomainsController {
       message: 'Domain deleted successfully',
       domain: result.domain,
       automationLogs: result.logs,
+      mailAutomationLogs: result.mailAutomationLogs,
     };
   }
 }

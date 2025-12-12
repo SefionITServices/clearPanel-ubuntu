@@ -13,13 +13,17 @@ import {
   Link,
   Divider,
   IconButton,
+  Radio,
+  RadioGroup,
+  FormControl,
+  FormLabel,
 } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
-// Backend defaults to ~/clearpanel-domains/{domain} if no path provided.
+// Backend defaults to ~/public_html/{domain} if no path provided.
 // We dynamically discover the primary domain to offer an accurate shared-path option.
 
 interface DomainInfo {
@@ -31,6 +35,7 @@ export default function DomainCreatePage() {
   const navigate = useNavigate();
   const [domain, setDomain] = useState('');
   const [shareRoot, setShareRoot] = useState(false);
+  const [pathMode, setPathMode] = useState<'public_html' | 'root' | 'custom'>('public_html');
   const [customFolderPath, setCustomFolderPath] = useState('');
   const [sharedFolderPath, setSharedFolderPath] = useState('');
   const [subdomain, setSubdomain] = useState('');
@@ -79,7 +84,7 @@ export default function DomainCreatePage() {
   // Keep folderPath in sync when domain changes (if not sharing root)
   useEffect(() => {
     if (!shareRoot) {
-      setCustomFolderPath('');
+      // setCustomFolderPath(''); // Don't clear custom path automatically
     }
     setSubdomain(domain);
   }, [domain, shareRoot]);
@@ -114,8 +119,20 @@ export default function DomainCreatePage() {
           return;
         }
         payload.folderPath = trimmedSharedPath;
-      } else if (trimmedCustomPath) {
-        payload.folderPath = trimmedCustomPath;
+      } else {
+        if (pathMode === 'root') {
+          // Backend default is public_html/{domain}, so we must specify for root
+          // Assuming root is /home/clearpanel
+          payload.folderPath = `/home/clearpanel/${domain}`;
+        } else if (pathMode === 'custom') {
+          if (trimmedCustomPath) {
+            payload.folderPath = trimmedCustomPath;
+          }
+        }
+        // if pathMode === 'public_html', we can leave it undefined to let backend handle it,
+        // OR we can be explicit: /home/clearpanel/public_html/{domain}
+        // Let's rely on backend default for public_html to keep it simple,
+        // unless backend default changes. Backend default IS public_html/{domain}.
       }
 
       const customNameservers = nameservers
@@ -126,14 +143,13 @@ export default function DomainCreatePage() {
       if (customNameservers.length > 0) {
         payload.nameservers = customNameservers;
       }
-      // If folderPath is empty/undefined, backend uses default: ~/clearpanel-domains/{domain}
-      
+
       const response = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Failed to create domain:', response.status, errorText);
@@ -143,12 +159,13 @@ export default function DomainCreatePage() {
 
       const result = await response.json();
       console.log('Domain created:', result);
-      
+
       if (createAnother) {
         setDomain('');
         setCustomFolderPath('');
         setSharedFolderPath('');
         setShareRoot(false);
+        setPathMode('public_html');
         setSubdomain('');
         setNameservers('');
       } else {
@@ -234,39 +251,80 @@ export default function DomainCreatePage() {
                     <Typography variant="subtitle2" fontWeight={600}>Document Root (File System Location)</Typography>
                     <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
                   </Stack>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    {shareRoot
-                      ? primaryDomain?.folderPath
-                        ? `Sharing existing directory at ${primaryDomain.folderPath}.`
-                        : 'Enter the full path of the document root you want to share with another domain.'
-                      : 'Leave empty to use auto-generated path (~/clearpanel-domains/{domain}), or specify a custom directory.'
-                    }
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    value={shareRoot ? sharedFolderPath : customFolderPath}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (shareRoot) {
-                        setSharedFolderPath(value);
-                      } else {
-                        setCustomFolderPath(value);
-                      }
-                    }}
-                    disabled={submitting}
-                    placeholder={
-                      shareRoot
-                        ? primaryDomain?.folderPath || 'Enter existing document root path'
-                        : 'Leave empty for auto-path or enter custom path'
-                    }
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <HomeIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
+
+                  {shareRoot ? (
+                    <>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        {primaryDomain?.folderPath
+                          ? `Sharing existing directory at ${primaryDomain.folderPath}.`
+                          : 'Enter the full path of the document root you want to share with another domain.'}
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        value={sharedFolderPath}
+                        onChange={(e) => setSharedFolderPath(e.target.value)}
+                        disabled={submitting}
+                        placeholder={primaryDomain?.folderPath || 'Enter existing document root path'}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <HomeIcon fontSize="small" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <FormControl component="fieldset">
+                      <RadioGroup
+                        aria-label="path-mode"
+                        name="path-mode"
+                        value={pathMode}
+                        onChange={(e) => setPathMode(e.target.value as any)}
+                      >
+                        <FormControlLabel
+                          value="public_html"
+                          control={<Radio />}
+                          label={
+                            <Typography variant="body2">
+                              Inside public_html <Typography component="span" variant="caption" color="text.secondary">(~/public_html/{domain || 'example.com'})</Typography>
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          value="root"
+                          control={<Radio />}
+                          label={
+                            <Typography variant="body2">
+                              Inside Home Root <Typography component="span" variant="caption" color="text.secondary">(~/{domain || 'example.com'})</Typography>
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          value="custom"
+                          control={<Radio />}
+                          label="Custom Path"
+                        />
+                      </RadioGroup>
+                      {pathMode === 'custom' && (
+                        <TextField
+                          fullWidth
+                          sx={{ mt: 1, ml: 3.5, width: 'calc(100% - 28px)' }}
+                          value={customFolderPath}
+                          onChange={(e) => setCustomFolderPath(e.target.value)}
+                          disabled={submitting}
+                          placeholder="/home/clearpanel/custom/path"
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <HomeIcon fontSize="small" />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      )}
+                    </FormControl>
+                  )}
                 </Box>
 
                 {/* Nameservers */}
