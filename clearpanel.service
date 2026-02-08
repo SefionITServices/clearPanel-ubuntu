@@ -16,13 +16,14 @@ StandardError=journal
 SyslogIdentifier=clearpanel
 
 # Environment
+EnvironmentFile=/opt/clearpanel/backend/.env
 Environment=NODE_ENV=production
 Environment=PORT=3334
 
 # Security
 NoNewPrivileges=true
 PrivateTmp=true
-ReadWritePaths=/opt/clearpanel/data
+ReadWritePaths=/opt/clearpanel /home/clearpanel /etc/bind/zones /etc/nginx
 
 # Performance
 LimitNOFILE=65535
