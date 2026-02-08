@@ -118,7 +118,7 @@ export default function DomainsListView() {
         if (!list.length) {
           return (
             <Typography variant="body2" color="text.secondary">
-              Default (ns1/ns2)
+              VPS Default
             </Typography>
           );
         }

@@ -33,7 +33,7 @@ export default function LoginPage() {
   return (
     <AuthCenteredLayout
       title="Sign in"
-      description="Use admin / admin123 (default)"
+      description="Use your admin credentials from .env"
     >
       <Box component="form" onSubmit={onSubmit}>
         <Stack spacing={1.5}>

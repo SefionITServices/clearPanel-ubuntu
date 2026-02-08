@@ -44,6 +44,8 @@ export default function DomainCreatePage() {
   const [primaryDomain, setPrimaryDomain] = useState<DomainInfo | null>(null);
   const [loadingPrimaryDomain, setLoadingPrimaryDomain] = useState(true);
   const [primaryDomainError, setPrimaryDomainError] = useState<string | null>(null);
+  const [vpsNameservers, setVpsNameservers] = useState<string[]>([]);
+  const [serverIp, setServerIp] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +81,27 @@ export default function DomainCreatePage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Fetch VPS nameservers from server settings
+  useEffect(() => {
+    const loadServerSettings = async () => {
+      try {
+        const res = await fetch('/api/server/nameservers');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.settings?.nameservers?.length) {
+            setVpsNameservers(data.settings.nameservers);
+          }
+          if (data.settings?.serverIp) {
+            setServerIp(data.settings.serverIp);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load server settings:', err);
+      }
+    };
+    loadServerSettings();
   }, []);
 
   // Keep folderPath in sync when domain changes (if not sharing root)
@@ -330,11 +353,21 @@ export default function DomainCreatePage() {
                 {/* Nameservers */}
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
-                    <Typography variant="subtitle2" fontWeight={600}>Nameservers (Optional)</Typography>
+                    <Typography variant="subtitle2" fontWeight={600}>Nameservers</Typography>
                     <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
                   </Stack>
+                  {vpsNameservers.length > 0 ? (
+                    <Typography variant="caption" color="success.main" sx={{ display: 'block', mb: 1, fontWeight: 500 }}>
+                      ✅ Your VPS nameservers are configured: {vpsNameservers.join(', ')}
+                      {serverIp ? ` (IP: ${serverIp})` : ''}. All new domains will automatically use these nameservers and be configured for internet accessibility.
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" color="warning.main" sx={{ display: 'block', mb: 1, fontWeight: 500 }}>
+                      ⚠️ No VPS nameservers configured. Go to Settings → Nameservers to set up your VPS nameservers for proper internet accessibility.
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    Provide custom nameservers if you want to use branded hostnames. Enter one per line or separate with commas. Leave blank to use the default ns1/ns2.{domain ? ` (Default: ns1.${domain}, ns2.${domain})` : ''}
+                    Override with custom nameservers only if needed. Leave blank to use your VPS nameservers{vpsNameservers.length > 0 ? ` (${vpsNameservers.join(', ')})` : ''}.
                   </Typography>
                   <TextField
                     fullWidth
@@ -343,7 +376,7 @@ export default function DomainCreatePage() {
                     value={nameservers}
                     onChange={(e) => setNameservers(e.target.value)}
                     disabled={submitting}
-                    placeholder={`ns1.${domain || 'example.com'}\nns2.${domain || 'example.com'}`}
+                    placeholder={vpsNameservers.length > 0 ? vpsNameservers.join('\n') : `ns1.${domain || 'example.com'}\nns2.${domain || 'example.com'}`}
                   />
                 </Box>
 

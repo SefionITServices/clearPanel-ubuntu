@@ -45,6 +45,8 @@ export class DnsService {
     let zone = zones.find(z => z.domain === domain);
 
     const serverIp = options?.serverIp || process.env.SERVER_IP || '127.0.0.1';
+    // Use provided nameservers; fall back to ns1/ns2.{domain} only if nothing supplied.
+    // The caller (DomainsService) should always provide the resolved nameservers from server-settings.
     const nameservers = (options?.nameservers?.length ? options.nameservers : [`ns1.${domain}`, `ns2.${domain}`])
       .map(ns => (ns.endsWith('.') ? ns.slice(0, -1) : ns));
     const nameserverFqdns = nameservers.map(ns => (ns.endsWith('.') ? ns : `${ns}.`));

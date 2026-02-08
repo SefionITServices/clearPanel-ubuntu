@@ -119,6 +119,8 @@ export class DnsServerService {
     }
 
     const ip = serverIp || this.configService.get<string>('SERVER_IP') || '0.0.0.0';
+    // Use provided nameservers from the caller (DomainsService resolves from server-settings).
+    // The ns1/ns2.{domain} fallback should rarely be used if VPS nameservers are configured.
     const nsList = Array.from(
       new Set(
         (nameservers && nameservers.length ? nameservers : [`ns1.${domain}`, `ns2.${domain}`])

@@ -12,7 +12,6 @@ import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
 
 const DOMAINS_FILE = path.join(process.cwd(), 'domains.json');
-const DOMAINS_ROOT = process.env.DOMAINS_ROOT || path.join(os.homedir(), 'clearpanel-domains');
 
 export interface AutomationLog {
   task: string;
@@ -61,47 +60,43 @@ export class DomainsService {
     const domains = await this.readDomains();
     const logs: AutomationLog[] = [];
 
-    // Determine folder path based on domain type
-    const rootPath = path.join('/home/clearpanel', username);
     const serverSettings = await this.serverSettingsService.getSettings();
+    const userRoot = this.resolveUserRootPath(username);
+    const domainsRoot = this.resolveDomainsRoot();
     const isPrimaryDomain = serverSettings.primaryDomain?.toLowerCase() === name.toLowerCase();
 
     let finalPath: string;
+    let pathMessage: string;
 
     if (folderPath) {
       // User specified custom path
       finalPath = folderPath;
-      logs.push({
-        task: 'Determine folder path',
-        success: true,
-        message: `Using custom path: ${finalPath}`,
-      });
+      pathMessage = `Using custom path: ${finalPath}`;
     } else if (isPrimaryDomain) {
       // Primary domain uses public_html directly
-      finalPath = path.join(rootPath, 'public_html');
-      logs.push({
-        task: 'Determine folder path',
-        success: true,
-        message: `Primary domain - using main public_html directory`,
-      });
+      finalPath = path.join(userRoot.path, 'public_html');
+      pathMessage = userRoot.source === 'env'
+        ? `Primary domain - using ROOT_PATH from environment (${userRoot.base})`
+        : 'Primary domain - using main public_html directory';
     } else {
-      // Addon domain defaults to public_html/domain.com
-      finalPath = path.join(rootPath, 'public_html', name);
-      logs.push({
-        task: 'Determine folder path',
-        success: true,
-        message: `Addon domain - creating folder: public_html/${name}`,
-      });
+      if (domainsRoot.source === 'env') {
+        finalPath = path.join(domainsRoot.path, name);
+        pathMessage = `Addon domain - using DOMAINS_ROOT (${domainsRoot.path})`;
+      } else {
+        // Addon domain defaults to public_html/domain.com
+        finalPath = path.join(userRoot.path, 'public_html', name);
+        pathMessage = `Addon domain - creating folder: public_html/${name}`;
+      }
     }
 
-    const nameservers = Array.from(
-      new Set(
-        (customNameservers || [])
-          .map((ns) => ns.trim())
-          .filter((ns) => ns.length > 0)
-          .map((ns) => (ns.endsWith('.') ? ns.slice(0, -1) : ns))
-      )
-    );
+    logs.push({
+      task: 'Determine folder path',
+      success: true,
+      message: pathMessage,
+    });
+
+    const nameserverSelection = this.resolveNameservers(customNameservers, serverSettings.nameservers, name);
+    const nameservers = nameserverSelection.values;
 
     const serverIp = await this.serverSettingsService.getServerIp();
 
@@ -110,17 +105,36 @@ export class DomainsService {
       name,
       folderPath: finalPath,
       createdAt: new Date(),
-      nameservers: nameservers.length ? nameservers : undefined,
+      nameservers,
     };
+
+    const nameserverMessage = (() => {
+      switch (nameserverSelection.source) {
+        case 'custom':
+          return `Using custom nameservers: ${nameservers.join(', ')}`;
+        case 'global':
+          return `Using global nameservers from server settings: ${nameservers.join(', ')}`;
+        default:
+          return `Using fallback nameservers: ${nameservers.join(', ')}`;
+      }
+    })();
 
     logs.push({
       task: 'Configure nameservers',
       success: true,
-      message: nameservers.length
-        ? `Using custom nameservers: ${nameservers.join(', ')}`
-        : 'Using default nameservers ns1/ns2',
+      message: nameserverMessage,
     });
 
+    // Log internet accessibility summary
+    logs.push({
+      task: 'Internet accessibility',
+      success: true,
+      message: `Domain ${name} will be configured with A record → ${serverIp}, Nginx vhost, and DNS zone. ` +
+        `Nameservers: ${nameservers.join(', ')}`,
+      detail: nameserverSelection.source === 'fallback'
+        ? 'Warning: Using domain-based fallback nameservers. Configure VPS nameservers in Settings for proper DNS resolution.'
+        : undefined,
+    });
 
     // Create folder with cPanel-like structure
     try {
@@ -415,5 +429,72 @@ export class DomainsService {
     });
 
     return { domain, logs, mailAutomationLogs };
+  }
+
+  private resolveUserRootPath(username: string): { path: string; base: string; source: 'env' | 'default' } {
+    const safeUsername = (username ?? '').trim() || 'default';
+    const envRoot = process.env.ROOT_PATH?.trim();
+    if (envRoot && envRoot.length > 0) {
+      const normalized = path.resolve(envRoot);
+      return {
+        path: path.join(normalized, safeUsername),
+        base: normalized,
+        source: 'env',
+      };
+    }
+    const defaultBase = '/home/clearpanel';
+    return {
+      path: path.join(defaultBase, safeUsername),
+      base: defaultBase,
+      source: 'default',
+    };
+  }
+
+  private resolveDomainsRoot(): { path: string; source: 'env' | 'default' } {
+    const envRoot = process.env.DOMAINS_ROOT?.trim();
+    if (envRoot && envRoot.length > 0) {
+      return {
+        path: path.resolve(envRoot),
+        source: 'env',
+      };
+    }
+    return {
+      path: path.join(os.homedir(), 'clearpanel-domains'),
+      source: 'default',
+    };
+  }
+
+  private resolveNameservers(
+    customNameservers: string[] | undefined,
+    globalNameservers: string[] | undefined,
+    domain: string,
+  ): { values: string[]; source: 'custom' | 'global' | 'fallback' } {
+    const custom = this.normalizeNameservers(customNameservers ?? []);
+    if (custom.length > 0) {
+      return { values: custom, source: 'custom' };
+    }
+
+    const global = this.normalizeNameservers(globalNameservers ?? []);
+    if (global.length > 0) {
+      return { values: global, source: 'global' };
+    }
+
+    // Fallback: use ns1/ns2.{domain} only as a last resort.
+    // This should rarely happen if VPS nameservers are configured in server-settings.
+    console.warn(
+      `[DomainsService] No global nameservers configured in server settings. ` +
+      `Falling back to ns1.${domain} / ns2.${domain}. ` +
+      `Configure your VPS nameservers via Settings → Nameservers for proper internet accessibility.`,
+    );
+    const fallback = this.normalizeNameservers([`ns1.${domain}`, `ns2.${domain}`]);
+    return { values: fallback, source: 'fallback' };
+  }
+
+  private normalizeNameservers(values: string[]): string[] {
+    const normalized = values
+      .map((ns) => ns.trim().toLowerCase())
+      .filter((ns) => ns.length > 0)
+      .map((ns) => (ns.endsWith('.') ? ns.slice(0, -1) : ns));
+    return Array.from(new Set(normalized));
   }
 }

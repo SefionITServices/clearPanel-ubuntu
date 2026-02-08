@@ -11,7 +11,7 @@ export default defineConfig({
         strictPort: true, // enforce port 4000 so docs & scripts stay consistent
         proxy: {
             '/api': {
-                target: 'http://localhost:3334',
+                target: 'http://127.0.0.1:3000',
                 changeOrigin: true,
                 secure: false,
                 // ensure cookies from backend pass through proxy

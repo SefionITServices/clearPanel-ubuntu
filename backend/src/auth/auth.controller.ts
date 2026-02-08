@@ -9,6 +9,13 @@ export class AuthController {
   @Post('login')
   login(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     const { username, password } = body;
+    if (!username || !password) {
+      console.log('[Auth] Login missing credentials');
+      return res
+        .status(HttpStatus.BAD_REQUEST)
+        .json({ success: false, error: 'Username and password are required' });
+    }
+
     console.log('[Auth] Login attempt:', { username, passwordLength: password?.length });
     const ok = this.authService.validate(username, password);
     if (ok) {

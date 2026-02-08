@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { FilesModule } from './files/files.module';
 import { FallbackMiddleware } from './fallback.middleware';
@@ -14,6 +15,12 @@ import { ServerModule } from './server/server.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60,
+        limit: 10,
+      },
+    ]),
     AuthModule,
     FilesModule,
     TerminalModule,

@@ -45,5 +45,38 @@
         "ttl": 3600
       }
     ]
+  },
+  {
+    "domain": "clearvice.com",
+    "records": [
+      {
+        "id": "e9bb86dc-0d7a-4351-8251-72088be72cc4",
+        "type": "A",
+        "name": "@",
+        "value": "204.83.99.245",
+        "ttl": 3600
+      },
+      {
+        "id": "a48c0fed-bee6-4107-84f2-572019f5f851",
+        "type": "CNAME",
+        "name": "www",
+        "value": "clearvice.com",
+        "ttl": 3600
+      },
+      {
+        "id": "1c4cb206-5d0a-433b-86e2-43724e4073dd",
+        "type": "NS",
+        "name": "@",
+        "value": "ns1.mainserver.in.",
+        "ttl": 3600
+      },
+      {
+        "id": "c99a9cd9-e907-4c6f-9574-0991cd2fa1f4",
+        "type": "NS",
+        "name": "@",
+        "value": "ns2.mainserver.in.",
+        "ttl": 3600
+      }
+    ]
   }
 ]
