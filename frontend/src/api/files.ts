@@ -131,4 +131,29 @@ export const filesAPI = {
     }
     return res.blob();
   },
+
+  async read(path: string): Promise<ApiResponse & { content: string }> {
+    const url = `${API_BASE}/read?path=${encodeURIComponent(path)}`;
+    return fetchJSON<ApiResponse & { content: string }>(url);
+  },
+
+  getRawUrl(path: string): string {
+    return `${API_BASE}/raw?path=${encodeURIComponent(path)}`;
+  },
+
+  async copy(sources: string[], destination: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sources, destination }),
+    });
+  },
+
+  async write(path: string, content: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/write`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    });
+  },
 };

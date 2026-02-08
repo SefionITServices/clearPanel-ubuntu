@@ -20,7 +20,7 @@ export class MailController {
   constructor(
     private readonly mailService: MailService,
     private readonly mailStatusService: MailStatusService,
-  ) {}
+  ) { }
 
   @SkipThrottle()
   @Get('status')
@@ -34,7 +34,7 @@ export class MailController {
     return this.mailService.listDomains();
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('domains')
   async createDomain(
     @Body()
@@ -72,13 +72,13 @@ export class MailController {
     return this.mailService.createDomain(body.domain, hasOptions ? options : undefined);
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Delete('domains/:id')
   deleteDomain(@Param('id') id: string) {
     return this.mailService.deleteDomain(id);
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Patch('domains/:id/settings')
   updateDomainSettings(
     @Param('id') id: string,
@@ -120,7 +120,7 @@ export class MailController {
     return this.mailService.updateDomainSettings(id, updates);
   }
 
-  @Throttle(5, 60)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('domains/:id/mailboxes')
   addMailbox(
     @Param('id') id: string,
@@ -140,7 +140,7 @@ export class MailController {
     });
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Patch('domains/:id/mailboxes/:mailboxId')
   updateMailbox(
     @Param('id') id: string,
@@ -160,13 +160,13 @@ export class MailController {
     });
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Delete('domains/:id/mailboxes/:mailboxId')
   removeMailbox(@Param('id') id: string, @Param('mailboxId') mailboxId: string) {
     return this.mailService.removeMailbox(id, mailboxId);
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('domains/:id/aliases')
   addAlias(@Param('id') id: string, @Body() body: { source: string; destination: string }) {
     if (!body.source || !body.destination) {
@@ -175,13 +175,13 @@ export class MailController {
     return this.mailService.addAlias(id, body.source, body.destination);
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Delete('domains/:id/aliases/:aliasId')
   removeAlias(@Param('id') id: string, @Param('aliasId') aliasId: string) {
     return this.mailService.removeAlias(id, aliasId);
   }
 
-  @Throttle(10, 60)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Patch('domains/:id/aliases/:aliasId')
   updateAlias(
     @Param('id') id: string,
@@ -215,7 +215,7 @@ export class MailController {
     return this.mailService.getDomainLogs(id, parsedLimit);
   }
 
-  @Throttle(5, 60)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('domains/:id/dkim/rotate')
   rotateDkim(@Param('id') id: string, @Body() body: { selector?: string }) {
     return this.mailService.rotateDkim(id, body?.selector);
