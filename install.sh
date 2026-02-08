@@ -45,18 +45,13 @@ else
     exit 1
 fi
 
-# Install Node.js 20+ if not present
+# Verify Node.js 20+ is available
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
 if [ "$NODE_VERSION" -lt 20 ]; then
-    echo -e "${YELLOW}📦 Installing Node.js 20 LTS...${NC}"
-    if [ "$PKG_MANAGER" = "apt-get" ]; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y nodejs
-    else
-        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-        dnf install -y nodejs
-    fi
+    echo -e "${RED}Node.js 20+ is required but not detected after installation. Please check NodeSource setup.${NC}"
+    exit 1
 fi
+echo -e "${GREEN}✓ Node.js $(node -v) detected${NC}"
 
 # Create service user
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -90,13 +85,21 @@ if [ "$PWD" != "$INSTALL_DIR" ]; then
     cp -r frontend "$INSTALL_DIR/"
     cp clearpanel.service "$INSTALL_DIR/"
     cp nginx.conf.example "$INSTALL_DIR/"
+    # Copy scripts and helper files
+    [ -d scripts ] && cp -r scripts "$INSTALL_DIR/"
+    [ -d docs ] && cp -r docs "$INSTALL_DIR/"
+    [ -f setup-ssl.sh ] && cp setup-ssl.sh "$INSTALL_DIR/"
+    [ -f deploy.sh ] && cp deploy.sh "$INSTALL_DIR/"
+    [ -f package.json ] && cp package.json "$INSTALL_DIR/"
+    [ -f setup-status.json ] && cp setup-status.json "$INSTALL_DIR/"
+    [ -f install-bind9.sh ] && cp install-bind9.sh "$INSTALL_DIR/"
+    [ -f fix-bind9-permissions.sh ] && cp fix-bind9-permissions.sh "$INSTALL_DIR/"
 fi
 
 # Cleanup temp source if we created it
-if [ -d "/tmp/clearpanel_source" ] && [ "$PWD" == "/tmp/clearpanel_source" ]; then
-    rm -rf /tmp/clearpanel_source
-    # Reset PWD so we don't cause issues
+if [ -d "/tmp/clearpanel_source" ]; then
     cd /root
+    rm -rf /tmp/clearpanel_source
 fi
 
 # Set ownership
@@ -117,6 +120,12 @@ cd "$INSTALL_DIR/frontend"
 sudo -u "$SERVICE_USER" npm install
 sudo -u "$SERVICE_USER" npm run build
 
+# Copy frontend build output into backend public directory
+echo -e "${YELLOW}📋 Copying frontend assets to backend...${NC}"
+mkdir -p "$INSTALL_DIR/backend/public"
+cp -r "$INSTALL_DIR/frontend/dist/"* "$INSTALL_DIR/backend/public/"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/backend/public"
+
 # Create environment file
 echo -e "${YELLOW}📝 Creating environment configuration...${NC}"
 mkdir -p "$INSTALL_DIR/backend"
@@ -131,6 +140,9 @@ SESSION_SECRET=$(openssl rand -hex 32)
 # Admin Credentials (CHANGE THESE!)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
+
+# Server IP (auto-detected, change if incorrect)
+SERVER_IP=$(hostname -I | awk '{print $1}')
 
 # File Manager Settings
 ROOT_PATH=/opt/clearpanel/data
@@ -201,13 +213,17 @@ clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart named
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-bind9
 
-# Enable and start BIND9
-systemctl enable bind9
-systemctl start bind9
+# Enable and start BIND9 (handle alias: bind9 vs named)
+BIND_SVC="named"
+if systemctl list-unit-files bind9.service &>/dev/null && ! systemctl is-enabled bind9 2>&1 | grep -q "alias"; then
+    BIND_SVC="bind9"
+fi
+systemctl enable "$BIND_SVC" 2>/dev/null || true
+systemctl start "$BIND_SVC" 2>/dev/null || true
 
 # Verify BIND9 is running
-if systemctl is-active --quiet bind9; then
-    echo -e "${GREEN}✓ BIND9 DNS server is running${NC}"
+if systemctl is-active --quiet "$BIND_SVC"; then
+    echo -e "${GREEN}✓ BIND9 DNS server is running ($BIND_SVC)${NC}"
 else
     echo -e "${YELLOW}⚠ BIND9 service may need manual configuration${NC}"
 fi
@@ -232,10 +248,9 @@ if systemctl is-active --quiet clearpanel; then
     echo "   - ADMIN_PASSWORD"
     echo "   - SESSION_SECRET (already generated)"
     echo ""
-    echo "2. Edit nginx config:"
+    echo "2. (Optional) Edit nginx config to add your domain:"
     echo "   /etc/nginx/sites-available/clearpanel (Debian/Ubuntu)"
-    echo "   /etc/nginx/conf.d/clearpanel.conf (CentOS/RHEL)"
-    echo "   Replace 'your-domain.com' with your actual domain"
+    echo "   Replace server_name _; with your actual domain"
     echo ""
     echo "3. Restart services:"
     echo "   sudo systemctl restart clearpanel"
