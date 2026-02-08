@@ -120,11 +120,7 @@ cd "$INSTALL_DIR/frontend"
 sudo -u "$SERVICE_USER" npm install
 sudo -u "$SERVICE_USER" npm run build
 
-# Copy frontend build output into backend public directory
-echo -e "${YELLOW}📋 Copying frontend assets to backend...${NC}"
-mkdir -p "$INSTALL_DIR/backend/public"
-cp -r "$INSTALL_DIR/frontend/dist/"* "$INSTALL_DIR/backend/public/"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/backend/public"
+# Frontend vite config outputs directly to backend/public, no copy needed
 
 # Create environment file
 echo -e "${YELLOW}📝 Creating environment configuration...${NC}"
