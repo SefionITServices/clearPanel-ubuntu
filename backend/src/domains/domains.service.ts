@@ -56,13 +56,12 @@ export class DomainsService {
     await fs.writeFile(DOMAINS_FILE, JSON.stringify(domains, null, 2));
   }
 
-  async addDomain(username: string, name: string, folderPath?: string, customNameservers?: string[]): Promise<DomainCreationResult> {
+  async addDomain(username: string, name: string, folderPath?: string, customNameservers?: string[], pathMode?: string): Promise<DomainCreationResult> {
     const domains = await this.readDomains();
     const logs: AutomationLog[] = [];
 
     const serverSettings = await this.serverSettingsService.getSettings();
     const userRoot = this.resolveUserRootPath(username);
-    const domainsRoot = this.resolveDomainsRoot();
     const isPrimaryDomain = serverSettings.primaryDomain?.toLowerCase() === name.toLowerCase();
 
     let finalPath: string;
@@ -73,20 +72,17 @@ export class DomainsService {
       finalPath = folderPath;
       pathMessage = `Using custom path: ${finalPath}`;
     } else if (isPrimaryDomain) {
-      // Primary domain uses public_html directly
+      // Primary domain uses public_html directly inside user home
       finalPath = path.join(userRoot.path, 'public_html');
-      pathMessage = userRoot.source === 'env'
-        ? `Primary domain - using ROOT_PATH from environment (${userRoot.base})`
-        : 'Primary domain - using main public_html directory';
+      pathMessage = `Primary domain - document root: ${finalPath}`;
+    } else if (pathMode === 'public_html') {
+      // Place domain folder inside public_html
+      finalPath = path.join(userRoot.path, 'public_html', name);
+      pathMessage = `Addon domain - creating folder: ~/public_html/${name}`;
     } else {
-      if (domainsRoot.source === 'env') {
-        finalPath = path.join(domainsRoot.path, name);
-        pathMessage = `Addon domain - using DOMAINS_ROOT (${domainsRoot.path})`;
-      } else {
-        // Addon domain defaults to public_html/domain.com
-        finalPath = path.join(userRoot.path, 'public_html', name);
-        pathMessage = `Addon domain - creating folder: public_html/${name}`;
-      }
+      // Default: addon domains go directly in user home ~/{domain.com}
+      finalPath = path.join(userRoot.path, name);
+      pathMessage = `Addon domain - creating folder: ~/${name}`;
     }
 
     logs.push({
@@ -450,6 +446,7 @@ export class DomainsService {
     };
   }
 
+  /** @deprecated Domains now go inside user home dir. Kept for reference. */
   private resolveDomainsRoot(): { path: string; source: 'env' | 'default' } {
     const envRoot = process.env.DOMAINS_ROOT?.trim();
     if (envRoot && envRoot.length > 0) {

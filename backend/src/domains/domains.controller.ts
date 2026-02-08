@@ -16,13 +16,14 @@ export class DomainsController {
   ) { }
 
   @Post()
-  async addDomain(@Body() body: { name: string; folderPath?: string; nameservers?: string[] }, @Req() req: any) {
+  async addDomain(@Body() body: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[] }, @Req() req: any) {
     const username = req.session.username;
     const { domain, logs, mailDomain, mailAutomationLogs } = await this.domainsService.addDomain(
       username,
       body.name,
       body.folderPath,
       body.nameservers,
+      body.pathMode,
     );
     // Return combined info with DNS zone for convenience
     const zone = await this.dnsService.getZone(body.name);

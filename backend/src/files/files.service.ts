@@ -9,7 +9,9 @@ import tar from 'tar';
 @Injectable()
 export class FilesService {
   private getRootPath(username: string) {
-    const p = path.join('/home/clearpanel', username);
+    const envRoot = process.env.ROOT_PATH?.trim();
+    const base = envRoot && envRoot.length > 0 ? path.resolve(envRoot) : '/home/clearpanel';
+    const p = path.join(base, username);
     if (!fsSync.existsSync(p)) {
       try {
         fsSync.mkdirSync(p, { recursive: true });

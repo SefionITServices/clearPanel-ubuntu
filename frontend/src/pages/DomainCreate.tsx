@@ -132,7 +132,7 @@ export default function DomainCreatePage() {
     setSubmitting(true);
     try {
       // Only send folderPath if shareRoot is true or user explicitly set a custom path
-      const payload: { name: string; folderPath?: string; nameservers?: string[] } = { name: domain };
+      const payload: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[] } = { name: domain };
       const trimmedSharedPath = sharedFolderPath.trim();
       const trimmedCustomPath = customFolderPath.trim();
 
@@ -143,19 +143,15 @@ export default function DomainCreatePage() {
         }
         payload.folderPath = trimmedSharedPath;
       } else {
-        if (pathMode === 'root') {
-          // Backend default is public_html/{domain}, so we must specify for root
-          // Assuming root is /home/clearpanel
-          payload.folderPath = `/home/clearpanel/${domain}`;
-        } else if (pathMode === 'custom') {
+        if (pathMode === 'custom') {
           if (trimmedCustomPath) {
             payload.folderPath = trimmedCustomPath;
           }
+        } else {
+          // Send pathMode so backend knows where to place the domain folder
+          // 'root' = ~/{domain}, 'public_html' = ~/public_html/{domain}
+          payload.pathMode = pathMode;
         }
-        // if pathMode === 'public_html', we can leave it undefined to let backend handle it,
-        // OR we can be explicit: /home/clearpanel/public_html/{domain}
-        // Let's rely on backend default for public_html to keep it simple,
-        // unless backend default changes. Backend default IS public_html/{domain}.
       }
 
       const customNameservers = nameservers
@@ -336,7 +332,7 @@ export default function DomainCreatePage() {
                           value={customFolderPath}
                           onChange={(e) => setCustomFolderPath(e.target.value)}
                           disabled={submitting}
-                          placeholder="/home/clearpanel/custom/path"
+                          placeholder="/custom/path/to/document-root"
                           InputProps={{
                             startAdornment: (
                               <InputAdornment position="start">

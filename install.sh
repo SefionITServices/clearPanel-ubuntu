@@ -76,7 +76,50 @@ fi
 echo -e "${YELLOW}📁 Creating installation directory...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data"
-mkdir -p "$INSTALL_DIR/data/domains"
+
+# Create cPanel-like user home directory for default admin user
+ADMIN_USER="admin"
+USER_HOME="$INSTALL_DIR/data/$ADMIN_USER"
+echo -e "${YELLOW}🏠 Creating user home directory: $USER_HOME${NC}"
+mkdir -p "$USER_HOME/public_html"
+mkdir -p "$USER_HOME/mail"
+mkdir -p "$USER_HOME/logs"
+mkdir -p "$USER_HOME/tmp"
+mkdir -p "$USER_HOME/etc"
+mkdir -p "$USER_HOME/ssl/certs"
+mkdir -p "$USER_HOME/ssl/keys"
+mkdir -p "$USER_HOME/ssl/csrs"
+mkdir -p "$USER_HOME/cgi-bin"
+mkdir -p "$USER_HOME/.ssh"
+mkdir -p "$USER_HOME/.trash"
+chmod 700 "$USER_HOME/.ssh"
+
+# Create default index.html in public_html
+if [ ! -f "$USER_HOME/public_html/index.html" ]; then
+    cat > "$USER_HOME/public_html/index.html" << 'INDEXEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to clearPanel</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 100px auto; text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        h1 { color: #2c3e50; } p { color: #7f8c8d; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 clearPanel is Ready!</h1>
+        <p>Your server is configured. Add a domain to get started.</p>
+    </div>
+</body>
+</html>
+INDEXEOF
+fi
+
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 
 # Copy application files
 if [ "$PWD" != "$INSTALL_DIR" ]; then
@@ -142,7 +185,6 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 
 # File Manager Settings
 ROOT_PATH=/opt/clearpanel/data
-DOMAINS_ROOT=/opt/clearpanel/data/domains
 ALLOWED_EXTENSIONS=*
 MAX_FILE_SIZE=104857600
 EOF
