@@ -8,10 +8,10 @@ export interface SetupConfig {
   // Optional fields
   sessionSecret?: string;  // Auto-generated if not provided
   nameservers?: string[];
+  hostname?: string;        // VPS hostname
   
   // Paths
   rootPath?: string;       // Default: /opt/clearpanel/data
-  domainsRoot?: string;    // Default: ~/clearpanel-domains
   
   // Advanced settings
   port?: number;           // Default: 3334
@@ -23,6 +23,8 @@ export interface SetupStatus {
   completedAt?: string;
   version?: string;
   migrated?: boolean;
+  adminUsername?: string;
+  primaryDomain?: string;
 }
 
 export interface SetupValidationResult {
@@ -34,4 +36,10 @@ export interface SetupCompleteResponse {
   success: boolean;
   message: string;
   errors?: string[];
+  details?: {
+    userHome?: string;
+    primaryDomainConfigured?: boolean;
+    nameserversConfigured?: string[];
+    loginUrl?: string;
+  };
 }

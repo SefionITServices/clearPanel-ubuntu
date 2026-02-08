@@ -19,9 +19,6 @@ export class SetupService {
 
     constructor(private readonly serverSettingsService: ServerSettingsService) { }
 
-    /**
-     * Check if setup has been completed
-     */
     async isSetupCompleted(): Promise<boolean> {
         try {
             const status = await this.getSetupStatus();
@@ -31,42 +28,25 @@ export class SetupService {
         }
     }
 
-    /**
-     * Get current setup status
-     */
     async getSetupStatus(): Promise<SetupStatus> {
         try {
             const data = await fs.readFile(this.setupStatusPath, 'utf-8');
             return JSON.parse(data);
         } catch {
-            return {
-                completed: false,
-            };
+            return { completed: false };
         }
     }
 
-    /**
-     * Complete setup with provided configuration
-     */
     async completeSetup(config: SetupConfig): Promise<SetupCompleteResponse> {
         try {
-            // Check if setup is already completed
             const isCompleted = await this.isSetupCompleted();
             if (isCompleted) {
-                return {
-                    success: false,
-                    message: 'Setup has already been completed',
-                };
+                return { success: false, message: 'Setup has already been completed' };
             }
 
-            // Validate configuration
             const validation = this.validateConfig(config);
             if (!validation.valid) {
-                return {
-                    success: false,
-                    message: 'Invalid configuration',
-                    errors: validation.errors,
-                };
+                return { success: false, message: 'Invalid configuration', errors: validation.errors };
             }
 
             // Generate session secret if not provided
@@ -74,73 +54,78 @@ export class SetupService {
                 config.sessionSecret = randomBytes(32).toString('hex');
             }
 
-            // Set default values
+            // Set defaults
             config.rootPath = config.rootPath || '/opt/clearpanel/data';
-            config.domainsRoot = config.domainsRoot || path.join(os.homedir(), 'clearpanel-domains');
             config.port = config.port || 3334;
-            config.maxFileSize = config.maxFileSize || 104857600; // 100MB
+            config.maxFileSize = config.maxFileSize || 104857600;
 
-            // Create necessary directories
-            await this.createDirectories(config);
+            // 1. Create user home directory with cPanel-like structure
+            const userHome = path.join(config.rootPath, config.adminUsername);
+            await this.createUserHome(userHome);
 
-            // Generate .env file
+            // 2. Generate .env file
             await this.generateEnvFile(config);
 
-            // Update server settings
+            // 3. Update server settings (IP, nameservers, primary domain)
             await this.updateServerSettings(config);
 
-            // Mark setup as completed
-            await this.markSetupCompleted();
+            // 4. If primary domain provided, create default index.html
+            let primaryDomainConfigured = false;
+            if (config.primaryDomain) {
+                const publicHtml = path.join(userHome, 'public_html');
+                await this.createDefaultIndexHtml(publicHtml, config.primaryDomain);
+                primaryDomainConfigured = true;
+            }
+
+            // 5. Mark setup as completed
+            await this.markSetupCompleted(config.adminUsername, config.primaryDomain);
 
             this.logger.log('Setup completed successfully');
 
             return {
                 success: true,
-                message: 'Setup completed successfully',
+                message: 'Setup completed successfully. The server needs to restart to apply changes.',
+                details: {
+                    userHome,
+                    primaryDomainConfigured,
+                    nameserversConfigured: config.nameservers || [],
+                    loginUrl: config.primaryDomain
+                        ? `http://${config.primaryDomain}`
+                        : `http://${config.serverIp}`,
+                },
             };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this.logger.error(`Setup failed: ${message}`, error);
-            return {
-                success: false,
-                message: `Setup failed: ${message}`,
-            };
+            return { success: false, message: `Setup failed: ${message}` };
         }
     }
 
-    /**
-     * Validate configuration
-     */
     validateConfig(config: SetupConfig): SetupValidationResult {
         const errors: string[] = [];
 
-        // Validate admin username
         if (!config.adminUsername) {
             errors.push('Admin username is required');
         } else if (!/^[a-zA-Z0-9_]{3,20}$/.test(config.adminUsername)) {
-            errors.push('Admin username must be 3-20 characters (alphanumeric and underscore only)');
+            errors.push('Username must be 3-20 characters (alphanumeric and underscore only)');
         }
 
-        // Validate admin password
         if (!config.adminPassword) {
             errors.push('Admin password is required');
         } else if (config.adminPassword.length < 8) {
             errors.push('Admin password must be at least 8 characters');
         }
 
-        // Validate server IP
         if (!config.serverIp) {
             errors.push('Server IP is required');
         } else if (!this.isValidIPv4(config.serverIp)) {
             errors.push('Invalid IPv4 address format');
         }
 
-        // Validate primary domain (optional)
         if (config.primaryDomain && !this.isValidDomain(config.primaryDomain)) {
             errors.push('Invalid domain name format');
         }
 
-        // Validate nameservers (optional)
         if (config.nameservers && config.nameservers.length > 0) {
             for (const ns of config.nameservers) {
                 if (!this.isValidDomain(ns)) {
@@ -149,30 +134,28 @@ export class SetupService {
             }
         }
 
-        // Validate port
-        if (config.port !== undefined) {
-            if (config.port < 1 || config.port > 65535) {
-                errors.push('Port must be between 1 and 65535');
-            }
+        if (config.port !== undefined && (config.port < 1 || config.port > 65535)) {
+            errors.push('Port must be between 1 and 65535');
         }
 
-        // Validate max file size
-        if (config.maxFileSize !== undefined) {
-            if (config.maxFileSize < 1024 || config.maxFileSize > 1073741824) {
-                errors.push('Max file size must be between 1KB and 1GB');
-            }
-        }
-
-        return {
-            valid: errors.length === 0,
-            errors,
-        };
+        return { valid: errors.length === 0, errors };
     }
 
-    /**
-     * Auto-detect server IP address
-     */
     async detectServerIp(): Promise<string | null> {
+        // Try to get public IP first
+        try {
+            const { execSync } = require('child_process');
+            const publicIp = execSync('curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 icanhazip.com 2>/dev/null', {
+                encoding: 'utf-8',
+                timeout: 10000,
+            }).trim();
+            if (publicIp && this.isValidIPv4(publicIp)) {
+                return publicIp;
+            }
+        } catch {
+            // Fall through to local detection
+        }
+
         const interfaces = os.networkInterfaces();
         for (const value of Object.values(interfaces)) {
             if (!value) continue;
@@ -186,67 +169,107 @@ export class SetupService {
     }
 
     /**
-     * Create necessary directories
+     * Create cPanel-like user home directory structure
      */
-    private async createDirectories(config: SetupConfig): Promise<void> {
-        const rootPath = config.rootPath!;
-
-        // Standard cPanel-like directory structure
-        const directories = [
-            rootPath,
-            path.join(rootPath, 'public_html'),          // Main domain web root
-            path.join(rootPath, 'mail'),                  // Email storage
-            path.join(rootPath, 'logs'),                  // Server logs
-            path.join(rootPath, 'tmp'),                   // Temporary files
-            path.join(rootPath, 'etc'),                   // Config files
-            path.join(rootPath, 'ssl', 'certs'),          // SSL certificates
-            path.join(rootPath, 'ssl', 'keys'),           // SSL private keys
-            path.join(rootPath, 'ssl', 'csrs'),           // Certificate signing requests
-            path.join(rootPath, 'cgi-bin'),               // CGI scripts
-            config.domainsRoot!,
+    private async createUserHome(userHome: string): Promise<void> {
+        const dirs = [
+            '',                // user home root
+            'public_html',     // main website files
+            'mail',            // email storage
+            'logs',            // server logs
+            'tmp',             // temporary files
+            'etc',             // config files
+            'ssl/certs',       // SSL certificates
+            'ssl/keys',        // SSL private keys
+            'ssl/csrs',        // CSRs
+            'cgi-bin',         // CGI scripts
+            '.ssh',            // SSH keys
+            '.trash',          // recycle bin
         ];
 
-        for (const dir of directories) {
+        for (const dir of dirs) {
+            const fullPath = path.join(userHome, dir);
             try {
-                await fs.mkdir(dir, { recursive: true });
-                this.logger.log(`Created directory: ${dir}`);
+                await fs.mkdir(fullPath, { recursive: true });
             } catch (error) {
-                this.logger.warn(`Failed to create directory ${dir}:`, error);
+                this.logger.warn(`Failed to create ${fullPath}:`, error);
             }
         }
 
-        // Create README files to explain directory purposes
-        await this.createDirectoryReadmes(rootPath);
+        // Secure .ssh directory
+        try {
+            await fs.chmod(path.join(userHome, '.ssh'), 0o700);
+        } catch { }
+
+        this.logger.log(`Created user home directory: ${userHome}`);
     }
 
     /**
-     * Create README files in standard directories
+     * Create default index.html for the primary domain
      */
-    private async createDirectoryReadmes(rootPath: string): Promise<void> {
-        const readmes: Record<string, string> = {
-            'public_html/README.txt': 'Main website files - Your domains are served from here.\nThis directory is managed by clearPanel.',
-            'mail/README.txt': 'Email data storage for all mailboxes.\nThis directory is managed by clearPanel.',
-            'logs/README.txt': 'Server access and error logs.\nThis directory is managed by clearPanel.',
-            'tmp/README.txt': 'Temporary files (auto-cleaned periodically).\nThis directory is managed by clearPanel.',
-            'etc/README.txt': 'Configuration files.\nThis directory is managed by clearPanel.',
-            'ssl/README.txt': 'SSL certificates, keys, and certificate signing requests.\nThis directory is managed by clearPanel.',
-            'cgi-bin/README.txt': 'CGI scripts and executables.\nThis directory is managed by clearPanel.',
-        };
+    private async createDefaultIndexHtml(publicHtml: string, domain: string): Promise<void> {
+        const indexPath = path.join(publicHtml, 'index.html');
+        try {
+            await fs.access(indexPath);
+            return; // Already exists
+        } catch { }
 
-        for (const [file, content] of Object.entries(readmes)) {
-            try {
-                const filePath = path.join(rootPath, file);
-                await fs.writeFile(filePath, content);
-            } catch (error) {
-                // Non-critical, just log
-                this.logger.debug(`Could not create README: ${file}`);
-            }
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${domain} - Hosted on clearPanel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+        .container {
+            background: white;
+            padding: 48px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 540px;
+            width: 90%;
+        }
+        .emoji { font-size: 3.5em; margin-bottom: 16px; }
+        h1 { color: #1a1a2e; font-size: 1.8em; margin-bottom: 12px; }
+        .domain { color: #667eea; font-weight: 700; }
+        p { color: #666; line-height: 1.7; margin-bottom: 8px; }
+        .badge {
+            display: inline-block;
+            margin-top: 24px;
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="emoji">🚀</div>
+        <h1>Welcome to <span class="domain">${domain}</span></h1>
+        <p>This website is successfully configured and ready to go.</p>
+        <p>Upload your website files to <strong>public_html</strong> using the File Manager.</p>
+        <div class="badge">Hosted on clearPanel</div>
+    </div>
+</body>
+</html>`;
+
+        await fs.writeFile(indexPath, html, 'utf-8');
+        this.logger.log(`Created default index.html for ${domain}`);
     }
 
-    /**
-     * Generate .env file
-     */
     private async generateEnvFile(config: SetupConfig): Promise<void> {
         const timestamp = new Date().toISOString();
         const envContent = `# Generated by clearPanel Setup Wizard
@@ -265,56 +288,38 @@ SERVER_IP=${config.serverIp}
 ROOT_PATH=${config.rootPath}
 ALLOWED_EXTENSIONS=*
 MAX_FILE_SIZE=${config.maxFileSize}
-
-DOMAINS_ROOT=${config.domainsRoot}
 `;
 
         await fs.writeFile(this.envPath, envContent, 'utf-8');
-        await fs.chmod(this.envPath, 0o600); // Owner read/write only
-
+        try { await fs.chmod(this.envPath, 0o600); } catch { }
         this.logger.log('Generated .env file');
     }
 
-    /**
-     * Update server settings
-     */
     private async updateServerSettings(config: SetupConfig): Promise<void> {
         await this.serverSettingsService.updateSettings({
             primaryDomain: config.primaryDomain,
             serverIp: config.serverIp,
             nameservers: config.nameservers || [],
         });
-
         this.logger.log('Updated server settings');
     }
 
-    /**
-     * Mark setup as completed
-     */
-    private async markSetupCompleted(): Promise<void> {
+    private async markSetupCompleted(adminUsername: string, primaryDomain?: string): Promise<void> {
         const status: SetupStatus = {
             completed: true,
             completedAt: new Date().toISOString(),
             version: '1.0.0',
+            adminUsername,
+            primaryDomain,
         };
-
         await fs.writeFile(this.setupStatusPath, JSON.stringify(status, null, 2), 'utf-8');
-        this.logger.log('Marked setup as completed');
     }
 
-    /**
-     * Validate IPv4 address format
-     */
     private isValidIPv4(ip: string): boolean {
-        const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-        return ipv4Regex.test(ip);
+        return /^(25[0-5]|2[0-4]\d|[01]?\d\d?)\.(25[0-5]|2[0-4]\d|[01]?\d\d?)\.(25[0-5]|2[0-4]\d|[01]?\d\d?)\.(25[0-5]|2[0-4]\d|[01]?\d\d?)$/.test(ip);
     }
 
-    /**
-     * Validate domain name format
-     */
     private isValidDomain(domain: string): boolean {
-        const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
-        return domainRegex.test(domain);
+        return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i.test(domain);
     }
 }

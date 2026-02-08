@@ -5,6 +5,8 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { theme } from './theme';
 import LoginPage from './pages/Login';
+import SetupPage from './pages/Setup';
+import { SetupGuard } from './components/SetupGuard';
 import DashboardPage from './pages/Dashboard';
 import FileManagerPage from './pages/FileManager';
 import TerminalPage from './pages/terminal/TerminalPage';
@@ -28,13 +30,18 @@ export function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
+            {/* Setup wizard - no auth required, shown on first run */}
+            <Route path="/setup" element={<SetupPage />} />
+
+            {/* All other routes go through SetupGuard first */}
+            <Route element={<SetupGuard />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
               }
             />
             <Route
@@ -95,6 +102,7 @@ export function App() {
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Route>
           </Routes>
         </BrowserRouter>
       </AuthProvider>

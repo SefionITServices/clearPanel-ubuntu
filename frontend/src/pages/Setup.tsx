@@ -14,8 +14,7 @@ import {
     LinearProgress,
     IconButton,
     InputAdornment,
-    Collapse,
-    Chip,
+    Divider,
     CircularProgress,
 } from '@mui/material';
 import {
@@ -23,6 +22,9 @@ import {
     VisibilityOff,
     CheckCircle,
     Refresh as RefreshIcon,
+    Language,
+    Dns,
+    Person,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,27 +33,27 @@ interface SetupConfig {
     adminPassword: string;
     confirmPassword: string;
     serverIp: string;
-    primaryDomain?: string;
-    nameservers?: string;
-    sessionSecret?: string;
-    rootPath?: string;
-    domainsRoot?: string;
-    port?: number;
-    maxFileSize?: number;
+    primaryDomain: string;
+    ns1: string;
+    ns2: string;
+    sessionSecret: string;
+    rootPath: string;
+    port: number;
+    maxFileSize: number;
 }
 
-const steps = ['Welcome', 'Admin Account', 'Server Configuration', 'Advanced Settings', 'Review'];
+const steps = ['Welcome', 'Admin Account', 'Domain & Nameservers', 'Review & Complete'];
 
 export default function SetupPage() {
     const navigate = useNavigate();
     const [activeStep, setActiveStep] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [checkingStatus, setCheckingStatus] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [detectingIp, setDetectingIp] = useState(false);
-    const [showAdvanced, setShowAdvanced] = useState(false);
 
     const [config, setConfig] = useState<SetupConfig>({
         adminUsername: '',
@@ -59,101 +61,83 @@ export default function SetupPage() {
         confirmPassword: '',
         serverIp: '',
         primaryDomain: '',
-        nameservers: '',
+        ns1: '',
+        ns2: '',
         sessionSecret: '',
         rootPath: '/opt/clearpanel/data',
-        domainsRoot: '~/clearpanel-domains',
         port: 3334,
         maxFileSize: 104857600,
     });
 
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // Auto-detect server IP on mount
+    // Check if already set up
     useEffect(() => {
-        detectServerIp();
-    }, []);
+        (async () => {
+            try {
+                const res = await fetch('/api/setup/status');
+                const data = await res.json();
+                if (data.completed) {
+                    navigate('/login', { replace: true });
+                    return;
+                }
+            } catch { }
+            setCheckingStatus(false);
+        })();
+    }, [navigate]);
+
+    // Auto-detect IP on mount
+    useEffect(() => {
+        if (!checkingStatus) detectServerIp();
+    }, [checkingStatus]);
 
     // Generate session secret on mount
     useEffect(() => {
-        generateSessionSecret();
+        const array = new Uint8Array(32);
+        crypto.getRandomValues(array);
+        const secret = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+        setConfig(prev => ({ ...prev, sessionSecret: secret }));
     }, []);
-
-    // Load from localStorage on mount (recovery)
-    useEffect(() => {
-        const saved = localStorage.getItem('setupConfig');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                setConfig(prev => ({ ...prev, ...parsed }));
-            } catch (e) {
-                console.error('Failed to load saved config:', e);
-            }
-        }
-    }, []);
-
-    // Save to localStorage on config change
-    useEffect(() => {
-        localStorage.setItem('setupConfig', JSON.stringify(config));
-    }, [config]);
 
     const detectServerIp = async () => {
-        if (config.serverIp) return; // Already set
-
         setDetectingIp(true);
         try {
-            const response = await fetch('/api/setup/detect-ip');
-            const data = await response.json();
+            const res = await fetch('/api/setup/detect-ip');
+            const data = await res.json();
             if (data.ip) {
                 setConfig(prev => ({ ...prev, serverIp: data.ip }));
             }
-        } catch (err) {
-            console.error('Failed to detect IP:', err);
-        } finally {
-            setDetectingIp(false);
-        }
-    };
-
-    const generateSessionSecret = () => {
-        const array = new Uint8Array(32);
-        crypto.getRandomValues(array);
-        const secret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-        setConfig(prev => ({ ...prev, sessionSecret: secret }));
+        } catch { }
+        setDetectingIp(false);
     };
 
     const validateStep = (step: number): boolean => {
-        const newErrors: Record<string, string> = {};
+        const e: Record<string, string> = {};
 
-        switch (step) {
-            case 1: // Admin Account
-                if (!config.adminUsername) {
-                    newErrors.adminUsername = 'Username is required';
-                } else if (!/^[a-zA-Z0-9_]{3,20}$/.test(config.adminUsername)) {
-                    newErrors.adminUsername = 'Username must be 3-20 characters (alphanumeric and underscore only)';
-                }
+        if (step === 1) {
+            if (!config.adminUsername) e.adminUsername = 'Username is required';
+            else if (!/^[a-zA-Z0-9_]{3,20}$/.test(config.adminUsername))
+                e.adminUsername = 'Must be 3-20 characters (letters, numbers, underscore)';
 
-                if (!config.adminPassword) {
-                    newErrors.adminPassword = 'Password is required';
-                } else if (config.adminPassword.length < 8) {
-                    newErrors.adminPassword = 'Password must be at least 8 characters';
-                }
+            if (!config.adminPassword) e.adminPassword = 'Password is required';
+            else if (config.adminPassword.length < 8) e.adminPassword = 'Must be at least 8 characters';
 
-                if (config.adminPassword !== config.confirmPassword) {
-                    newErrors.confirmPassword = 'Passwords do not match';
-                }
-                break;
-
-            case 2: // Server Configuration
-                if (!config.serverIp) {
-                    newErrors.serverIp = 'Server IP is required';
-                } else if (!/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(config.serverIp)) {
-                    newErrors.serverIp = 'Invalid IPv4 address format';
-                }
-                break;
+            if (config.adminPassword !== config.confirmPassword)
+                e.confirmPassword = 'Passwords do not match';
         }
 
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        if (step === 2) {
+            if (!config.serverIp) e.serverIp = 'Server IP is required';
+            else if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(config.serverIp))
+                e.serverIp = 'Invalid IP address';
+
+            if (!config.primaryDomain) e.primaryDomain = 'Primary domain is required';
+            else if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(config.primaryDomain))
+                e.primaryDomain = 'Invalid domain format';
+        }
+
+        setErrors(e);
+        return Object.keys(e).length === 0;
     };
 
     const handleNext = () => {
@@ -173,131 +157,195 @@ export default function SetupPage() {
         setError(null);
 
         try {
+            const nameservers = [config.ns1, config.ns2].map(ns => ns.trim()).filter(ns => ns.length > 0);
             const payload = {
                 adminUsername: config.adminUsername,
                 adminPassword: config.adminPassword,
                 serverIp: config.serverIp,
-                primaryDomain: config.primaryDomain || undefined,
-                nameservers: config.nameservers ? config.nameservers.split(/\r?\n|,/).map(ns => ns.trim()).filter(ns => ns.length > 0) : undefined,
+                primaryDomain: config.primaryDomain,
+                nameservers: nameservers.length > 0 ? nameservers : undefined,
                 sessionSecret: config.sessionSecret,
                 rootPath: config.rootPath,
-                domainsRoot: config.domainsRoot,
                 port: config.port,
                 maxFileSize: config.maxFileSize,
             };
 
-            const response = await fetch('/api/setup/complete', {
+            const res = await fetch('/api/setup/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
+            const result = await res.json();
 
-            const result = await response.json();
-
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || 'Setup failed');
-            }
-
+            if (!res.ok || !result.success) throw new Error(result.message || 'Setup failed');
             setSuccess(true);
-            localStorage.removeItem('setupConfig'); // Clear saved config
-
-            // Redirect to login after 2 seconds
-            setTimeout(() => {
-                navigate('/login');
-            }, 2000);
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Setup failed. Please try again.';
-            setError(message);
+            setError(err instanceof Error ? err.message : 'Setup failed');
         } finally {
             setLoading(false);
         }
     };
 
-    const getPasswordStrength = (password: string): { strength: number; label: string; color: string } => {
-        if (!password) return { strength: 0, label: '', color: '' };
-
-        let strength = 0;
-        if (password.length >= 8) strength++;
-        if (password.length >= 12) strength++;
-        if (/[a-z]/.test(password)) strength++;
-        if (/[A-Z]/.test(password)) strength++;
-        if (/[0-9]/.test(password)) strength++;
-        if (/[^a-zA-Z0-9]/.test(password)) strength++;
-
-        if (strength <= 2) return { strength: 33, label: 'Weak', color: 'error' };
-        if (strength <= 4) return { strength: 66, label: 'Medium', color: 'warning' };
-        return { strength: 100, label: 'Strong', color: 'success' };
+    const getPasswordStrength = (pw: string) => {
+        if (!pw) return { strength: 0, label: '', color: 'inherit' as const };
+        let s = 0;
+        if (pw.length >= 8) s++;
+        if (pw.length >= 12) s++;
+        if (/[a-z]/.test(pw)) s++;
+        if (/[A-Z]/.test(pw)) s++;
+        if (/\d/.test(pw)) s++;
+        if (/[^a-zA-Z0-9]/.test(pw)) s++;
+        if (s <= 2) return { strength: 33, label: 'Weak', color: 'error' as const };
+        if (s <= 4) return { strength: 66, label: 'Medium', color: 'warning' as const };
+        return { strength: 100, label: 'Strong', color: 'success' as const };
     };
 
-    const passwordStrength = getPasswordStrength(config.adminPassword);
+    const pwStrength = getPasswordStrength(config.adminPassword);
 
-    const renderStepContent = (step: number) => {
+    if (checkingStatus) {
+        return (
+            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    // ---- SUCCESS SCREEN ----
+    if (success) {
+        return (
+            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', p: 2 }}>
+                <Card sx={{ maxWidth: 680, width: '100%' }}>
+                    <CardContent sx={{ p: 4 }}>
+                        <Stack spacing={3} alignItems="center">
+                            <CheckCircle color="success" sx={{ fontSize: 80 }} />
+                            <Typography variant="h4" fontWeight={700} textAlign="center">
+                                Setup Complete!
+                            </Typography>
+
+                            <Alert severity="warning" sx={{ width: '100%' }}>
+                                <Typography variant="body2" fontWeight={600}>
+                                    Restart the server to apply changes:
+                                </Typography>
+                                <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', bgcolor: 'grey.100', p: 1, borderRadius: 1 }}>
+                                    sudo systemctl restart clearpanel
+                                </Typography>
+                            </Alert>
+
+                            {config.primaryDomain && (
+                                <Alert severity="info" sx={{ width: '100%' }}>
+                                    <Typography variant="body2" fontWeight={600} gutterBottom>
+                                        DNS Setup for {config.primaryDomain}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ mb: 1 }}>
+                                        Go to your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.) and update:
+                                    </Typography>
+                                    <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                                        <li>
+                                            <Typography variant="body2">
+                                                Set <strong>A record</strong> for <strong>{config.primaryDomain}</strong> &rarr; <strong>{config.serverIp}</strong>
+                                            </Typography>
+                                        </li>
+                                        {config.ns1 && (
+                                            <>
+                                                <li>
+                                                    <Typography variant="body2">
+                                                        Create <strong>Glue records</strong> (Child Nameservers) at your registrar:
+                                                    </Typography>
+                                                    <Box sx={{ ml: 2, fontFamily: 'monospace', fontSize: '0.85em', mt: 0.5 }}>
+                                                        <Typography variant="body2" fontFamily="monospace">{config.ns1} &rarr; {config.serverIp}</Typography>
+                                                        <Typography variant="body2" fontFamily="monospace">{config.ns2} &rarr; {config.serverIp}</Typography>
+                                                    </Box>
+                                                </li>
+                                                <li>
+                                                    <Typography variant="body2">
+                                                        Update <strong>Nameservers</strong> to: <strong>{config.ns1}</strong> and <strong>{config.ns2}</strong>
+                                                    </Typography>
+                                                </li>
+                                            </>
+                                        )}
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
+                                        DNS propagation may take 1-48 hours.
+                                    </Typography>
+                                </Alert>
+                            )}
+
+                            <Card variant="outlined" sx={{ width: '100%' }}>
+                                <CardContent>
+                                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>Login Credentials</Typography>
+                                    <Typography variant="body2">Username: <strong>{config.adminUsername}</strong></Typography>
+                                    <Typography variant="body2">Password: <strong>{'*'.repeat(Math.min(config.adminPassword.length, 12))}</strong></Typography>
+                                </CardContent>
+                            </Card>
+
+                            <Button variant="contained" size="large" onClick={() => navigate('/login')}>
+                                Go to Login
+                            </Button>
+                        </Stack>
+                    </CardContent>
+                </Card>
+            </Box>
+        );
+    }
+
+    // ---- WIZARD STEPS ----
+    const renderStep = (step: number) => {
         switch (step) {
-            case 0: // Welcome
+            case 0:
                 return (
                     <Stack spacing={3}>
-                        <Typography variant="h4" fontWeight={600}>
-                            Welcome to clearPanel
-                        </Typography>
+                        <Typography variant="h4" fontWeight={700}>Welcome to clearPanel</Typography>
                         <Typography variant="body1" color="text.secondary">
-                            Let's get your control panel set up. This wizard will guide you through the initial configuration.
+                            Let's set up your VPS control panel. This wizard will configure everything needed to get your server running.
                         </Typography>
-                        <Alert severity="info">
-                            <Typography variant="body2">
-                                This setup wizard will collect mandatory information needed to run clearPanel:
-                            </Typography>
-                            <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
-                                <li>Administrator credentials</li>
-                                <li>Server IP address</li>
-                                <li>Optional: Primary domain and nameservers</li>
-                            </ul>
-                        </Alert>
+                        <Stack spacing={1.5}>
+                            {[
+                                { icon: <Person fontSize="small" />, text: 'Create admin account (username & password)' },
+                                { icon: <Language fontSize="small" />, text: 'Set your primary domain and document root' },
+                                { icon: <Dns fontSize="small" />, text: 'Configure custom nameservers for your VPS' },
+                            ].map((item, i) => (
+                                <Stack key={i} direction="row" alignItems="center" spacing={1.5}>
+                                    <Box sx={{ color: 'primary.main' }}>{item.icon}</Box>
+                                    <Typography variant="body2">{item.text}</Typography>
+                                </Stack>
+                            ))}
+                        </Stack>
                         {detectingIp && (
                             <Box display="flex" alignItems="center" gap={1}>
-                                <CircularProgress size={20} />
-                                <Typography variant="body2" color="text.secondary">
-                                    Detecting server IP address...
-                                </Typography>
+                                <CircularProgress size={18} />
+                                <Typography variant="body2" color="text.secondary">Detecting server IP...</Typography>
                             </Box>
                         )}
                         {config.serverIp && !detectingIp && (
-                            <Alert severity="success">
+                            <Alert severity="success" icon={false}>
                                 Server IP detected: <strong>{config.serverIp}</strong>
                             </Alert>
                         )}
                     </Stack>
                 );
 
-            case 1: // Admin Account
+            case 1:
                 return (
                     <Stack spacing={3}>
-                        <Typography variant="h5" fontWeight={600}>
-                            Create Admin Account
-                        </Typography>
+                        <Typography variant="h5" fontWeight={600}>Create Admin Account</Typography>
                         <Typography variant="body2" color="text.secondary">
-                            This will be your login credentials for the control panel.
+                            These credentials will be used to log in to the control panel.
                         </Typography>
-
                         <TextField
-                            label="Admin Username"
-                            required
-                            fullWidth
+                            label="Username" required fullWidth
                             value={config.adminUsername}
-                            onChange={e => setConfig(prev => ({ ...prev, adminUsername: e.target.value }))}
+                            onChange={e => setConfig(p => ({ ...p, adminUsername: e.target.value }))}
                             error={!!errors.adminUsername}
-                            helperText={errors.adminUsername || '3-20 characters, alphanumeric and underscore only'}
+                            helperText={errors.adminUsername || 'Letters, numbers, and underscore only'}
                             autoComplete="username"
                         />
-
                         <TextField
-                            label="Admin Password"
-                            required
-                            fullWidth
+                            label="Password" required fullWidth
                             type={showPassword ? 'text' : 'password'}
                             value={config.adminPassword}
-                            onChange={e => setConfig(prev => ({ ...prev, adminPassword: e.target.value }))}
+                            onChange={e => setConfig(p => ({ ...p, adminPassword: e.target.value }))}
                             error={!!errors.adminPassword}
-                            helperText={errors.adminPassword || 'At least 8 characters'}
+                            helperText={errors.adminPassword || 'Minimum 8 characters'}
                             autoComplete="new-password"
                             InputProps={{
                                 endAdornment: (
@@ -309,30 +357,20 @@ export default function SetupPage() {
                                 ),
                             }}
                         />
-
                         {config.adminPassword && (
                             <Box>
                                 <Box display="flex" justifyContent="space-between" mb={0.5}>
                                     <Typography variant="caption">Password Strength</Typography>
-                                    <Typography variant="caption" color={`${passwordStrength.color}.main`}>
-                                        {passwordStrength.label}
-                                    </Typography>
+                                    <Typography variant="caption" color={`${pwStrength.color}.main`}>{pwStrength.label}</Typography>
                                 </Box>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={passwordStrength.strength}
-                                    color={passwordStrength.color as any}
-                                />
+                                <LinearProgress variant="determinate" value={pwStrength.strength} color={pwStrength.color} />
                             </Box>
                         )}
-
                         <TextField
-                            label="Confirm Password"
-                            required
-                            fullWidth
+                            label="Confirm Password" required fullWidth
                             type={showConfirmPassword ? 'text' : 'password'}
                             value={config.confirmPassword}
-                            onChange={e => setConfig(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                            onChange={e => setConfig(p => ({ ...p, confirmPassword: e.target.value }))}
                             error={!!errors.confirmPassword}
                             helperText={errors.confirmPassword}
                             autoComplete="new-password"
@@ -349,21 +387,17 @@ export default function SetupPage() {
                     </Stack>
                 );
 
-            case 2: // Server Configuration
+            case 2:
                 return (
                     <Stack spacing={3}>
-                        <Typography variant="h5" fontWeight={600}>
-                            Server Configuration
-                        </Typography>
+                        <Typography variant="h5" fontWeight={600}>Domain & Nameservers</Typography>
 
                         <TextField
-                            label="Server IP Address"
-                            required
-                            fullWidth
+                            label="Server IP Address" required fullWidth
                             value={config.serverIp}
-                            onChange={e => setConfig(prev => ({ ...prev, serverIp: e.target.value }))}
+                            onChange={e => setConfig(p => ({ ...p, serverIp: e.target.value }))}
                             error={!!errors.serverIp}
-                            helperText={errors.serverIp || 'Public IPv4 address of this server'}
+                            helperText={errors.serverIp || 'Public IPv4 address of this VPS'}
                             InputProps={{
                                 endAdornment: (
                                     <InputAdornment position="end">
@@ -375,142 +409,86 @@ export default function SetupPage() {
                             }}
                         />
 
+                        <Divider />
+
                         <TextField
-                            label="Primary Domain (Optional)"
-                            fullWidth
+                            label="Primary Domain" required fullWidth
                             value={config.primaryDomain}
-                            onChange={e => setConfig(prev => ({ ...prev, primaryDomain: e.target.value }))}
-                            placeholder="panel.example.com"
-                            helperText="The main domain for accessing this panel"
-                        />
-
-                        <TextField
-                            label="Nameservers (Optional)"
-                            fullWidth
-                            multiline
-                            minRows={3}
-                            value={config.nameservers}
-                            onChange={e => setConfig(prev => ({ ...prev, nameservers: e.target.value }))}
-                            placeholder="ns1.example.com&#10;ns2.example.com"
-                            helperText="One nameserver per line or comma-separated"
-                        />
-                    </Stack>
-                );
-
-            case 3: // Advanced Settings
-                return (
-                    <Stack spacing={3}>
-                        <Typography variant="h5" fontWeight={600}>
-                            Advanced Settings
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            These settings have sensible defaults. Only modify if needed.
-                        </Typography>
-
-                        <TextField
-                            label="Session Secret"
-                            fullWidth
-                            value={config.sessionSecret}
-                            onChange={e => setConfig(prev => ({ ...prev, sessionSecret: e.target.value }))}
-                            helperText="Auto-generated secure random string"
-                            InputProps={{
-                                readOnly: true,
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton onClick={generateSessionSecret} edge="end">
-                                            <RefreshIcon />
-                                        </IconButton>
-                                    </InputAdornment>
-                                ),
+                            onChange={e => {
+                                const d = e.target.value;
+                                setConfig(p => ({ ...p, primaryDomain: d, ns1: d ? `ns1.${d}` : '', ns2: d ? `ns2.${d}` : '' }));
                             }}
+                            error={!!errors.primaryDomain}
+                            helperText={errors.primaryDomain || 'Your main domain (e.g. example.com). Document root: ~/public_html'}
+                            placeholder="example.com"
                         />
 
-                        <TextField
-                            label="File Manager Root Path"
-                            fullWidth
-                            value={config.rootPath}
-                            onChange={e => setConfig(prev => ({ ...prev, rootPath: e.target.value }))}
-                            helperText="Base directory for file manager"
-                        />
+                        <Alert severity="info" icon={false}>
+                            <Typography variant="body2" fontWeight={600} gutterBottom>Custom Nameservers</Typography>
+                            <Typography variant="body2">
+                                These let you host DNS for all your domains on this VPS. After setup, create <strong>Glue records</strong> (Child Nameservers) at your domain registrar pointing these to <strong>{config.serverIp || 'your server IP'}</strong>.
+                            </Typography>
+                        </Alert>
 
-                        <TextField
-                            label="Domains Root Path"
-                            fullWidth
-                            value={config.domainsRoot}
-                            onChange={e => setConfig(prev => ({ ...prev, domainsRoot: e.target.value }))}
-                            helperText="Directory where domain folders will be created"
-                        />
-
-                        <TextField
-                            label="Application Port"
-                            fullWidth
-                            type="number"
-                            value={config.port}
-                            onChange={e => setConfig(prev => ({ ...prev, port: parseInt(e.target.value) }))}
-                            helperText="Port for the backend server"
-                        />
-
-                        <TextField
-                            label="Max File Upload Size (bytes)"
-                            fullWidth
-                            type="number"
-                            value={config.maxFileSize}
-                            onChange={e => setConfig(prev => ({ ...prev, maxFileSize: parseInt(e.target.value) }))}
-                            helperText={`${Math.round((config.maxFileSize || 0) / 1024 / 1024)}MB - Maximum file size for uploads`}
-                        />
+                        <Stack direction="row" spacing={2}>
+                            <TextField
+                                label="Nameserver 1" fullWidth
+                                value={config.ns1}
+                                onChange={e => setConfig(p => ({ ...p, ns1: e.target.value }))}
+                                placeholder="ns1.example.com"
+                            />
+                            <TextField
+                                label="Nameserver 2" fullWidth
+                                value={config.ns2}
+                                onChange={e => setConfig(p => ({ ...p, ns2: e.target.value }))}
+                                placeholder="ns2.example.com"
+                            />
+                        </Stack>
                     </Stack>
                 );
 
-            case 4: // Review
+            case 3:
                 return (
                     <Stack spacing={3}>
-                        <Typography variant="h5" fontWeight={600}>
-                            Review Configuration
-                        </Typography>
+                        <Typography variant="h5" fontWeight={600}>Review & Complete</Typography>
                         <Typography variant="body2" color="text.secondary">
-                            Please review your configuration before completing setup.
+                            Review your configuration. You'll need to restart the service after setup completes.
                         </Typography>
 
                         <Card variant="outlined">
                             <CardContent>
-                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                                    Admin Account
-                                </Typography>
+                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>Admin Account</Typography>
                                 <Typography variant="body2">Username: <strong>{config.adminUsername}</strong></Typography>
-                                <Typography variant="body2">Password: <strong>{'•'.repeat(config.adminPassword.length)}</strong></Typography>
+                                <Typography variant="body2">Password: <strong>{'*'.repeat(Math.min(config.adminPassword.length, 12))}</strong></Typography>
                             </CardContent>
                         </Card>
 
                         <Card variant="outlined">
                             <CardContent>
-                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                                    Server Configuration
-                                </Typography>
+                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>Server & Domain</Typography>
                                 <Typography variant="body2">Server IP: <strong>{config.serverIp}</strong></Typography>
-                                {config.primaryDomain && (
-                                    <Typography variant="body2">Primary Domain: <strong>{config.primaryDomain}</strong></Typography>
-                                )}
-                                {config.nameservers && (
+                                <Typography variant="body2">Primary Domain: <strong>{config.primaryDomain}</strong></Typography>
+                                <Typography variant="body2">Document Root: <strong>~/{config.adminUsername}/public_html</strong></Typography>
+                                {config.ns1 && (
                                     <Typography variant="body2">
-                                        Nameservers: <strong>{config.nameservers.split(/\r?\n|,/).filter(ns => ns.trim()).length} configured</strong>
+                                        Nameservers: <strong>{config.ns1}</strong>, <strong>{config.ns2}</strong>
                                     </Typography>
                                 )}
                             </CardContent>
                         </Card>
 
-                        <Card variant="outlined">
-                            <CardContent>
-                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                                    Paths & Settings
-                                </Typography>
-                                <Typography variant="body2">File Manager Root: <strong>{config.rootPath}</strong></Typography>
-                                <Typography variant="body2">Domains Root: <strong>{config.domainsRoot}</strong></Typography>
-                                <Typography variant="body2">Port: <strong>{config.port}</strong></Typography>
-                                <Typography variant="body2">
-                                    Max Upload Size: <strong>{Math.round((config.maxFileSize || 0) / 1024 / 1024)}MB</strong>
-                                </Typography>
-                            </CardContent>
-                        </Card>
+                        <Alert severity="info">
+                            <Typography variant="body2">
+                                After setup completes, your home directory will be created with cPanel-like folders
+                                (public_html, mail, logs, ssl, etc.) and a default index.html for your primary domain.
+                            </Typography>
+                        </Alert>
+
+                        <Alert severity="warning">
+                            <Typography variant="body2" fontWeight={600}>
+                                After setup, you'll need to update DNS at your domain registrar.
+                            </Typography>
+                        </Alert>
                     </Stack>
                 );
 
@@ -519,49 +497,13 @@ export default function SetupPage() {
         }
     };
 
-    if (success) {
-        return (
-            <Box
-                sx={{
-                    minHeight: '100vh',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: 'background.default',
-                    p: 2,
-                }}
-            >
-                <Card sx={{ maxWidth: 500, width: '100%' }}>
-                    <CardContent>
-                        <Stack spacing={3} alignItems="center">
-                            <CheckCircle color="success" sx={{ fontSize: 80 }} />
-                            <Typography variant="h4" fontWeight={600} textAlign="center">
-                                Setup Complete!
-                            </Typography>
-                            <Typography variant="body1" color="text.secondary" textAlign="center">
-                                Your control panel has been configured successfully. Redirecting to login...
-                            </Typography>
-                            <CircularProgress />
-                        </Stack>
-                    </CardContent>
-                </Card>
-            </Box>
-        );
-    }
-
     return (
-        <Box
-            sx={{
-                minHeight: '100vh',
-                bgcolor: 'background.default',
-                p: 2,
-            }}
-        >
-            <Box sx={{ maxWidth: 800, mx: 'auto', py: 4 }}>
+        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: 2 }}>
+            <Box sx={{ maxWidth: 720, mx: 'auto', py: 4 }}>
                 <Card>
                     <CardContent sx={{ p: 4 }}>
-                        <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-                            {steps.map((label) => (
+                        <Stepper activeStep={activeStep} sx={{ mb: 4 }} alternativeLabel>
+                            {steps.map(label => (
                                 <Step key={label}>
                                     <StepLabel>{label}</StepLabel>
                                 </Step>
@@ -574,34 +516,25 @@ export default function SetupPage() {
                             </Alert>
                         )}
 
-                        <Box sx={{ minHeight: 300 }}>
-                            {renderStepContent(activeStep)}
+                        <Box sx={{ minHeight: 320 }}>
+                            {renderStep(activeStep)}
                         </Box>
 
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-                            <Button
-                                disabled={activeStep === 0 || loading}
-                                onClick={handleBack}
-                            >
+                            <Button disabled={activeStep === 0 || loading} onClick={handleBack}>
                                 Back
                             </Button>
-                            <Box sx={{ flex: 1 }} />
+                            <Box flex={1} />
                             {activeStep < steps.length - 1 ? (
-                                <Button
-                                    variant="contained"
-                                    onClick={handleNext}
-                                    disabled={loading}
-                                >
-                                    Next
-                                </Button>
+                                <Button variant="contained" onClick={handleNext}>Next</Button>
                             ) : (
                                 <Button
                                     variant="contained"
                                     onClick={handleComplete}
                                     disabled={loading}
-                                    startIcon={loading && <CircularProgress size={20} />}
+                                    startIcon={loading ? <CircularProgress size={20} /> : <CheckCircle />}
                                 >
-                                    {loading ? 'Completing Setup...' : 'Complete Setup'}
+                                    {loading ? 'Setting up...' : 'Complete Setup'}
                                 </Button>
                             )}
                         </Box>

@@ -17,9 +17,17 @@ import {
   RadioGroup,
   FormControl,
   FormLabel,
+  Alert,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Chip,
 } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
@@ -46,6 +54,14 @@ export default function DomainCreatePage() {
   const [primaryDomainError, setPrimaryDomainError] = useState<string | null>(null);
   const [vpsNameservers, setVpsNameservers] = useState<string[]>([]);
   const [serverIp, setServerIp] = useState<string>('');
+  const [createdDomain, setCreatedDomain] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(label);
+    setTimeout(() => setCopied(null), 2000);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -180,6 +196,7 @@ export default function DomainCreatePage() {
       console.log('Domain created:', result);
 
       if (createAnother) {
+        setCreatedDomain(domain);
         setDomain('');
         setCustomFolderPath('');
         setSharedFolderPath('');
@@ -188,7 +205,7 @@ export default function DomainCreatePage() {
         setSubdomain('');
         setNameservers('');
       } else {
-        navigate('/domains');
+        setCreatedDomain(domain);
       }
     } catch (err) {
       console.error('Error creating domain:', err);
@@ -208,6 +225,176 @@ export default function DomainCreatePage() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Use this interface to manage your domains. For more information, read the documentation.
         </Typography>
+
+        {/* DNS Instructions Panel - shown after domain creation */}
+        {createdDomain && (
+          <Card variant="outlined" sx={{ mb: 3, borderColor: 'success.main', borderWidth: 2 }}>
+            <CardContent>
+              <Stack spacing={2}>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <CheckCircleIcon color="success" />
+                  <Typography variant="h6" fontWeight={600}>
+                    Domain "{createdDomain}" Created Successfully!
+                  </Typography>
+                </Stack>
+
+                <Alert severity="info" icon={false}>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    Next Steps: Update DNS at Your Domain Registrar
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    For <strong>{createdDomain}</strong> to resolve to your VPS, update DNS records at the registrar where you purchased the domain.
+                  </Typography>
+                </Alert>
+
+                {/* Option A: Using A Records */}
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    Option A: Point Domain via A Record
+                  </Typography>
+                  <Box sx={{ bgcolor: 'grey.50', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85em' }}>
+                    <Stack spacing={0.5}>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between">
+                        <Typography variant="body2" fontFamily="monospace">
+                          Type: <strong>A</strong> &nbsp;|&nbsp; Host: <strong>@</strong> &nbsp;|&nbsp; Value: <strong>{serverIp || '(your VPS IP)'}</strong> &nbsp;|&nbsp; TTL: <strong>3600</strong>
+                        </Typography>
+                        {serverIp && (
+                          <IconButton size="small" onClick={() => copyText(serverIp, 'ip')}>
+                            <ContentCopyIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Stack>
+                      <Typography variant="body2" fontFamily="monospace">
+                        Type: <strong>A</strong> &nbsp;|&nbsp; Host: <strong>www</strong> &nbsp;|&nbsp; Value: <strong>{serverIp || '(your VPS IP)'}</strong> &nbsp;|&nbsp; TTL: <strong>3600</strong>
+                      </Typography>
+                    </Stack>
+                  </Box>
+                  {copied === 'ip' && <Chip label="IP copied!" color="success" size="small" sx={{ mt: 0.5 }} />}
+                </Box>
+
+                {/* Option B: Custom Nameservers */}
+                {vpsNameservers.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                      Option B: Use Your Custom Nameservers (Recommended)
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      Change the domain's nameservers at your registrar to point to your VPS nameservers. This gives you full DNS control from this panel.
+                    </Typography>
+                    <Box sx={{ bgcolor: 'grey.50', p: 2, borderRadius: 1 }}>
+                      {vpsNameservers.map((ns, i) => (
+                        <Stack key={i} direction="row" alignItems="center" justifyContent="space-between">
+                          <Typography variant="body2" fontFamily="monospace">
+                            Nameserver {i + 1}: <strong>{ns}</strong>
+                          </Typography>
+                          <IconButton size="small" onClick={() => copyText(ns, `ns${i}`)}>
+                            <ContentCopyIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      ))}
+                    </Box>
+                    {copied?.startsWith('ns') && <Chip label="Copied!" color="success" size="small" sx={{ mt: 0.5 }} />}
+                  </Box>
+                )}
+
+                {/* Provider-specific instructions */}
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    How to Update DNS at Your Registrar
+                  </Typography>
+
+                  <Accordion variant="outlined" disableGutters>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={500}>GoDaddy</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                        <li><Typography variant="body2">Log in to your GoDaddy account and go to <strong>My Products</strong></Typography></li>
+                        <li><Typography variant="body2">Click <strong>DNS</strong> next to the domain</Typography></li>
+                        <li><Typography variant="body2">To use A records: Add/Edit A records with Host <strong>@</strong> and <strong>www</strong> pointing to <strong>{serverIp || 'your VPS IP'}</strong></Typography></li>
+                        <li><Typography variant="body2">To use custom nameservers: Click <strong>Nameservers</strong> → <strong>Change</strong> → <strong>Enter my own nameservers</strong> → Enter your NS records</Typography></li>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion variant="outlined" disableGutters>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={500}>Namecheap</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                        <li><Typography variant="body2">Log in to Namecheap and go to <strong>Domain List</strong></Typography></li>
+                        <li><Typography variant="body2">Click <strong>Manage</strong> next to your domain</Typography></li>
+                        <li><Typography variant="body2">For A records: Go to <strong>Advanced DNS</strong> tab → Add A records</Typography></li>
+                        <li><Typography variant="body2">For nameservers: Under <strong>Nameservers</strong> → Select <strong>Custom DNS</strong> → Enter your nameservers</Typography></li>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion variant="outlined" disableGutters>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={500}>Cloudflare</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                        <li><Typography variant="body2">Log in to Cloudflare and select the domain</Typography></li>
+                        <li><Typography variant="body2">Go to <strong>DNS</strong> → <strong>Records</strong></Typography></li>
+                        <li><Typography variant="body2">Add A record: Name <strong>@</strong>, Content <strong>{serverIp || 'your VPS IP'}</strong>, Proxy status <strong>DNS only</strong></Typography></li>
+                        <li><Typography variant="body2">Add A record: Name <strong>www</strong>, Content <strong>{serverIp || 'your VPS IP'}</strong></Typography></li>
+                        <li><Typography variant="body2"><em>Note: If using custom nameservers, remove the domain from Cloudflare and update nameservers at the original registrar</em></Typography></li>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion variant="outlined" disableGutters>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={500}>Google Domains / Squarespace</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                        <li><Typography variant="body2">Go to <strong>domains.google.com</strong> (or Squarespace Domains)</Typography></li>
+                        <li><Typography variant="body2">Click on the domain → <strong>DNS</strong></Typography></li>
+                        <li><Typography variant="body2">Under <strong>Custom records</strong>: Add A record for <strong>@</strong> with value <strong>{serverIp || 'your VPS IP'}</strong></Typography></li>
+                        <li><Typography variant="body2">For custom nameservers: <strong>DNS</strong> → <strong>Custom name servers</strong> → Switch to custom and add your NS records</Typography></li>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion variant="outlined" disableGutters>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="body2" fontWeight={500}>Hostinger</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                        <li><Typography variant="body2">Log in to Hostinger and go to <strong>Domains</strong></Typography></li>
+                        <li><Typography variant="body2">Click on the domain → <strong>DNS / Nameservers</strong></Typography></li>
+                        <li><Typography variant="body2">For A records: Go to <strong>DNS Zone</strong> → Add A record pointing to <strong>{serverIp || 'your VPS IP'}</strong></Typography></li>
+                        <li><Typography variant="body2">For nameservers: Under <strong>Nameservers</strong> → <strong>Change nameservers</strong> → Enter custom nameservers</Typography></li>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                </Box>
+
+                <Alert severity="warning" icon={false}>
+                  <Typography variant="body2">
+                    <strong>DNS propagation can take 1-48 hours.</strong> During this time, the domain may not resolve to your server.
+                    You can check propagation at{' '}
+                    <Link href="https://www.whatsmydns.net/" target="_blank" rel="noopener">whatsmydns.net</Link>.
+                  </Typography>
+                </Alert>
+
+                <Stack direction="row" spacing={2}>
+                  <Button variant="contained" onClick={() => navigate('/domains')}>
+                    Go to Domains
+                  </Button>
+                  <Button variant="outlined" onClick={() => setCreatedDomain(null)}>
+                    Create Another Domain
+                  </Button>
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+        )}
 
         <Card variant="outlined" sx={{ mb: 4 }}>
           <CardContent sx={{ p: 0 }}>
