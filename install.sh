@@ -64,19 +64,39 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd -r -s /bin/false -d "$INSTALL_DIR" "$SERVICE_USER"
 fi
 
+# Check if this is a fresh install via curl (files don't exist locally)
+if [ ! -d "backend" ] || [ ! -d "frontend" ]; then
+    echo -e "${YELLOW}📥 Downloading clearPanel source...${NC}"
+    if command -v git &> /dev/null; then
+        git clone https://github.com/SefionITServices/clearPanel-ubuntu.git /tmp/clearpanel_source
+        cd /tmp/clearpanel_source
+    else
+        echo -e "${RED}Error: git is not installed. Please install git first.${NC}"
+        echo "sudo apt-get install -y git"
+        exit 1
+    fi
+fi
+
 # Create installation directory
 echo -e "${YELLOW}📁 Creating installation directory...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data"
 mkdir -p "$INSTALL_DIR/data/domains"
 
-# Copy current directory to install location (if not already there)
+# Copy application files
 if [ "$PWD" != "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}📋 Copying application files...${NC}"
-    cp -r backend "$INSTALL_DIR/" 2>/dev/null || true
-    cp -r frontend "$INSTALL_DIR/" 2>/dev/null || true
-    cp clearpanel.service "$INSTALL_DIR/" 2>/dev/null || true
-    cp nginx.conf.example "$INSTALL_DIR/" 2>/dev/null || true
+    cp -r backend "$INSTALL_DIR/"
+    cp -r frontend "$INSTALL_DIR/"
+    cp clearpanel.service "$INSTALL_DIR/"
+    cp nginx.conf.example "$INSTALL_DIR/"
+fi
+
+# Cleanup temp source if we created it
+if [ -d "/tmp/clearpanel_source" ] && [ "$PWD" == "/tmp/clearpanel_source" ]; then
+    rm -rf /tmp/clearpanel_source
+    # Reset PWD so we don't cause issues
+    cd /root
 fi
 
 # Set ownership
