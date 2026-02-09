@@ -168,6 +168,15 @@ fi
 # Test and reload nginx
 nginx -t && systemctl enable nginx && systemctl restart nginx
 
+# Allow clearpanel user to reload nginx without password (used by domain automation)
+cat > /etc/sudoers.d/clearpanel-nginx << 'EOF'
+# Allow clearpanel user to validate and reload Nginx
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+EOF
+chmod 440 /etc/sudoers.d/clearpanel-nginx
+
 # Configure BIND9 DNS server
 echo -e "${YELLOW}🌐 Configuring BIND9 DNS server...${NC}"
 # Create zones directory

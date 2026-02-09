@@ -21,7 +21,6 @@ Environment=NODE_ENV=production
 Environment=PORT=3334
 
 # Security
-NoNewPrivileges=true
 PrivateTmp=true
 ReadWritePaths=/opt/clearpanel /home/clearpanel /etc/bind/zones /etc/nginx
 

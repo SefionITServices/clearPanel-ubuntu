@@ -79,17 +79,36 @@ export class WebServerService {
     const symlinkPath = `/etc/nginx/sites-enabled/${domain}`;
 
     try {
-      // Create config file
-      await execAsync(`sudo tee ${configPath} > /dev/null << 'EOF'\n${configContent}\nEOF`);
-      
-      // Create symlink
-      await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
-      
+      // Ensure directories exist (they should on normal installs)
+      try { await fs.mkdir('/etc/nginx/sites-available', { recursive: true }); } catch {}
+      try { await fs.mkdir('/etc/nginx/sites-enabled', { recursive: true }); } catch {}
+
+      // Create config file (prefer direct write; fallback to sudo if permissions deny)
+      try {
+        await fs.writeFile(configPath, configContent, { encoding: 'utf8' });
+      } catch (error: any) {
+        const msg = error?.message || String(error);
+        // Fallback: sudo write (non-interactive). This requires systemd unit NOT to set NoNewPrivileges.
+        await execAsync(`sudo -n tee ${configPath} > /dev/null << 'EOF'\n${configContent}\nEOF`);
+      }
+
+      // Create symlink (prefer node; fallback to sudo)
+      try {
+        try { await fs.unlink(symlinkPath); } catch {}
+        await fs.symlink(configPath, symlinkPath);
+      } catch {
+        await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+      }
+
       // Test nginx config
-      const { stdout, stderr } = await execAsync('sudo nginx -t');
-      
-      // Reload nginx
-      await execAsync('sudo systemctl reload nginx');
+      try {
+        await execAsync('nginx -t');
+      } catch {
+        await execAsync('sudo -n nginx -t');
+      }
+
+      // Reload nginx (needs privileges on most systems)
+      await execAsync('sudo -n systemctl reload nginx');
       
       return {
         success: true,
@@ -98,7 +117,12 @@ export class WebServerService {
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      return { success: false, message: `Failed to create virtual host: ${msg}` };
+      return {
+        success: false,
+        message:
+          `Failed to create virtual host: ${msg}. ` +
+          `If this mentions sudo, fix systemd unit (NoNewPrivileges) and sudoers for clearpanel.`,
+      };
     }
   }
 
