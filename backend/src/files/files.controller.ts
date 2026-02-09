@@ -292,4 +292,35 @@ export class FilesController {
       return res.status(400).json({ success: false, error: e.message });
     }
   }
+
+  @Get('search')
+  async search(@Query('path') p: string, @Query('query') query: string, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!query) return res.status(400).json({ success: false, error: 'query required' });
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.search(username, p || '', query);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('compress')
+  async compress(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    const sources: string[] = body.sources || [];
+    const destination: string = body.destination;
+    const format: string = body.format || 'zip';
+    if (!Array.isArray(sources) || sources.length === 0 || !destination) {
+      return res.status(400).json({ success: false, error: 'sources[] and destination required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.compress(username, sources, destination, format as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
 }

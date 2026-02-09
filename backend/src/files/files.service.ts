@@ -5,6 +5,10 @@ import path from 'path';
 import archiver from 'archiver';
 import unzipper from 'unzipper';
 import tar from 'tar';
+import { exec as execCb } from 'child_process';
+import { promisify } from 'util';
+
+const exec = promisify(execCb);
 
 @Injectable()
 export class FilesService {
@@ -313,6 +317,92 @@ export class FilesService {
     } catch (e: any) {
       throw new Error(`Failed to extract archive: ${e.message}`);
     }
+  }
+
+  /**
+   * Search for files/folders by name (recursive)
+   */
+  async search(username: string, dir: string, query: string, maxResults = 200) {
+    const rootPath = this.getRootPath(username);
+    const searchDir = this.validatePath(dir || '', username);
+    const results: Array<{ name: string; path: string; type: string; size: number; modified: Date }> = [];
+    const lowerQuery = query.toLowerCase();
+
+    const walk = async (currentDir: string, depth: number) => {
+      if (depth > 10 || results.length >= maxResults) return;
+      try {
+        const entries = await fs.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (results.length >= maxResults) break;
+          const fullPath = path.join(currentDir, entry.name);
+          const relativePath = path.relative(rootPath, fullPath);
+
+          if (entry.name.toLowerCase().includes(lowerQuery)) {
+            try {
+              const stat = await fs.stat(fullPath);
+              results.push({
+                name: entry.name,
+                path: relativePath,
+                type: entry.isDirectory() ? 'directory' : 'file',
+                size: stat.size,
+                modified: stat.mtime,
+              });
+            } catch { /* skip inaccessible */ }
+          }
+
+          if (entry.isDirectory()) {
+            await walk(fullPath, depth + 1);
+          }
+        }
+      } catch { /* skip inaccessible dirs */ }
+    };
+
+    await walk(searchDir, 0);
+    return { success: true, results };
+  }
+
+  /**
+   * Compress files/folders into an archive saved on disk
+   */
+  async compress(username: string, sources: string[], destination: string, format: 'zip' | 'tar.gz' = 'zip') {
+    const destFull = this.validatePath(destination, username);
+    const rootPath = this.getRootPath(username);
+
+    if (format === 'tar.gz') {
+      // Collect absolute paths
+      const absPaths = sources.map(s => {
+        const full = this.validatePath(s, username);
+        return path.relative(path.dirname(destFull), full);
+      });
+      const cwd = path.dirname(destFull);
+      const destName = path.basename(destFull);
+      const cmd = `tar -czf ${JSON.stringify(destName)} ${absPaths.map(p => JSON.stringify(p)).join(' ')}`;
+      await exec(cmd, { cwd });
+    } else {
+      // ZIP
+      const zip = archiver('zip', { zlib: { level: 9 } });
+      const output = fsSync.createWriteStream(destFull);
+
+      await new Promise<void>((resolve, reject) => {
+        output.on('close', resolve);
+        zip.on('error', reject);
+        zip.pipe(output);
+
+        for (const src of sources) {
+          const full = this.validatePath(src, username);
+          const name = path.relative(rootPath, full) || path.basename(full);
+          if (fsSync.statSync(full).isDirectory()) {
+            zip.directory(full, name);
+          } else {
+            zip.file(full, { name });
+          }
+        }
+
+        zip.finalize();
+      });
+    }
+
+    return { success: true, message: `Compressed to ${path.basename(destFull)}` };
   }
 }
 

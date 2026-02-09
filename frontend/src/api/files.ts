@@ -50,6 +50,35 @@ export interface MoveResponse extends ApiResponse {
   results?: MoveResult[];
 }
 
+export interface FileInfoResponse extends ApiResponse {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  modified: string;
+  permissions: string;
+  owner: number;
+  group: number;
+}
+
+export interface DiskUsageResponse extends ApiResponse {
+  total: number;
+  used: number;
+  available: number;
+}
+
+export interface SearchResult {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  modified: string;
+}
+
+export interface SearchResponse extends ApiResponse {
+  results: SearchResult[];
+}
+
 const API_BASE = '/api/files';
 
 async function fetchJSON<T = any>(url: string, options?: RequestInit): Promise<T> {
@@ -132,9 +161,9 @@ export const filesAPI = {
     return res.blob();
   },
 
-  async read(path: string): Promise<ApiResponse & { content: string }> {
+  async read(path: string): Promise<ApiResponse & { content: string; size: number }> {
     const url = `${API_BASE}/read?path=${encodeURIComponent(path)}`;
-    return fetchJSON<ApiResponse & { content: string }>(url);
+    return fetchJSON<ApiResponse & { content: string; size: number }>(url);
   },
 
   getRawUrl(path: string): string {
@@ -154,6 +183,52 @@ export const filesAPI = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path, content }),
+    });
+  },
+
+  async create(path: string, content: string = ''): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    });
+  },
+
+  async chmod(path: string, mode: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/chmod`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, mode }),
+    });
+  },
+
+  async info(path: string): Promise<FileInfoResponse> {
+    const url = `${API_BASE}/info?path=${encodeURIComponent(path)}`;
+    return fetchJSON<FileInfoResponse>(url);
+  },
+
+  async diskUsage(): Promise<DiskUsageResponse> {
+    return fetchJSON<DiskUsageResponse>(`${API_BASE}/disk-usage`);
+  },
+
+  async extract(archive: string, destination: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archive, destination }),
+    });
+  },
+
+  async search(dir: string, query: string): Promise<SearchResponse> {
+    const url = `${API_BASE}/search?path=${encodeURIComponent(dir)}&query=${encodeURIComponent(query)}`;
+    return fetchJSON<SearchResponse>(url);
+  },
+
+  async compress(sources: string[], destination: string, format: 'zip' | 'tar.gz' = 'zip'): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/compress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sources, destination, format }),
     });
   },
 };
