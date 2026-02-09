@@ -7,7 +7,10 @@ import { ServerSettings } from './server-settings.interface';
 @Injectable()
 export class ServerSettingsService implements OnModuleInit {
   private readonly logger = new Logger(ServerSettingsService.name);
-  private readonly settingsPath = path.join(process.cwd(), 'server-settings.json');
+  private readonly settingsPath = path.join(
+    process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+    'server-settings.json',
+  );
   private cache: ServerSettings | null = null;
 
   async onModuleInit(): Promise<void> {

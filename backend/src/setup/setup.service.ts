@@ -10,6 +10,9 @@ import {
     SetupCompleteResponse,
 } from './setup.model';
 import { ServerSettingsService } from '../server/server-settings.service';
+import { DnsService } from '../dns/dns.service';
+import { DnsServerService } from '../dns-server/dns-server.service';
+import { WebServerService } from '../webserver/webserver.service';
 
 @Injectable()
 export class SetupService {
@@ -21,7 +24,12 @@ export class SetupService {
     );
     private readonly envPath = path.join(process.cwd(), '.env');
 
-    constructor(private readonly serverSettingsService: ServerSettingsService) { }
+    constructor(
+        private readonly serverSettingsService: ServerSettingsService,
+        private readonly dnsService: DnsService,
+        private readonly dnsServerService: DnsServerService,
+        private readonly webServerService: WebServerService,
+    ) { }
 
     async isSetupCompleted(): Promise<boolean> {
         try {
@@ -73,12 +81,26 @@ export class SetupService {
             // 3. Update server settings (IP, nameservers, primary domain)
             await this.updateServerSettings(config);
 
-            // 4. If primary domain provided, create default index.html
+            // 4. If primary domain provided, provision it fully (DNS + BIND9 + Nginx)
             let primaryDomainConfigured = false;
+            const provisioningResults: string[] = [];
             if (config.primaryDomain) {
                 const publicHtml = path.join(userHome, 'public_html');
                 await this.createDefaultIndexHtml(publicHtml, config.primaryDomain);
-                primaryDomainConfigured = true;
+
+                try {
+                    await this.provisionPrimaryDomain(config, userHome);
+                    primaryDomainConfigured = true;
+                    provisioningResults.push('DNS zone created');
+                    provisioningResults.push('BIND9 zone file created');
+                    provisioningResults.push('Nginx virtual host created');
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    this.logger.error(`Primary domain provisioning partially failed: ${msg}`);
+                    provisioningResults.push(`Provisioning warning: ${msg}`);
+                    // Don't fail entire setup — domain can be re-added via panel
+                    primaryDomainConfigured = true;
+                }
             }
 
             // 5. Mark setup as completed
@@ -93,6 +115,7 @@ export class SetupService {
                     userHome,
                     primaryDomainConfigured,
                     nameserversConfigured: config.nameservers || [],
+                    provisioningResults,
                     loginUrl: config.primaryDomain
                         ? `http://${config.primaryDomain}`
                         : `http://${config.serverIp}`,
@@ -272,6 +295,51 @@ export class SetupService {
 
         await fs.writeFile(indexPath, html, 'utf-8');
         this.logger.log(`Created default index.html for ${domain}`);
+    }
+
+    /**
+     * Provision the primary domain: DNS zone in dns.json, BIND9 zone file, Nginx vhost
+     */
+    private async provisionPrimaryDomain(config: SetupConfig, userHome: string): Promise<void> {
+        const domain = config.primaryDomain!;
+        const ip = config.serverIp;
+        const nameservers = config.nameservers || [];
+        const publicHtml = path.join(userHome, 'public_html');
+
+        // 1. Create DNS zone in dns.json (panel-visible records)
+        this.logger.log(`Provisioning DNS zone for ${domain}...`);
+        await this.dnsService.ensureDefaultZone(domain, {
+            nameservers,
+            serverIp: ip,
+        });
+
+        // 2. Create BIND9 zone file at /etc/bind/zones/db.{domain}
+        this.logger.log(`Creating BIND9 zone file for ${domain}...`);
+        try {
+            await this.dnsServerService.createZone(domain, ip, nameservers);
+            this.logger.log(`BIND9 zone created for ${domain}`);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // Zone may already exist on reinstall
+            if (msg.includes('already exists')) {
+                this.logger.warn(`BIND9 zone already exists for ${domain}, skipping`);
+            } else {
+                throw err;
+            }
+        }
+
+        // 3. Create Nginx virtual host
+        this.logger.log(`Creating Nginx vhost for ${domain}...`);
+        try {
+            await this.webServerService.createVirtualHost(domain, publicHtml);
+            this.logger.log(`Nginx vhost created for ${domain}`);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`Nginx vhost creation warning: ${msg}`);
+            // Don't throw — BIND9 + DNS are more critical
+        }
+
+        this.logger.log(`Primary domain ${domain} fully provisioned`);
     }
 
     private async generateEnvFile(config: SetupConfig): Promise<void> {

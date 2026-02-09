@@ -17,7 +17,10 @@ export interface DnsZone {
   records: DnsRecord[];
 }
 
-const DNS_FILE = path.join(process.cwd(), 'dns.json');
+const DNS_FILE = path.join(
+  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  'dns.json',
+);
 
 @Injectable()
 export class DnsService {

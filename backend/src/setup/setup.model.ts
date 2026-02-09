@@ -40,6 +40,7 @@ export interface SetupCompleteResponse {
     userHome?: string;
     primaryDomainConfigured?: boolean;
     nameserversConfigured?: string[];
+    provisioningResults?: string[];
     loginUrl?: string;
   };
 }

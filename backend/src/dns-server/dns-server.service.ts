@@ -159,9 +159,11 @@ export class DnsServerService {
       }
 
       // Create zone file content
+      // Use the first configured nameserver for SOA, not a hardcoded ns1.{domain}
+      const soaNs = nsList[0] ? `${nsList[0]}.` : `ns1.${domain}.`;
       const zoneContent = `; Zone file for ${domain}
 $TTL 86400
-@   IN  SOA ns1.${domain}. admin.${domain}. (
+@   IN  SOA ${soaNs} admin.${domain}. (
         ${serial}   ; Serial
         3600        ; Refresh
         1800        ; Retry
@@ -176,7 +178,7 @@ ${nsARecords || '; (external nameserver hostnames – no local A records created
 
 ; Main domain A record
 @       IN  A       ${ip}
-www     IN  A       ${ip}
+www     IN  CNAME   ${domain}.
 `;
 
       // Write zone file using Node.js fs instead of sudo

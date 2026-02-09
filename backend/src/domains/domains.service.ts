@@ -11,7 +11,10 @@ import { ServerSettingsService } from '../server/server-settings.service';
 import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
 
-const DOMAINS_FILE = path.join(process.cwd(), 'domains.json');
+const DOMAINS_FILE = path.join(
+  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  'domains.json',
+);
 
 export interface AutomationLog {
   task: string;
