@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { getDataFilePath } from '../common/paths';
 
 export interface DnsRecord {
   id: string;
@@ -17,16 +18,11 @@ export interface DnsZone {
   records: DnsRecord[];
 }
 
-const DNS_FILE = path.join(
-  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
-  'dns.json',
-);
-
 @Injectable()
 export class DnsService {
   private async readZones(): Promise<DnsZone[]> {
     try {
-      const data = await fs.readFile(DNS_FILE, 'utf-8');
+      const data = await fs.readFile(getDataFilePath('dns.json'), 'utf-8');
       return JSON.parse(data);
     } catch {
       return [];
@@ -34,7 +30,9 @@ export class DnsService {
   }
 
   private async writeZones(zones: DnsZone[]): Promise<void> {
-    await fs.writeFile(DNS_FILE, JSON.stringify(zones, null, 2));
+    const dnsFile = getDataFilePath('dns.json');
+    await fs.mkdir(path.dirname(dnsFile), { recursive: true });
+    await fs.writeFile(dnsFile, JSON.stringify(zones, null, 2));
   }
 
   async ensureDefaultZone(

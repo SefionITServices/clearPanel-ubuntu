@@ -3,15 +3,16 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { ServerSettings } from './server-settings.interface';
+import { getDataFilePath } from '../common/paths';
 
 @Injectable()
 export class ServerSettingsService implements OnModuleInit {
   private readonly logger = new Logger(ServerSettingsService.name);
-  private readonly settingsPath = path.join(
-    process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
-    'server-settings.json',
-  );
   private cache: ServerSettings | null = null;
+
+  private get settingsPath(): string {
+    return getDataFilePath('server-settings.json');
+  }
 
   async onModuleInit(): Promise<void> {
     try {
@@ -86,6 +87,7 @@ export class ServerSettingsService implements OnModuleInit {
 
   private async writeSettings(settings: ServerSettings): Promise<void> {
     const payload = JSON.stringify(settings, null, 2);
+    await fs.mkdir(path.dirname(this.settingsPath), { recursive: true });
     await fs.writeFile(this.settingsPath, payload, 'utf-8');
     this.cache = this.clone(settings);
     if (settings.serverIp) {

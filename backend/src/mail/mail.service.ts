@@ -6,11 +6,8 @@ import { MailAlias, MailDomain, Mailbox } from './mail.model';
 import { MailAutomationService, AutomationLog, DkimResult } from './mail-automation.service';
 import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } from './mail-history.service';
 import { ServerSettingsService } from '../server/server-settings.service';
+import { getDataFilePath } from '../common/paths';
 
-const MAIL_DATA_FILE = path.join(
-  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
-  'mail-domains.json',
-);
 const DEFAULT_SPAM_THRESHOLD = 6.0;
 const DEFAULT_GREYLISTING_DELAY_SECONDS = 300;
 
@@ -654,7 +651,7 @@ export class MailService {
 
   private async readDomains(): Promise<MailDomain[]> {
     try {
-      const payload = await fs.readFile(MAIL_DATA_FILE, 'utf-8');
+      const payload = await fs.readFile(getDataFilePath('mail-domains.json'), 'utf-8');
       const data = JSON.parse(payload) as MailDomain[];
       data.forEach((domain) => this.applyDomainDefaults(domain));
       return data;
@@ -670,7 +667,9 @@ export class MailService {
 
   private async writeDomains(domains: MailDomain[]): Promise<void> {
     domains.forEach((domain) => this.applyDomainDefaults(domain));
-    await fs.writeFile(MAIL_DATA_FILE, JSON.stringify(domains, null, 2), 'utf-8');
+    const mailFile = getDataFilePath('mail-domains.json');
+    await fs.mkdir(path.dirname(mailFile), { recursive: true });
+    await fs.writeFile(mailFile, JSON.stringify(domains, null, 2), 'utf-8');
   }
 
   private sanitizeDomainSettings(payload: DomainSettingsUpdate): SanitizedDomainSettings | null {

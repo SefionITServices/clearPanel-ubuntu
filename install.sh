@@ -88,8 +88,8 @@ else
     fi
 fi
 
-# Create data directory (outside of git)
-# User home dirs are created by the setup wizard when admin picks a username
+# Create minimal bootstrap directory (setup-status only)
+# All user data will be stored in /home/<username>/etc/clearpanel/ after setup
 mkdir -p "$INSTALL_DIR/data"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 

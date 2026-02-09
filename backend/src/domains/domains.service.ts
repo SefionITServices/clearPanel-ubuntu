@@ -10,11 +10,7 @@ import * as os from 'os';
 import { ServerSettingsService } from '../server/server-settings.service';
 import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
-
-const DOMAINS_FILE = path.join(
-  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
-  'domains.json',
-);
+import { getDataFilePath } from '../common/paths';
 
 export interface AutomationLog {
   task: string;
@@ -48,7 +44,7 @@ export class DomainsService {
   ) { }
   private async readDomains(): Promise<Domain[]> {
     try {
-      const data = await fs.readFile(DOMAINS_FILE, 'utf-8');
+      const data = await fs.readFile(getDataFilePath('domains.json'), 'utf-8');
       return JSON.parse(data);
     } catch {
       return [];
@@ -56,7 +52,8 @@ export class DomainsService {
   }
 
   private async writeDomains(domains: Domain[]): Promise<void> {
-    await fs.writeFile(DOMAINS_FILE, JSON.stringify(domains, null, 2));
+    await fs.mkdir(path.dirname(getDataFilePath('domains.json')), { recursive: true });
+    await fs.writeFile(getDataFilePath('domains.json'), JSON.stringify(domains, null, 2));
   }
 
   async addDomain(username: string, name: string, folderPath?: string, customNameservers?: string[], pathMode?: string): Promise<DomainCreationResult> {

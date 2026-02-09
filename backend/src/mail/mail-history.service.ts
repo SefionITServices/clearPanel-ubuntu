@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { getDataFilePath } from '../common/paths';
 
 export type MailAutomationScope = 'stack' | 'domain' | 'mailbox' | 'alias' | 'dkim';
 
@@ -21,11 +22,11 @@ export interface MailAutomationHistoryRecord {
 @Injectable()
 export class MailHistoryService {
   private readonly logger = new Logger(MailHistoryService.name);
-  private readonly historyPath = path.join(
-    process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
-    'mail-automation-history.json',
-  );
   private readonly maxRecords = 500;
+
+  private get historyPath(): string {
+    return getDataFilePath('mail-automation-history.json');
+  }
 
   async append(records: Omit<MailAutomationHistoryRecord, 'id'>[]): Promise<void> {
     if (!records.length) {
@@ -70,6 +71,7 @@ export class MailHistoryService {
   }
 
   private async writeAll(records: MailAutomationHistoryRecord[]): Promise<void> {
+    await fs.mkdir(path.dirname(this.historyPath), { recursive: true });
     await fs.writeFile(this.historyPath, JSON.stringify(records, null, 2), 'utf-8');
   }
 }
