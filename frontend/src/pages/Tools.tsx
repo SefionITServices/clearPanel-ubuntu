@@ -26,6 +26,8 @@ import HomeIcon from '@mui/icons-material/Home';
 import EmailIcon from '@mui/icons-material/Email';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
+import LockIcon from '@mui/icons-material/Lock';
+import LanIcon from '@mui/icons-material/Lan';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
@@ -200,11 +202,25 @@ export default function ToolsPage() {
           color: 'primary.main',
         },
         {
+          label: 'SSL Certificates',
+          icon: <LockIcon sx={{ fontSize: 28 }} />,
+          description: 'Manage SSL / HTTPS',
+          onClick: () => navigate('/ssl'),
+          color: 'success.main',
+        },
+        {
           label: 'DNS Zones',
           icon: <DnsIcon sx={{ fontSize: 28 }} />,
           description: 'Edit DNS records',
           onClick: () => navigate('/dns'),
           color: 'warning.main',
+        },
+        {
+          label: 'Nameservers',
+          icon: <LanIcon sx={{ fontSize: 28 }} />,
+          description: 'Configure nameservers',
+          onClick: () => navigate('/nameservers'),
+          color: 'info.main',
         },
         {
           label: 'Settings',
