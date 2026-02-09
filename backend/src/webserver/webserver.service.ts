@@ -14,6 +14,16 @@ export class WebServerService {
     await this.checkNginx();
   }
 
+  private async ensureNginxAvailable(): Promise<boolean> {
+    if (this.nginxAvailable) {
+      return true;
+    }
+
+    // Nginx may be installed after the backend starts.
+    await this.checkNginx();
+    return this.nginxAvailable;
+  }
+
   private async checkNginx(): Promise<void> {
     try {
       await execAsync('which nginx');
@@ -39,8 +49,73 @@ export class WebServerService {
     }
   }
 
+  async ensureVirtualHost(
+    domain: string,
+    documentRoot: string,
+  ): Promise<{ success: boolean; message: string; created: boolean; nginxConfig?: string }> {
+    const available = await this.ensureNginxAvailable();
+    if (!available) {
+      return {
+        success: false,
+        created: false,
+        message: 'Nginx not available. Install nginx first.',
+      };
+    }
+
+    const configPath = `/etc/nginx/sites-available/${domain}`;
+    const symlinkPath = `/etc/nginx/sites-enabled/${domain}`;
+
+    const configExists = await fs
+      .access(configPath)
+      .then(() => true)
+      .catch(() => false);
+
+    if (configExists) {
+      // Ensure the site is enabled.
+      try {
+        const linkTarget = await fs.readlink(symlinkPath);
+        if (linkTarget !== configPath) {
+          try {
+            await fs.unlink(symlinkPath);
+          } catch {}
+          await fs.symlink(configPath, symlinkPath);
+        }
+      } catch {
+        // Missing symlink; create it.
+        try {
+          await fs.symlink(configPath, symlinkPath);
+        } catch {
+          await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+        }
+      }
+
+      // Validate and reload nginx so the vhost takes effect.
+      try {
+        await execAsync('nginx -t');
+      } catch {
+        await execAsync('sudo -n nginx -t');
+      }
+      await execAsync('sudo -n systemctl reload nginx');
+
+      return {
+        success: true,
+        created: false,
+        message: `Virtual host already present for ${domain}`,
+      };
+    }
+
+    const created = await this.createVirtualHost(domain, documentRoot);
+    return {
+      success: created.success,
+      created: created.success,
+      message: created.message,
+      nginxConfig: created.nginxConfig,
+    };
+  }
+
   async createVirtualHost(domain: string, documentRoot: string): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
-    if (!this.nginxAvailable) {
+    const available = await this.ensureNginxAvailable();
+    if (!available) {
       return { success: false, message: 'Nginx not available. Install nginx first.' };
     }
 
@@ -127,7 +202,8 @@ export class WebServerService {
   }
 
   async removeVirtualHost(domain: string): Promise<{ success: boolean; message: string }> {
-    if (!this.nginxAvailable) {
+    const available = await this.ensureNginxAvailable();
+    if (!available) {
       return { success: false, message: 'Nginx not available' };
     }
 

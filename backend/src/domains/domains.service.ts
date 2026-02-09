@@ -231,12 +231,12 @@ export class DomainsService {
       // Continue even if DNS server fails
     }
 
-    // Auto-create nginx virtual host
+    // Ensure nginx virtual host (idempotent)
     try {
-      const vhostResult = await this.webServerService.createVirtualHost(name, domain.folderPath);
+      const vhostResult = await this.webServerService.ensureVirtualHost(name, domain.folderPath);
       console.log(`Virtual host setup: ${vhostResult.message}`);
       logs.push({
-        task: 'Create Nginx virtual host',
+        task: vhostResult.created ? 'Create Nginx virtual host' : 'Ensure Nginx virtual host',
         success: vhostResult.success,
         message: vhostResult.message,
         detail: vhostResult.success ? undefined : vhostResult.message,
