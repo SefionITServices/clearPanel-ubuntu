@@ -89,50 +89,8 @@ else
 fi
 
 # Create data directory (outside of git)
+# User home dirs are created by the setup wizard when admin picks a username
 mkdir -p "$INSTALL_DIR/data"
-
-# Create cPanel-like user home directory for default admin user
-ADMIN_USER="admin"
-USER_HOME="$INSTALL_DIR/data/$ADMIN_USER"
-echo -e "${YELLOW}🏠 Creating user home directory: $USER_HOME${NC}"
-mkdir -p "$USER_HOME/public_html"
-mkdir -p "$USER_HOME/mail"
-mkdir -p "$USER_HOME/logs"
-mkdir -p "$USER_HOME/tmp"
-mkdir -p "$USER_HOME/etc"
-mkdir -p "$USER_HOME/ssl/certs"
-mkdir -p "$USER_HOME/ssl/keys"
-mkdir -p "$USER_HOME/ssl/csrs"
-mkdir -p "$USER_HOME/cgi-bin"
-mkdir -p "$USER_HOME/.ssh"
-mkdir -p "$USER_HOME/.trash"
-chmod 700 "$USER_HOME/.ssh"
-
-# Create default index.html in public_html
-if [ ! -f "$USER_HOME/public_html/index.html" ]; then
-    cat > "$USER_HOME/public_html/index.html" << 'INDEXEOF'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to clearPanel</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 100px auto; text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        h1 { color: #2c3e50; } p { color: #7f8c8d; line-height: 1.6; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚀 clearPanel is Ready!</h1>
-        <p>Your server is configured. Add a domain to get started.</p>
-    </div>
-</body>
-</html>
-INDEXEOF
-fi
-
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 
 # Ensure data directory is in .gitignore so git pull doesn't affect user data
@@ -160,32 +118,23 @@ sudo -u "$SERVICE_USER" npm run build
 
 # Frontend vite config outputs directly to backend/public, no copy needed
 
-# Create environment file
-echo -e "${YELLOW}📝 Creating environment configuration...${NC}"
-mkdir -p "$INSTALL_DIR/backend"
-cat > "$INSTALL_DIR/backend/.env" << EOF
-# Server Configuration
+# Create a minimal .env only if one doesn't already exist
+# The setup wizard will generate the full .env with user-chosen credentials
+if [ ! -f "$INSTALL_DIR/backend/.env" ]; then
+    echo -e "${YELLOW}📝 Creating minimal environment for first boot...${NC}"
+    cat > "$INSTALL_DIR/backend/.env" << EOF
 NODE_ENV=production
 PORT=3334
-
-# Session Secret (CHANGE THIS!)
 SESSION_SECRET=$(openssl rand -hex 32)
-
-# Admin Credentials (CHANGE THESE!)
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
-
-# Server IP (auto-detected, change if incorrect)
-SERVER_IP=$(hostname -I | awk '{print $1}')
-
-# File Manager Settings
 ROOT_PATH=/opt/clearpanel/data
-ALLOWED_EXTENSIONS=*
-MAX_FILE_SIZE=104857600
 EOF
+    chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/backend/.env"
+    chmod 600 "$INSTALL_DIR/backend/.env"
+fi
 
-chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/backend/.env"
-chmod 600 "$INSTALL_DIR/backend/.env"
+# Ensure setup-status.json does NOT exist so the setup wizard will run
+rm -f "$INSTALL_DIR/data/setup-status.json"
+echo -e "${GREEN}✓ Setup wizard will run on first access${NC}"
 
 # Setup systemd service
 echo -e "${YELLOW}⚙️  Setting up systemd service...${NC}"
@@ -275,23 +224,12 @@ if systemctl is-active --quiet clearpanel; then
     echo -e "${GREEN}clearPanel is now running${NC}"
     echo -e "${GREEN}BIND9 DNS server is installed and ready${NC}"
     echo ""
-    echo -e "${YELLOW}⚠️  IMPORTANT NEXT STEPS:${NC}"
-    echo "1. Edit /opt/clearpanel/backend/.env and change:"
-    echo "   - ADMIN_USERNAME"
-    echo "   - ADMIN_PASSWORD"
-    echo "   - SESSION_SECRET (already generated)"
+    echo -e "${YELLOW}⚠️  NEXT STEPS:${NC}"
+    echo "1. Open the panel in your browser to complete the Setup Wizard"
+    echo "   The wizard will configure your admin account, domain, and nameservers."
     echo ""
-    echo "2. (Optional) Edit nginx config to add your domain:"
-    echo "   /etc/nginx/sites-available/clearpanel (Debian/Ubuntu)"
-    echo "   Replace server_name _; with your actual domain"
-    echo ""
-    echo "3. Restart services:"
-    echo "   sudo systemctl restart clearpanel"
-    echo "   sudo systemctl restart nginx"
-    echo ""
-    echo "4. Setup SSL with Let's Encrypt:"
-    echo "   sudo ./setup-ssl.sh"
-    echo "   Or manually: sudo certbot --nginx -d your-domain.com"
+    echo "2. (Optional) Setup SSL with Let's Encrypt after wizard:"
+    echo "   sudo certbot --nginx -d your-domain.com"
     echo ""
     SERVER_IP=$(hostname -I | awk '{print $1}')
     echo -e "${GREEN}Access your panel at: http://$SERVER_IP${NC}"

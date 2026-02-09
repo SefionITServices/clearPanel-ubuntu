@@ -14,7 +14,11 @@ import { ServerSettingsService } from '../server/server-settings.service';
 @Injectable()
 export class SetupService {
     private readonly logger = new Logger(SetupService.name);
-    private readonly setupStatusPath = path.join(process.cwd(), '..', 'setup-status.json');
+    private readonly dataDir = process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data');
+    private readonly setupStatusPath = path.join(
+        process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+        'setup-status.json',
+    );
     private readonly envPath = path.join(process.cwd(), '.env');
 
     constructor(private readonly serverSettingsService: ServerSettingsService) { }
@@ -312,6 +316,7 @@ MAX_FILE_SIZE=${config.maxFileSize}
             adminUsername,
             primaryDomain,
         };
+        await fs.mkdir(path.dirname(this.setupStatusPath), { recursive: true });
         await fs.writeFile(this.setupStatusPath, JSON.stringify(status, null, 2), 'utf-8');
     }
 
