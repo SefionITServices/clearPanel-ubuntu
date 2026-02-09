@@ -179,6 +179,12 @@ export default function SetupPage() {
 
             if (!res.ok || !result.success) throw new Error(result.message || 'Setup failed');
             setSuccess(true);
+
+            // The server auto-restarts after setup; wait a moment then redirect to dashboard
+            // The session is already authenticated (server auto-logged us in)
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 8000);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Setup failed');
         } finally {
@@ -222,13 +228,14 @@ export default function SetupPage() {
                                 Setup Complete!
                             </Typography>
 
-                            <Alert severity="warning" sx={{ width: '100%' }}>
+                            <Alert severity="info" sx={{ width: '100%' }}>
                                 <Typography variant="body2" fontWeight={600}>
-                                    Restart the server to apply changes:
+                                    The server is restarting to apply your configuration...
                                 </Typography>
-                                <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', bgcolor: 'grey.100', p: 1, borderRadius: 1 }}>
-                                    sudo systemctl restart clearpanel
+                                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                    You'll be redirected to the dashboard in a few seconds.
                                 </Typography>
+                                <CircularProgress size={16} sx={{ mt: 1 }} />
                             </Alert>
 
                             {config.primaryDomain && (
@@ -278,8 +285,8 @@ export default function SetupPage() {
                                 </CardContent>
                             </Card>
 
-                            <Button variant="contained" size="large" onClick={() => navigate('/login')}>
-                                Go to Login
+                            <Button variant="contained" size="large" onClick={() => window.location.href = '/'}>
+                                Go to Dashboard
                             </Button>
                         </Stack>
                     </CardContent>
@@ -452,7 +459,7 @@ export default function SetupPage() {
                     <Stack spacing={3}>
                         <Typography variant="h5" fontWeight={600}>Review & Complete</Typography>
                         <Typography variant="body2" color="text.secondary">
-                            Review your configuration. You'll need to restart the service after setup completes.
+                            Review your configuration. The server will apply changes automatically after setup.
                         </Typography>
 
                         <Card variant="outlined">

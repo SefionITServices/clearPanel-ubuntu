@@ -114,7 +114,7 @@ export class SetupService {
 
             return {
                 success: true,
-                message: 'Setup completed successfully. The server needs to restart to apply changes.',
+                message: 'Setup completed successfully. The server will restart automatically.',
                 details: {
                     userHome,
                     primaryDomainConfigured,

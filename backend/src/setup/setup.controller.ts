@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, HttpException, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, Post, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { SetupService } from './setup.service';
 import { SetupConfig } from './setup.model';
 
@@ -25,7 +26,7 @@ export class SetupController {
      * Submit setup configuration
      */
     @Post('complete')
-    async completeSetup(@Body() config: SetupConfig) {
+    async completeSetup(@Body() config: SetupConfig, @Req() req: Request) {
         // Verify setup is not already completed
         const isCompleted = await this.setupService.isSetupCompleted();
         if (isCompleted) {
@@ -46,6 +47,17 @@ export class SetupController {
                 HttpStatus.BAD_REQUEST,
             );
         }
+
+        // Auto-login the user with the credentials they just created
+        (req.session as any).isAuthenticated = true;
+        (req.session as any).username = config.adminUsername;
+
+        // Schedule a graceful restart so ConfigModule re-reads the new .env
+        // (delay to let the HTTP response finish first)
+        setTimeout(() => {
+            console.log('[Setup] Restarting process to apply new environment...');
+            process.exit(0); // systemd will restart us automatically
+        }, 2000);
 
         return result;
     }
