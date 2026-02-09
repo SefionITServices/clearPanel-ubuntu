@@ -75,10 +75,12 @@ export class WebServerService {
       try {
         const linkTarget = await fs.readlink(symlinkPath);
         if (linkTarget !== configPath) {
+          try { await fs.unlink(symlinkPath); } catch {}
           try {
-            await fs.unlink(symlinkPath);
-          } catch {}
-          await fs.symlink(configPath, symlinkPath);
+            await fs.symlink(configPath, symlinkPath);
+          } catch {
+            await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+          }
         }
       } catch {
         // Missing symlink; create it.
@@ -90,11 +92,7 @@ export class WebServerService {
       }
 
       // Validate and reload nginx so the vhost takes effect.
-      try {
-        await execAsync('nginx -t');
-      } catch {
-        await execAsync('sudo -n nginx -t');
-      }
+      await execAsync('sudo -n nginx -t');
       await execAsync('sudo -n systemctl reload nginx');
 
       return {
@@ -154,20 +152,18 @@ export class WebServerService {
     const symlinkPath = `/etc/nginx/sites-enabled/${domain}`;
 
     try {
-      // Ensure directories exist (they should on normal installs)
-      try { await fs.mkdir('/etc/nginx/sites-available', { recursive: true }); } catch {}
-      try { await fs.mkdir('/etc/nginx/sites-enabled', { recursive: true }); } catch {}
-
-      // Create config file (prefer direct write; fallback to sudo if permissions deny)
+      // Write config file (clearpanel owns sites-available; fallback to sudo tee)
       try {
-        await fs.writeFile(configPath, configContent, { encoding: 'utf8' });
-      } catch (error: any) {
-        const msg = error?.message || String(error);
-        // Fallback: sudo write (non-interactive). This requires systemd unit NOT to set NoNewPrivileges.
-        await execAsync(`sudo -n tee ${configPath} > /dev/null << 'EOF'\n${configContent}\nEOF`);
+        await fs.writeFile(configPath, configContent, { encoding: 'utf8', mode: 0o644 });
+      } catch {
+        // Fallback: write via temp file + sudo tee
+        const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
+        await fs.writeFile(tmpFile, configContent, { encoding: 'utf8' });
+        await execAsync(`sudo -n tee ${configPath} < ${tmpFile} > /dev/null`);
+        await fs.unlink(tmpFile).catch(() => {});
       }
 
-      // Create symlink (prefer node; fallback to sudo)
+      // Create symlink (clearpanel owns sites-enabled; fallback to sudo)
       try {
         try { await fs.unlink(symlinkPath); } catch {}
         await fs.symlink(configPath, symlinkPath);
@@ -177,12 +173,18 @@ export class WebServerService {
 
       // Test nginx config
       try {
-        await execAsync('nginx -t');
-      } catch {
         await execAsync('sudo -n nginx -t');
+      } catch {
+        // If test fails, remove bad config and report
+        try { await fs.unlink(symlinkPath); } catch {}
+        try { await fs.unlink(configPath); } catch {}
+        return {
+          success: false,
+          message: `Nginx config test failed for ${domain}. Config was removed.`,
+        };
       }
 
-      // Reload nginx (needs privileges on most systems)
+      // Reload nginx
       await execAsync('sudo -n systemctl reload nginx');
       
       return {

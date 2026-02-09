@@ -174,12 +174,24 @@ fi
 # Test and reload nginx
 nginx -t && systemctl enable nginx && systemctl restart nginx
 
-# Allow clearpanel user to reload nginx without password (used by domain automation)
+# Give clearpanel user ownership of nginx vhost directories
+# so it can create/remove vhost configs without sudo
+chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-available
+chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-enabled
+
+# Allow clearpanel user to manage nginx without password (used by domain automation)
 cat > /etc/sudoers.d/clearpanel-nginx << 'EOF'
-# Allow clearpanel user to validate and reload Nginx
+# Allow clearpanel user to validate and reload/restart Nginx
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl start nginx
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx
+# Fallback commands for vhost management
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/*
+clearpanel ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
+clearpanel ALL=(ALL) NOPASSWD: /bin/rm -f /etc/nginx/sites-enabled/*
+clearpanel ALL=(ALL) NOPASSWD: /bin/rm -f /etc/nginx/sites-available/*
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-nginx
 
