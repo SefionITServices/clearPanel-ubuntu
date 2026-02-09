@@ -181,8 +181,19 @@ ${nsARecords || '; (external nameserver hostnames – no local A records created
 www     IN  CNAME   ${domain}.
 `;
 
-      // Write zone file using Node.js fs instead of sudo
-      await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+      // Write zone file using Node.js fs (preferred). Requires clearpanel user to have bind group write access.
+      try {
+        await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+      } catch (error: any) {
+        if (error?.code === 'EACCES') {
+          throw new Error(
+            `Permission denied writing ${zoneFile}. ` +
+              `Fix: ensure /etc/bind/zones is group-owned by 'bind' and mode 2775, ` +
+              `and the clearpanel service user is in the 'bind' group (systemd SupplementaryGroups=bind).`,
+          );
+        }
+        throw error;
+      }
       
       // Try to set ownership (may fail if not root, but that's okay if permissions are set correctly)
       try {

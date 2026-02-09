@@ -185,14 +185,15 @@ mkdir -p /etc/bind/zones
 # Add clearpanel user to bind group for zone file management
 usermod -a -G bind "$SERVICE_USER" 2>/dev/null || true
 
-# Set permissions: bind group can write, others can read
-chown -R bind:bind /etc/bind/zones 2>/dev/null || chown -R root:root /etc/bind/zones
-chmod 775 /etc/bind/zones
-chmod g+s /etc/bind/zones  # Set group sticky bit so new files inherit group
+# Set permissions so bind group can write (required for clearpanel user)
+# Prefer root:bind ownership with setgid so new files inherit bind group.
+chgrp -R bind /etc/bind/zones 2>/dev/null || true
+chown -R root:bind /etc/bind/zones 2>/dev/null || true
+chmod 2775 /etc/bind/zones
 
-# Also allow clearpanel to write to named.conf.local (for zone configuration)
-chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
+# Also allow clearpanel (via bind group) to write to named.conf.local (for zone configuration)
 chgrp bind /etc/bind/named.conf.local 2>/dev/null || true
+chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
 
 # Configure sudoers to allow clearpanel user to reload/restart BIND9 without password
 cat > /etc/sudoers.d/clearpanel-bind9 << 'EOF'
