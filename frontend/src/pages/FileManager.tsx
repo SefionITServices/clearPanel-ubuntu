@@ -67,6 +67,7 @@ import {
   Image as ImageIcon,
   Code as CodeIcon,
   Description,
+  MoreVert as MoreVertIcon,
 } from '@mui/icons-material';
 import { filesAPI, FileItem } from '../api/files';
 import { DashboardLayout } from '../layouts/dashboard/layout';
@@ -144,6 +145,16 @@ function rwxToOctal(perms: boolean[]): string {
     result += val.toString();
   }
   return result;
+}
+
+function getFileIcon(item: FileItem) {
+  if (item.type === 'directory') {
+    return <Folder sx={{ color: '#FFA726', fontSize: 28 }} />;
+  }
+  if (isImage(item.name)) return <ImageIcon sx={{ color: '#66BB6A', fontSize: 28 }} />;
+  if (isArchive(item.name)) return <Compress sx={{ color: '#AB47BC', fontSize: 28 }} />;
+  if (isEditable(item.name)) return <CodeIcon sx={{ color: '#42A5F5', fontSize: 28 }} />;
+  return <Description sx={{ color: '#78909C', fontSize: 28 }} />;
 }
 
 // ---------- Lazy Monaco import ----------
@@ -661,8 +672,34 @@ export default function FileManagerPage() {
         )}
 
         {/* Toolbar */}
-        <Paper sx={{ p: 1, mb: 2 }}>
-          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+        <Paper sx={{ p: 2, mb: 2, bgcolor: 'white', borderBottom: '1px solid #e0e0e0' }}>
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+            <Button variant="contained" startIcon={<Upload />} component="label" sx={{ textTransform: 'none' }}>
+              Upload
+              <input type="file" hidden multiple onChange={(e) => e.target.files && handleUpload(e.target.files)} />
+            </Button>
+            <Button variant="outlined" startIcon={<CreateNewFolder />} onClick={() => setMkdirOpen(true)} sx={{ textTransform: 'none' }}>
+              New Folder
+            </Button>
+            <Button variant="outlined" startIcon={<NoteAdd />} onClick={() => setCreateFileOpen(true)} sx={{ textTransform: 'none' }}>
+              New File
+            </Button>
+            <Button variant="outlined" startIcon={<ContentCopy />} disabled={selected.size === 0} onClick={handleCopy} sx={{ textTransform: 'none' }}>
+              Copy
+            </Button>
+            <Button variant="outlined" startIcon={<ContentCut />} disabled={selected.size === 0} onClick={handleCut} sx={{ textTransform: 'none' }}>
+              Move
+            </Button>
+            <Button variant="outlined" startIcon={<Delete />} disabled={selected.size === 0} color="error" onClick={handleDelete} sx={{ textTransform: 'none' }}>
+              Delete
+            </Button>
+            <Button variant="outlined" startIcon={<Download />} disabled={selected.size === 0} onClick={handleDownloadSelected} sx={{ textTransform: 'none' }}>
+              Download
+            </Button>
+          </Box>
+
+          {/* Secondary toolbar */}
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1.5 }}>
             <Tooltip title="Go up"><span>
               <IconButton size="small" onClick={navigateUp} disabled={!currentPath}><ArrowUpward fontSize="small" /></IconButton>
             </span></Tooltip>
@@ -674,31 +711,7 @@ export default function FileManagerPage() {
                 <FolderOpen fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Refresh">
-              <IconButton size="small" onClick={refresh}>
-                <Search fontSize="small" sx={{ transform: 'rotate(0deg)' }} />
-              </IconButton>
-            </Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            <Tooltip title="New File">
-              <IconButton size="small" onClick={() => setCreateFileOpen(true)}><NoteAdd fontSize="small" /></IconButton>
-            </Tooltip>
-            <Tooltip title="New Folder">
-              <IconButton size="small" onClick={() => setMkdirOpen(true)}><CreateNewFolder fontSize="small" /></IconButton>
-            </Tooltip>
-            <Tooltip title="Upload Files">
-              <IconButton size="small" component="label">
-                <Upload fontSize="small" />
-                <input type="file" hidden multiple onChange={(e) => e.target.files && handleUpload(e.target.files)} />
-              </IconButton>
-            </Tooltip>
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            <Tooltip title="Copy (Ctrl+C)"><span>
-              <IconButton size="small" disabled={selected.size === 0} onClick={handleCopy}><ContentCopy fontSize="small" /></IconButton>
-            </span></Tooltip>
-            <Tooltip title="Cut (Ctrl+X)"><span>
-              <IconButton size="small" disabled={selected.size === 0} onClick={handleCut}><ContentCut fontSize="small" /></IconButton>
-            </span></Tooltip>
             <Tooltip title="Paste (Ctrl+V)"><span>
               <IconButton size="small" disabled={!clipboard} onClick={handlePaste}><ContentPaste fontSize="small" /></IconButton>
             </span></Tooltip>
@@ -716,11 +729,6 @@ export default function FileManagerPage() {
                 <DriveFileMove fontSize="small" />
               </IconButton>
             </span></Tooltip>
-            <Tooltip title="Download"><span>
-              <IconButton size="small" disabled={selected.size === 0} onClick={handleDownloadSelected}>
-                <Download fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
             <Tooltip title="Compress"><span>
               <IconButton size="small" disabled={selected.size === 0} onClick={() => {
                 const ext = compressFormat === 'tar.gz' ? '.tar.gz' : '.zip';
@@ -730,39 +738,36 @@ export default function FileManagerPage() {
                 <Compress fontSize="small" />
               </IconButton>
             </span></Tooltip>
-            <Tooltip title="Delete (Del)"><span>
-              <IconButton size="small" disabled={selected.size === 0} color="error" onClick={handleDelete}>
-                <Delete fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             <Tooltip title="Search (Ctrl+F)">
               <IconButton size="small" onClick={() => setSearchOpen(true)}><Search fontSize="small" /></IconButton>
             </Tooltip>
           </Stack>
+
+          {/* Breadcrumbs */}
+          <Breadcrumbs>
+            <Link component="button" variant="body2" underline="hover" onClick={() => navigate('')}
+              sx={{ display: 'flex', alignItems: 'center', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+              <Home sx={{ mr: 0.5, fontSize: 20 }} />
+              Home
+            </Link>
+            {pathParts.map((part, idx) => {
+              const partialPath = pathParts.slice(0, idx + 1).join('/');
+              return (
+                <Link key={idx} component="button" variant="body2" underline="hover"
+                  onClick={() => navigate(partialPath)}
+                  sx={{ color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+                  {part}
+                </Link>
+              );
+            })}
+          </Breadcrumbs>
         </Paper>
 
         {/* Alerts */}
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>
         )}
-
-        {/* Breadcrumbs */}
-        <Breadcrumbs sx={{ mb: 2 }}>
-          <Link component="button" variant="body1" underline="hover" onClick={() => navigate('')}
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Home fontSize="small" /> Home
-          </Link>
-          {pathParts.map((part, idx) => {
-            const partialPath = pathParts.slice(0, idx + 1).join('/');
-            return (
-              <Link key={idx} component="button" variant="body1" underline="hover"
-                onClick={() => navigate(partialPath)}>
-                {part}
-              </Link>
-            );
-          })}
-        </Breadcrumbs>
 
         {/* Drag & Drop Zone + Table */}
         <Box
@@ -808,27 +813,27 @@ export default function FileManagerPage() {
                         onChange={handleSelectAll}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>
                       <TableSortLabel active={sortKey === 'name'} direction={sortKey === 'name' ? sortDir : 'asc'} onClick={() => handleSort('name')}>
                         Name
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ width: 100 }}>
+                    <TableCell sx={{ width: 100, fontWeight: 600 }}>
                       <TableSortLabel active={sortKey === 'size'} direction={sortKey === 'size' ? sortDir : 'asc'} onClick={() => handleSort('size')}>
                         Size
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ width: 180 }}>
+                    <TableCell sx={{ width: 180, fontWeight: 600 }}>
                       <TableSortLabel active={sortKey === 'modified'} direction={sortKey === 'modified' ? sortDir : 'asc'} onClick={() => handleSort('modified')}>
                         Modified
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ width: 80 }}>
+                    <TableCell sx={{ width: 100, fontWeight: 600 }}>
                       <TableSortLabel active={sortKey === 'permissions'} direction={sortKey === 'permissions' ? sortDir : 'asc'} onClick={() => handleSort('permissions')}>
-                        Perms
+                        Permissions
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ width: 100 }}>Actions</TableCell>
+                    <TableCell sx={{ width: 60, fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -854,27 +859,22 @@ export default function FileManagerPage() {
                           <Checkbox size="small" checked={selected.has(item.name)} onChange={() => handleSelect(item.name)} />
                         </TableCell>
                         <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            {item.type === 'directory' ? (
-                              <Folder fontSize="small" color="primary" />
-                            ) : isImage(item.name) ? (
-                              <ImageIcon fontSize="small" color="secondary" />
-                            ) : isArchive(item.name) ? (
-                              <Archive fontSize="small" color="warning" />
-                            ) : isEditable(item.name) ? (
-                              <CodeIcon fontSize="small" color="info" />
-                            ) : (
-                              <InsertDriveFile fontSize="small" />
-                            )}
-                            {item.type === 'directory' ? (
-                              <Link component="button" variant="body2" underline="hover"
-                                onClick={(e) => { e.stopPropagation(); navigate(fullPath); }}>
-                                {item.name}
-                              </Link>
-                            ) : (
-                              <Typography variant="body2">{item.name}</Typography>
-                            )}
-                          </Stack>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            {getFileIcon(item)}
+                            <Box>
+                              {item.type === 'directory' ? (
+                                <Link component="button" variant="body2" underline="hover" sx={{ fontWeight: 500 }}
+                                  onClick={(e) => { e.stopPropagation(); navigate(fullPath); }}>
+                                  {item.name}
+                                </Link>
+                              ) : (
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>{item.name}</Typography>
+                              )}
+                              {item.type === 'directory' && (
+                                <Typography variant="caption" color="text.secondary" display="block">Folder</Typography>
+                              )}
+                            </Box>
+                          </Box>
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2" color="text.secondary">
@@ -887,41 +887,22 @@ export default function FileManagerPage() {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="body2" fontFamily="monospace" color="text.secondary">
-                            {item.permissions}
-                          </Typography>
+                          <Chip
+                            label={item.permissions}
+                            size="small"
+                            sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                          />
                         </TableCell>
                         <TableCell>
-                          <Stack direction="row" spacing={0}>
-                            {item.type === 'file' && isEditable(item.name) && (
-                              <Tooltip title="Edit">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); openEditor(item.name); }}>
-                                  <Edit fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {item.type === 'file' && isImage(item.name) && (
-                              <Tooltip title="Preview">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); openPreview(item.name); }}>
-                                  <ImageIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {item.type === 'file' && isArchive(item.name) && (
-                              <Tooltip title="Extract">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); openExtract(item.name); }}>
-                                  <Unarchive fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {item.type === 'file' && (
-                              <Tooltip title="Download">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDownload(item.name); }}>
-                                  <Download fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </Stack>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleContextMenu(e, item);
+                            }}
+                          >
+                            <MoreVertIcon />
+                          </IconButton>
                         </TableCell>
                       </TableRow>
                     );
@@ -933,7 +914,18 @@ export default function FileManagerPage() {
         </Box>
 
         {/* Status bar */}
-        <Stack direction="row" justifyContent="space-between" mt={1}>
+        <Box
+          sx={{
+            bgcolor: 'white',
+            borderTop: '1px solid #e0e0e0',
+            p: 1.5,
+            mt: 1,
+            borderRadius: 1,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
           <Typography variant="body2" color="text.secondary">
             {sortedItems.length} item(s){showHidden ? '' : ` (${items.length - sortedItems.length} hidden)`}
             {selected.size > 0 ? ` \u00B7 ${selected.size} selected` : ''}
@@ -941,7 +933,7 @@ export default function FileManagerPage() {
           <Typography variant="body2" color="text.secondary">
             /{currentPath || '~'}
           </Typography>
-        </Stack>
+        </Box>
 
         {/* ===================== CONTEXT MENU ===================== */}
         <Menu
