@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Stack, TextField } from '@mui/material';
+import { Alert, Box, Button, Stack, TextField, InputAdornment, IconButton } from '@mui/material';
+import { Visibility, VisibilityOff, Person, Lock } from '@mui/icons-material';
 import { AuthCenteredLayout } from '../layouts/auth-centered/layout';
 import { useAuth } from '../auth/AuthContext';
 
@@ -11,33 +12,31 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     
-    console.log('[Login] Attempting login for:', username);
     const ok = await login(username, password);
     setLoading(false);
     
     if (ok) {
-      console.log('[Login] Success, navigating to dashboard');
       navigate('/dashboard');
     } else {
-      console.error('[Login] Failed');
-      setError('Invalid credentials. Check console for details.');
+      setError('Invalid credentials. Please check your username and password.');
     }
   };
 
   return (
     <AuthCenteredLayout
-      title="Sign in"
-      description="Use your admin credentials from .env"
+      title="Welcome back"
+      description="Sign in to your ClearPanel account"
     >
       <Box component="form" onSubmit={onSubmit}>
-        <Stack spacing={1.5}>
-          {error && <Alert severity="error">{error}</Alert>}
+        <Stack spacing={2}>
+          {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
           <TextField
             label="Username"
@@ -45,25 +44,48 @@ export default function LoginPage() {
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
             fullWidth
-            size="medium"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Person sx={{ color: 'text.secondary', fontSize: 20 }} />
+                </InputAdornment>
+              ),
+            }}
           />
 
           <TextField
             label="Password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             fullWidth
-            size="medium"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Lock sx={{ color: 'text.secondary', fontSize: 20 }} />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setShowPassword(!showPassword)} edge="end">
+                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
 
-          <Button type="submit" variant="contained" disabled={loading} sx={{ mt: 1.5 }}>
-            {loading ? 'Signing in…' : 'Sign in'}
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={loading || !username || !password}
+            size="large"
+            sx={{ mt: 1, py: 1.2 }}
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </Stack>
       </Box>
     </AuthCenteredLayout>
   );
 }
-
-// Inline styles removed in favor of MUI components to match template look

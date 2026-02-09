@@ -3,8 +3,7 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
+  Paper,
   Chip,
   CircularProgress,
   Divider,
@@ -12,6 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import SettingsIcon from '@mui/icons-material/Settings';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
@@ -150,13 +150,19 @@ export default function NameserverSetupPage() {
 
   return (
     <DashboardLayout>
-      <Box sx={{ maxWidth: 900, mx: 'auto', mt: 2 }}>
-        <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
-          Custom Nameserver Setup
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Define the primary domain and hostnames that clearPanel should use when generating DNS zones and registrar instructions.
-        </Typography>
+      <Box>
+        {/* Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+          <SettingsIcon sx={{ color: '#4285F4', fontSize: 28 }} />
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 700 }}>
+              Nameserver Settings
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Configure primary domain, server IP, and custom nameservers
+            </Typography>
+          </Box>
+        </Box>
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -169,8 +175,8 @@ export default function NameserverSetupPage() {
           </Alert>
         )}
 
-        <Card variant="outlined">
-          <CardContent>
+        <Paper sx={{ overflow: 'hidden' }}>
+          <Box sx={{ p: 3 }}>
             {loading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                 <CircularProgress size={28} />
@@ -258,8 +264,8 @@ export default function NameserverSetupPage() {
                 </Stack>
               </Stack>
             )}
-          </CardContent>
-        </Card>
+          </Box>
+        </Paper>
 
         {automationLogs.length > 0 && (
           <Box sx={{ mt: 3 }}>

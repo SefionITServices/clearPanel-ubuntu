@@ -16,25 +16,38 @@ export function AuthCenteredLayout({ title, description, children, footer }: Aut
         display: 'grid',
         placeItems: 'center',
         p: 2,
-        background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+        background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eaf6 50%, #c5cae9 100%)',
       }}
     >
-      <Card sx={{ width: '100%', maxWidth: 420, borderRadius: 3, boxShadow: 6 }}>
-        <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Card sx={{ width: '100%', maxWidth: 420, borderRadius: 3, boxShadow: '0 8px 40px rgba(66,133,244,0.12)' }}>
+        <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Logo */}
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
+            <Box sx={{
+              width: 48, height: 48, borderRadius: 2,
+              background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 20 }}>CP</Typography>
+            </Box>
+          </Box>
           {title && (
-            <Typography variant="h5" fontWeight={600} component="h1">
+            <Typography variant="h5" fontWeight={700} component="h1" textAlign="center">
               {title}
             </Typography>
           )}
           {description && (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" textAlign="center">
               {description}
             </Typography>
           )}
           {children}
         </CardContent>
-        {footer && <Box sx={{ px: 3, pb: 3 }}>{footer}</Box>}
+        {footer && <Box sx={{ px: 4, pb: 3 }}>{footer}</Box>}
       </Card>
+      <Typography variant="caption" color="text.disabled" sx={{ mt: 2 }}>
+        ClearPanel &copy; {new Date().getFullYear()}
+      </Typography>
     </Box>
   );
 }

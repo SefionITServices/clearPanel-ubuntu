@@ -3,6 +3,7 @@ import {
     Box,
     Card,
     CardContent,
+    Paper,
     Typography,
     TextField,
     Button,
@@ -210,8 +211,8 @@ export default function SetupPage() {
 
     if (checkingStatus) {
         return (
-            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
-                <CircularProgress />
+            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eaf6 50%, #c5cae9 100%)' }}>
+                <CircularProgress sx={{ color: '#4285F4' }} />
             </Box>
         );
     }
@@ -219,27 +220,27 @@ export default function SetupPage() {
     // ---- SUCCESS SCREEN ----
     if (success) {
         return (
-            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', p: 2 }}>
-                <Card sx={{ maxWidth: 680, width: '100%' }}>
+            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eaf6 50%, #c5cae9 100%)', p: 2 }}>
+                <Card sx={{ maxWidth: 680, width: '100%', borderRadius: 3, boxShadow: '0 8px 40px rgba(66,133,244,0.12)' }}>
                     <CardContent sx={{ p: 4 }}>
                         <Stack spacing={3} alignItems="center">
-                            <CheckCircle color="success" sx={{ fontSize: 80 }} />
+                            <CheckCircle sx={{ fontSize: 80, color: '#34A853' }} />
                             <Typography variant="h4" fontWeight={700} textAlign="center">
                                 Setup Complete!
                             </Typography>
 
-                            <Alert severity="info" sx={{ width: '100%' }}>
+                            <Alert severity="info" sx={{ width: '100%', borderRadius: 2 }}>
                                 <Typography variant="body2" fontWeight={600}>
                                     The server is restarting to apply your configuration...
                                 </Typography>
                                 <Typography variant="body2" sx={{ mt: 0.5 }}>
                                     You'll be redirected to the dashboard in a few seconds.
                                 </Typography>
-                                <CircularProgress size={16} sx={{ mt: 1 }} />
+                                <CircularProgress size={16} sx={{ mt: 1, color: '#4285F4' }} />
                             </Alert>
 
                             {config.primaryDomain && (
-                                <Alert severity="info" sx={{ width: '100%' }}>
+                                <Alert severity="info" sx={{ width: '100%', borderRadius: 2 }}>
                                     <Typography variant="body2" fontWeight={600} gutterBottom>
                                         DNS Setup for {config.primaryDomain}
                                     </Typography>
@@ -277,15 +278,13 @@ export default function SetupPage() {
                                 </Alert>
                             )}
 
-                            <Card variant="outlined" sx={{ width: '100%' }}>
-                                <CardContent>
-                                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>Login Credentials</Typography>
-                                    <Typography variant="body2">Username: <strong>{config.adminUsername}</strong></Typography>
-                                    <Typography variant="body2">Password: <strong>{'*'.repeat(Math.min(config.adminPassword.length, 12))}</strong></Typography>
-                                </CardContent>
-                            </Card>
+                            <Paper variant="outlined" sx={{ width: '100%', borderRadius: 2, p: 2.5 }}>
+                                <Typography variant="subtitle2" fontWeight={600} gutterBottom>Login Credentials</Typography>
+                                <Typography variant="body2">Username: <strong>{config.adminUsername}</strong></Typography>
+                                <Typography variant="body2">Password: <strong>{'*'.repeat(Math.min(config.adminPassword.length, 12))}</strong></Typography>
+                            </Paper>
 
-                            <Button variant="contained" size="large" onClick={() => window.location.href = '/'}>
+                            <Button variant="contained" size="large" onClick={() => window.location.href = '/'} sx={{ borderRadius: 2, px: 4 }}>
                                 Go to Dashboard
                             </Button>
                         </Stack>
@@ -505,9 +504,21 @@ export default function SetupPage() {
     };
 
     return (
-        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: 2 }}>
+        <Box sx={{ minHeight: '100vh', bgcolor: '#f0f4ff', background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eaf6 50%, #c5cae9 100%)', p: 2 }}>
             <Box sx={{ maxWidth: 720, mx: 'auto', py: 4 }}>
-                <Card>
+                {/* Logo */}
+                <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                    <Box sx={{
+                        width: 56, height: 56, borderRadius: 2,
+                        background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 4px 20px rgba(66,133,244,0.3)',
+                    }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 24 }}>CP</Typography>
+                    </Box>
+                </Box>
+
+                <Card sx={{ borderRadius: 3, boxShadow: '0 8px 40px rgba(66,133,244,0.12)' }}>
                     <CardContent sx={{ p: 4 }}>
                         <Stepper activeStep={activeStep} sx={{ mb: 4 }} alternativeLabel>
                             {steps.map(label => (

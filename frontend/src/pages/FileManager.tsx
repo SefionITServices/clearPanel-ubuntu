@@ -81,7 +81,7 @@ function formatSize(bytes: number): string {
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(i > 0 ? 1 : 0)} ${sizes[i]}`;
+  return `${(bytes / Math.pow(k, i)).toFixed(i > 1 ? 2 : i > 0 ? 1 : 0)} ${sizes[i]}`;
 }
 
 function getFileExtension(name: string): string {
@@ -618,21 +618,26 @@ export default function FileManagerPage() {
   // ---- render ----
   return (
     <DashboardLayout>
-      <Box sx={{ p: 3 }}>
+      <Box>
         {/* Header */}
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="h4">File Manager</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <FolderOpen sx={{ color: '#4285F4', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>File Manager</Typography>
+            </Box>
+          </Box>
           <Stack direction="row" spacing={1} alignItems="center">
             <FormControlLabel
               control={<Switch size="small" checked={showHidden} onChange={(_, v) => setShowHidden(v)} />}
               label={<Typography variant="body2">Hidden files</Typography>}
             />
           </Stack>
-        </Stack>
+        </Box>
 
         {/* Disk usage bar */}
         {diskUsage && diskUsage.total > 0 && (
-          <Box sx={{ mb: 2 }}>
+          <Paper sx={{ p: 2, mb: 2 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="body2" color="text.secondary">
                 Disk: {formatSize(diskUsage.used)} / {formatSize(diskUsage.total)} used
@@ -644,10 +649,15 @@ export default function FileManagerPage() {
             <LinearProgress
               variant="determinate"
               value={Math.min((diskUsage.used / diskUsage.total) * 100, 100)}
-              sx={{ height: 6, borderRadius: 3, mt: 0.5 }}
-              color={diskUsage.used / diskUsage.total > 0.9 ? 'error' : diskUsage.used / diskUsage.total > 0.7 ? 'warning' : 'primary'}
+              sx={{
+                height: 8, borderRadius: 1, mt: 0.5, bgcolor: '#E8F0FE',
+                '& .MuiLinearProgress-bar': {
+                  borderRadius: 1,
+                  bgcolor: diskUsage.used / diskUsage.total > 0.9 ? '#EA4335' : diskUsage.used / diskUsage.total > 0.7 ? '#FBBC04' : '#4285F4',
+                },
+              }}
             />
-          </Box>
+          </Paper>
         )}
 
         {/* Toolbar */}

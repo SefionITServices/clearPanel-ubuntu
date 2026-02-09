@@ -3,6 +3,7 @@ import {
   Box,
   Card,
   CardContent,
+  Paper,
   Typography,
   TextField,
   Stack,
@@ -23,11 +24,12 @@ import {
   AccordionDetails,
   Chip,
 } from '@mui/material';
-import HomeIcon from '@mui/icons-material/Home';
+import LanguageIcon from '@mui/icons-material/Language';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AddIcon from '@mui/icons-material/Add';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
@@ -217,19 +219,27 @@ export default function DomainCreatePage() {
 
   return (
     <DashboardLayout>
-      <Box sx={{ maxWidth: 900, mx: 'auto', mt: 2 }}>
-        <Typography variant="h3" sx={{ fontWeight: 700, mb: 0.5 }}>Domains</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Create a New Domain
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Use this interface to manage your domains. For more information, read the documentation.
-        </Typography>
+      <Box>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <LanguageIcon sx={{ color: '#34A853', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>Create Domain</Typography>
+              <Typography variant="body1" color="text.secondary">
+                Add a new domain to your server
+              </Typography>
+            </Box>
+          </Box>
+          <Button variant="outlined" onClick={() => navigate('/domains')}>
+            Back to Domains
+          </Button>
+        </Box>
 
         {/* DNS Instructions Panel - shown after domain creation */}
         {createdDomain && (
-          <Card variant="outlined" sx={{ mb: 3, borderColor: 'success.main', borderWidth: 2 }}>
-            <CardContent>
+          <Paper sx={{ mb: 3, border: '2px solid #34A853', overflow: 'hidden' }}>
+            <Box sx={{ p: 3 }}>
               <Stack spacing={2}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <CheckCircleIcon color="success" />
@@ -392,17 +402,16 @@ export default function DomainCreatePage() {
                   </Button>
                 </Stack>
               </Stack>
-            </CardContent>
-          </Card>
+            </Box>
+          </Paper>
         )}
 
-        <Card variant="outlined" sx={{ mb: 4 }}>
-          <CardContent sx={{ p: 0 }}>
-            <Box sx={{ p: 2, borderBottom: (theme) => `1px solid ${theme.palette.divider}` }}>
-              <Typography variant="subtitle1" fontWeight={600}>Create a New Domain</Typography>
-            </Box>
-            <Box sx={{ p: 3 }}>
-              <Stack spacing={3}>
+        <Paper sx={{ mb: 4, overflow: 'hidden' }}>
+          <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8f9fa' }}>
+            <Typography variant="subtitle1" fontWeight={600}>Domain Configuration</Typography>
+          </Box>
+          <Box sx={{ p: 3 }}>
+            <Stack spacing={3}>
                 {/* Domain */}
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
@@ -474,7 +483,7 @@ export default function DomainCreatePage() {
                         InputProps={{
                           startAdornment: (
                             <InputAdornment position="start">
-                              <HomeIcon fontSize="small" />
+                              <LanguageIcon fontSize="small" />
                             </InputAdornment>
                           ),
                         }}
@@ -523,7 +532,7 @@ export default function DomainCreatePage() {
                           InputProps={{
                             startAdornment: (
                               <InputAdornment position="start">
-                                <HomeIcon fontSize="small" />
+                                <LanguageIcon fontSize="small" />
                               </InputAdornment>
                             ),
                           }}
@@ -612,8 +621,7 @@ export default function DomainCreatePage() {
                 </Stack>
               </Stack>
             </Box>
-          </CardContent>
-        </Card>
+          </Paper>
       </Box>
     </DashboardLayout>
   );

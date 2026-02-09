@@ -761,15 +761,19 @@ export default function MailDomainsPage() {
 
   return (
     <DashboardLayout>
-      <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%', py: 3 }}>
+      <Box>
         <Stack spacing={3}>
-          <Box>
-            <Typography variant="h4" fontWeight={700} gutterBottom>
-              Mail Domain Policies
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Adjust spam and malware enforcement for each hosted mail domain. Changes sync directly to the server automation scripts.
-            </Typography>
+          {/* Header */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <MailOutlineIcon sx={{ color: '#4285F4', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" fontWeight={700}>
+                Mail Domain Policies
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Adjust spam and malware enforcement for each hosted mail domain
+              </Typography>
+            </Box>
           </Box>
 
           {feedback && (

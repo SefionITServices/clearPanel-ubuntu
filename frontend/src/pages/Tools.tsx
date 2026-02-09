@@ -92,6 +92,14 @@ function ToolCard({
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(i > 1 ? 2 : 0)} ${sizes[i]}`;
+}
+
 export default function ToolsPage() {
   const navigate = useNavigate();
   const { username } = useAuth();
@@ -106,8 +114,8 @@ export default function ToolsPage() {
       });
     }).catch(() => {});
     fetch('/api/files/disk-usage').then(r => r.json()).then(data => {
-      if (data.used && data.total) setDiskUsage(`${data.used} / ${data.total}`);
-      else if (data.used) setDiskUsage(data.used);
+      if (data.used && data.total) setDiskUsage(`${formatBytes(data.used)} / ${formatBytes(data.total)}`);
+      else if (data.used) setDiskUsage(formatBytes(data.used));
     }).catch(() => setDiskUsage('-'));
   }, []);
 

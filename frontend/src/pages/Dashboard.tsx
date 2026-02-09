@@ -40,6 +40,14 @@ interface StatCard {
   bgColor: string;
 }
 
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(i > 1 ? 2 : 0)} ${sizes[i]}`;
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { username } = useAuth();
@@ -63,9 +71,13 @@ export default function DashboardPage() {
 
     // Load disk usage
     fetch('/api/files/disk-usage').then(r => r.json()).then(data => {
-      if (data.used) setDiskUsed(data.used);
-      if (data.total) setDiskTotal(data.total);
-      if (data.percentage) setDiskPercent(parseInt(data.percentage));
+      if (data.used) setDiskUsed(formatBytes(data.used));
+      if (data.total) setDiskTotal(formatBytes(data.total));
+      if (data.used && data.total && data.total > 0) {
+        setDiskPercent(Math.round((data.used / data.total) * 100));
+      } else if (data.percentage) {
+        setDiskPercent(parseInt(data.percentage));
+      }
     }).catch(() => {});
 
     // Load server info
