@@ -11,7 +11,6 @@ import {
   ListItemText,
   Toolbar,
   Typography,
-  Button,
   Avatar,
   InputBase,
   alpha,
@@ -20,6 +19,7 @@ import {
   MenuItem,
   Divider,
   Stack,
+  Tooltip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -30,21 +30,44 @@ import {
   Search as SearchIcon,
   Notifications as NotificationsIcon,
   Build as BuildIcon,
+  Language as LanguageIcon,
+  Lock as LockIcon,
   Dns as DnsIcon,
+  Terminal as TerminalIcon,
+  Storage as StorageIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { DashboardContent } from './content';
 import { dashboardLayoutVars } from './css-vars';
 
-const DRAWER_WIDTH = 280;
+const DRAWER_WIDTH = 260;
 
-const navItems = [
-  { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-  { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
-  { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
-  { title: 'Domains', path: '/domains', icon: <DnsIcon /> },
-  { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+const navSections = [
+  {
+    title: '',
+    items: [
+      { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
+      { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
+    ],
+  },
+  {
+    title: 'Management',
+    items: [
+      { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
+      { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
+      { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
+      { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
+      { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
+    ],
+  },
+  {
+    title: 'System',
+    items: [
+      { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
+      { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+    ],
+  },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -71,70 +94,122 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+      {/* Brand */}
+      <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Box
           sx={{
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             borderRadius: 1.5,
-            bgcolor: 'primary.main',
+            background: 'linear-gradient(135deg, #4285F4 0%, #1A73E8 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'white',
             fontWeight: 700,
-            fontSize: '1.25rem',
+            fontSize: '1rem',
           }}
         >
-          H
+          CP
         </Box>
-        <Typography variant="h6" fontWeight={700} noWrap>
+        <Typography variant="h6" fontWeight={700} noWrap sx={{ color: '#202124' }}>
           clearPanel
         </Typography>
       </Box>
       <Divider />
-      <List sx={{ flexGrow: 1, px: 2, py: 1 }}>
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
-          return (
-            <ListItem key={item.title} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                onClick={() => {
-                  navigate(item.path);
-                  setMobileOpen(false);
-                }}
+
+      {/* Navigation Sections */}
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', px: 1.5, py: 1 }}>
+        {navSections.map((section, sIdx) => (
+          <Box key={sIdx} sx={{ mb: 1 }}>
+            {section.title && (
+              <Typography
+                variant="overline"
                 sx={{
-                  borderRadius: 1.5,
-                  minHeight: 44,
-                  color: isActive ? 'primary.main' : 'text.secondary',
-                  bgcolor: isActive ? (theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
-                  '&:hover': {
-                    bgcolor: isActive
-                      ? (theme) => alpha(theme.palette.primary.main, 0.12)
-                      : (theme) => alpha(theme.palette.action.hover, 0.04),
-                  },
+                  px: 1.5,
+                  pt: 2,
+                  pb: 0.5,
+                  display: 'block',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  color: 'text.secondary',
+                  letterSpacing: '0.08em',
                 }}
               >
-                <ListItemIcon
-                  sx={{
-                    minWidth: 40,
-                    color: isActive ? 'primary.main' : 'text.secondary',
-                  }}
-                >
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.title}
-                  primaryTypographyProps={{
-                    fontSize: '0.875rem',
-                    fontWeight: isActive ? 600 : 500,
-                  }}
-                />
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
-      </List>
+                {section.title}
+              </Typography>
+            )}
+            <List disablePadding>
+              {section.items.map((item) => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <ListItem key={item.title} disablePadding sx={{ mb: 0.25 }}>
+                    <ListItemButton
+                      onClick={() => {
+                        navigate(item.path);
+                        setMobileOpen(false);
+                      }}
+                      sx={{
+                        borderRadius: 2,
+                        minHeight: 42,
+                        py: 0.75,
+                        color: isActive ? 'primary.main' : 'text.secondary',
+                        bgcolor: isActive ? (theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
+                        '&:hover': {
+                          bgcolor: isActive
+                            ? (theme) => alpha(theme.palette.primary.main, 0.12)
+                            : (theme) => alpha(theme.palette.action.hover, 0.04),
+                        },
+                      }}
+                    >
+                      <ListItemIcon
+                        sx={{
+                          minWidth: 36,
+                          color: isActive ? 'primary.main' : 'text.secondary',
+                          '& svg': { fontSize: 20 },
+                        }}
+                      >
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={item.title}
+                        primaryTypographyProps={{
+                          fontSize: '0.85rem',
+                          fontWeight: isActive ? 600 : 500,
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
+            </List>
+          </Box>
+        ))}
+      </Box>
+
+      {/* Bottom User Info */}
+      <Divider />
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Avatar
+          sx={{
+            width: 32,
+            height: 32,
+            bgcolor: 'primary.main',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+          }}
+        >
+          {username?.charAt(0).toUpperCase() || 'U'}
+        </Avatar>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Typography variant="body2" fontWeight={600} noWrap sx={{ lineHeight: 1.3 }}>
+            {username}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            Administrator
+          </Typography>
+        </Box>
+      </Box>
     </Box>
   );
 
@@ -151,7 +226,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           color: 'text.primary',
         }}
       >
-        <Toolbar sx={{ minHeight: { xs: 64, sm: 70 }, px: { xs: 2, sm: 3 } }}>
+        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 }, px: { xs: 2, sm: 3 } }}>
           <IconButton
             color="inherit"
             edge="start"
@@ -208,36 +283,35 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <Box sx={{ flexGrow: 1, display: { xs: 'none', sm: 'block' } }} />
 
           {/* Right Side Actions */}
-          <Stack direction="row" spacing={1} alignItems="center">
-            {/* Notifications */}
-            <IconButton
-              size="large"
-              color="inherit"
-              sx={{
-                color: 'text.secondary',
-                '&:hover': { bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08) },
-              }}
-            >
-              <Badge badgeContent={4} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Tooltip title="Notifications">
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'text.secondary',
+                  '&:hover': { bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08) },
+                }}
+              >
+                <Badge badgeContent={0} color="error">
+                  <NotificationsIcon sx={{ fontSize: 22 }} />
+                </Badge>
+              </IconButton>
+            </Tooltip>
 
             {/* Account Menu */}
             <IconButton
               onClick={handleMenuOpen}
               sx={{
                 p: 0.5,
-                ml: 1,
                 '&:hover': { bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08) },
               }}
             >
               <Avatar
                 sx={{
-                  width: 36,
-                  height: 36,
+                  width: 34,
+                  height: 34,
                   bgcolor: 'primary.main',
-                  fontSize: '0.875rem',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
                 }}
               >
@@ -335,7 +409,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </Box>
 
       <Box component="main" sx={{ flexGrow: 1, p: 3, width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` } }}>
-        <Toolbar sx={{ minHeight: { xs: 64, sm: 70 } }} />
+        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }} />
         <DashboardContent>{children}</DashboardContent>
       </Box>
     </Box>

@@ -333,15 +333,23 @@ export default function DatabasesPage() {
   if (!dbStatus?.installed || !dbStatus?.running) {
     return (
       <DashboardLayout>
-        <Box sx={{ p: 3 }}>
-          <Typography variant="h4" gutterBottom>Database Management</Typography>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+            <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
+              <Typography variant="body1" color="text.secondary">MySQL/MariaDB databases, users, and privileges</Typography>
+            </Box>
+          </Box>
           {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-          <Paper sx={{ p: 4, textAlign: 'center' }}>
-            <Storage sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
+          <Paper sx={{ p: 6, textAlign: 'center' }}>
+            <Box sx={{ width: 80, height: 80, borderRadius: 3, bgcolor: '#E8F0FE', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
+              <Storage sx={{ fontSize: 40, color: '#4285F4' }} />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 600 }} gutterBottom>
               {!dbStatus?.installed ? 'MySQL/MariaDB is not installed' : 'MySQL/MariaDB is not running'}
             </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
+            <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 420, mx: 'auto' }}>
               {!dbStatus?.installed
                 ? 'Install MariaDB to start managing databases, users, and privileges.'
                 : 'The database server needs to be started.'}
@@ -365,38 +373,63 @@ export default function DatabasesPage() {
 
   return (
     <DashboardLayout>
-      <Box sx={{ p: 3 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-          <Stack>
-            <Typography variant="h4">Database Management</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {dbStatus.version}
-            </Typography>
-          </Stack>
-          <Stack direction="row" spacing={1}>
-            <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
-              Refresh
-            </Button>
-          </Stack>
-        </Stack>
+      <Box>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
+              <Typography variant="body1" color="text.secondary">
+                {dbStatus.version}
+              </Typography>
+            </Box>
+          </Box>
+          <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
+            Refresh
+          </Button>
+        </Box>
 
         {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-          <Tab label={`Databases (${databases.length})`} icon={<Storage />} iconPosition="start" />
-          <Tab label={`Users (${users.length})`} icon={<Person />} iconPosition="start" />
-        </Tabs>
+        {/* Stat Cards */}
+        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+          {[
+            { label: 'Databases', value: databases.length, icon: <Storage />, color: '#4285F4', bg: '#E8F0FE' },
+            { label: 'Users', value: users.length, icon: <Person />, color: '#34A853', bg: '#E6F4EA' },
+            { label: 'Total Size', value: formatSize(databases.reduce((s, d) => s + d.size, 0)), icon: <Download />, color: '#F4B400', bg: '#FEF7E0' },
+          ].map(s => (
+            <Paper key={s.label} sx={{ flex: 1, p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {React.cloneElement(s.icon, { sx: { color: s.color, fontSize: 24 } })}
+              </Box>
+              <Box>
+                <Typography variant="h5" sx={{ fontWeight: 700 }}>{s.value}</Typography>
+                <Typography variant="body2" color="text.secondary">{s.label}</Typography>
+              </Box>
+            </Paper>
+          ))}
+        </Stack>
+
+        <Paper sx={{ overflow: 'hidden' }}>
+          <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
+            <Tab label={`Databases (${databases.length})`} icon={<Storage />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
+            <Tab label={`Users (${users.length})`} icon={<Person />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
+          </Tabs>
 
         {/* ==================== DATABASES TAB ==================== */}
         {tab === 0 && (
           <>
-            <Stack direction="row" spacing={1} mb={2}>
-              <Button variant="contained" startIcon={<Add />} onClick={() => setCreateDbOpen(true)}>
+            <Box sx={{ px: 2, py: 1.5, bgcolor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                {databases.length} database{databases.length !== 1 ? 's' : ''}
+              </Typography>
+              <Button variant="contained" size="small" startIcon={<Add />} onClick={() => setCreateDbOpen(true)}>
                 Create Database
               </Button>
-            </Stack>
+            </Box>
 
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -496,9 +529,11 @@ export default function DatabasesPage() {
             </TableContainer>
 
             {databases.length > 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Total: {databases.length} database(s), {formatSize(databases.reduce((s, d) => s + d.size, 0))}
-              </Typography>
+              <Box sx={{ px: 2, py: 1.5, bgcolor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
+                <Typography variant="body2" color="text.secondary">
+                  Total: {databases.length} database(s), {formatSize(databases.reduce((s, d) => s + d.size, 0))}
+                </Typography>
+              </Box>
             )}
           </>
         )}
@@ -506,19 +541,24 @@ export default function DatabasesPage() {
         {/* ==================== USERS TAB ==================== */}
         {tab === 1 && (
           <>
-            <Stack direction="row" spacing={1} mb={2}>
-              <Button variant="contained" startIcon={<Add />} onClick={() => {
-                setNewUserPassword(generatePassword());
-                setCreateUserOpen(true);
-              }}>
-                Create User
-              </Button>
-              <Button variant="outlined" startIcon={<LinkIcon />} onClick={() => setGrantOpen(true)} disabled={users.length === 0 || databases.length === 0}>
-                Assign User to Database
-              </Button>
-            </Stack>
+            <Box sx={{ px: 2, py: 1.5, bgcolor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                {users.length} user{users.length !== 1 ? 's' : ''}
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" size="small" startIcon={<LinkIcon />} onClick={() => setGrantOpen(true)} disabled={users.length === 0 || databases.length === 0}>
+                  Assign to Database
+                </Button>
+                <Button variant="contained" size="small" startIcon={<Add />} onClick={() => {
+                  setNewUserPassword(generatePassword());
+                  setCreateUserOpen(true);
+                }}>
+                  Create User
+                </Button>
+              </Stack>
+            </Box>
 
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -605,12 +645,16 @@ export default function DatabasesPage() {
             </TableContainer>
           </>
         )}
+        </Paper>
 
         {/* ==================== DIALOGS ==================== */}
 
         {/* Create Database */}
         <Dialog open={createDbOpen} onClose={() => setCreateDbOpen(false)} maxWidth="xs" fullWidth>
-          <DialogTitle>Create Database</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Storage sx={{ color: '#4285F4' }} />
+            Create Database
+          </DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Database names are automatically prefixed with your username.
@@ -635,7 +679,10 @@ export default function DatabasesPage() {
 
         {/* Create User */}
         <Dialog open={createUserOpen} onClose={() => setCreateUserOpen(false)} maxWidth="xs" fullWidth>
-          <DialogTitle>Create Database User</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Person sx={{ color: '#34A853' }} />
+            Create Database User
+          </DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Usernames are automatically prefixed with your username.
@@ -698,7 +745,10 @@ export default function DatabasesPage() {
 
         {/* Change Password */}
         <Dialog open={changePassOpen} onClose={() => setChangePassOpen(false)} maxWidth="xs" fullWidth>
-          <DialogTitle>Change Password for "{changePassUser}"</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Key sx={{ color: '#F4B400' }} />
+            Change Password for "{changePassUser}"
+          </DialogTitle>
           <DialogContent>
             <TextField
               autoFocus
@@ -739,7 +789,10 @@ export default function DatabasesPage() {
 
         {/* Grant Privileges */}
         <Dialog open={grantOpen} onClose={() => setGrantOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Assign User to Database</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LinkIcon sx={{ color: '#4285F4' }} />
+            Assign User to Database
+          </DialogTitle>
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
               <FormControl fullWidth>

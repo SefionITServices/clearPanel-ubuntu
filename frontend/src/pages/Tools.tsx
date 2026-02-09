@@ -9,6 +9,8 @@ import {
   Stack,
   Chip,
   alpha,
+  LinearProgress,
+  Grid,
 } from '@mui/material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -28,16 +30,17 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
 import LockIcon from '@mui/icons-material/Lock';
 import LanIcon from '@mui/icons-material/Lan';
+import LanguageIcon from '@mui/icons-material/Language';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
-// Utility component for tool item
+// Tool card matching the design reference - centered icon with hover lift
 function ToolCard({
   icon,
   label,
   description,
   onClick,
-  color = 'primary.main',
+  color = '#4285F4',
 }: {
   icon: React.ReactNode;
   label: string;
@@ -51,40 +54,39 @@ function ToolCard({
       sx={{
         cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.2s ease-in-out',
-        '&:hover': {
-          transform: onClick ? 'translateY(-4px)' : 'none',
-          boxShadow: onClick ? 4 : 1,
-        },
+        '&:hover': onClick ? {
+          transform: 'translateY(-4px)',
+          boxShadow: '0 4px 12px 0 rgba(60,64,67,0.2), 0 8px 24px 4px rgba(60,64,67,0.1)',
+        } : {},
         height: '100%',
+        opacity: onClick ? 1 : 0.7,
       }}
     >
-      <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-        <Stack spacing={2} alignItems="flex-start">
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-              color: color,
-            }}
-          >
-            {icon}
-          </Box>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6" sx={{ mb: 0.5, fontWeight: 600 }}>
-              {label}
-            </Typography>
-            {description && (
-              <Typography variant="body2" color="text.secondary">
-                {description}
-              </Typography>
-            )}
-          </Box>
-        </Stack>
+      <CardContent sx={{ textAlign: 'center', p: 3, '&:last-child': { pb: 3 } }}>
+        <Box
+          sx={{
+            width: 56,
+            height: 56,
+            borderRadius: 2,
+            bgcolor: `${color}12`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            mx: 'auto',
+            mb: 2,
+            color: color,
+          }}
+        >
+          {icon}
+        </Box>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5, lineHeight: 1.3 }}>
+          {label}
+        </Typography>
+        {description && (
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+            {description}
+          </Typography>
+        )}
       </CardContent>
     </Card>
   );
@@ -127,37 +129,70 @@ export default function ToolsPage() {
           icon: <FolderIcon sx={{ fontSize: 28 }} />,
           description: 'Browse and manage files',
           onClick: () => navigate('/files'),
-          color: 'primary.main',
+          color: '#4285F4',
         },
         {
           label: 'Disk Usage',
           icon: <StorageIcon sx={{ fontSize: 28 }} />,
           description: 'View storage usage',
-          color: 'success.main',
+          color: '#34A853',
         },
         {
           label: 'Backup',
           icon: <BackupIcon sx={{ fontSize: 28 }} />,
           description: 'Create and restore backups',
-          color: 'warning.main',
+          color: '#FBBC04',
         },
         {
           label: 'Images',
           icon: <ImageIcon sx={{ fontSize: 28 }} />,
           description: 'Manage image files',
-          color: 'info.main',
+          color: '#4285F4',
         },
         {
           label: 'Directory Privacy',
           icon: <PrivacyTipIcon sx={{ fontSize: 28 }} />,
           description: 'Protect directories',
-          color: 'error.main',
+          color: '#EA4335',
         },
         {
           label: 'FTP Manager',
           icon: <CloudUploadIcon sx={{ fontSize: 28 }} />,
           description: 'Manage FTP accounts',
-          color: 'secondary.main',
+          color: '#7B8A99',
+        },
+      ],
+    },
+    {
+      title: 'Domains',
+      items: [
+        {
+          label: 'Domains',
+          icon: <LanguageIcon sx={{ fontSize: 28 }} />,
+          description: 'Manage hosted domains',
+          onClick: () => navigate('/domains'),
+          color: '#4285F4',
+        },
+        {
+          label: 'DNS Zones',
+          icon: <DnsIcon sx={{ fontSize: 28 }} />,
+          description: 'Edit DNS records',
+          onClick: () => navigate('/dns'),
+          color: '#FBBC04',
+        },
+        {
+          label: 'SSL Certificates',
+          icon: <LockIcon sx={{ fontSize: 28 }} />,
+          description: 'Manage SSL / HTTPS',
+          onClick: () => navigate('/ssl'),
+          color: '#34A853',
+        },
+        {
+          label: 'Nameservers',
+          icon: <LanIcon sx={{ fontSize: 28 }} />,
+          description: 'Configure nameservers',
+          onClick: () => navigate('/nameservers'),
+          color: '#00ACC1',
         },
       ],
     },
@@ -168,19 +203,19 @@ export default function ToolsPage() {
           label: 'Email Accounts',
           icon: <EmailIcon sx={{ fontSize: 28 }} />,
           description: 'Manage email accounts',
-          color: 'primary.main',
+          color: '#4285F4',
         },
         {
           label: 'Forwarders',
           icon: <ForwardToInboxIcon sx={{ fontSize: 28 }} />,
           description: 'Configure email forwarding',
-          color: 'info.main',
+          color: '#4285F4',
         },
         {
           label: 'Email Filters',
           icon: <FilterAltIcon sx={{ fontSize: 28 }} />,
           description: 'Set up email filters',
-          color: 'warning.main',
+          color: '#FF6B35',
         },
       ],
     },
@@ -192,54 +227,26 @@ export default function ToolsPage() {
           icon: <TerminalIcon sx={{ fontSize: 28 }} />,
           description: 'Open shell access',
           onClick: () => navigate('/terminal'),
-          color: 'success.main',
+          color: '#34A853',
         },
         {
           label: 'Databases',
           icon: <StorageIcon sx={{ fontSize: 28 }} />,
           description: 'MySQL databases & users',
           onClick: () => navigate('/databases'),
-          color: 'primary.main',
-        },
-        {
-          label: 'Domains',
-          icon: <DnsIcon sx={{ fontSize: 28 }} />,
-          description: 'Manage hosted domains',
-          onClick: () => navigate('/domains'),
-          color: 'primary.main',
-        },
-        {
-          label: 'SSL Certificates',
-          icon: <LockIcon sx={{ fontSize: 28 }} />,
-          description: 'Manage SSL / HTTPS',
-          onClick: () => navigate('/ssl'),
-          color: 'success.main',
-        },
-        {
-          label: 'DNS Zones',
-          icon: <DnsIcon sx={{ fontSize: 28 }} />,
-          description: 'Edit DNS records',
-          onClick: () => navigate('/dns'),
-          color: 'warning.main',
-        },
-        {
-          label: 'Nameservers',
-          icon: <LanIcon sx={{ fontSize: 28 }} />,
-          description: 'Configure nameservers',
-          onClick: () => navigate('/nameservers'),
-          color: 'info.main',
+          color: '#4285F4',
         },
         {
           label: 'Settings',
           icon: <SettingsIcon sx={{ fontSize: 28 }} />,
           description: 'System configuration',
-          color: 'secondary.main',
+          color: '#5F6368',
         },
         {
           label: 'Processes',
           icon: <DataObjectIcon sx={{ fontSize: 28 }} />,
           description: 'View running processes',
-          color: 'error.main',
+          color: '#EA4335',
         },
       ],
     },
@@ -270,30 +277,19 @@ export default function ToolsPage() {
                 >
                   {section.title}
                 </Typography>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gap: 2,
-                    gridTemplateColumns: {
-                      xs: '1fr',
-                      sm: 'repeat(2, 1fr)',
-                      md: 'repeat(3, 1fr)',
-                      lg: 'repeat(3, 1fr)',
-                      xl: 'repeat(4, 1fr)',
-                    },
-                  }}
-                >
+                <Grid container spacing={2}>
                   {section.items.map((it) => (
-                    <ToolCard
-                      key={it.label}
-                      icon={it.icon}
-                      label={it.label}
-                      description={it.description}
-                      onClick={it.onClick}
-                      color={it.color}
-                    />
+                    <Grid size={{ xs: 12, sm: 6, md: 3 }} key={it.label}>
+                      <ToolCard
+                        icon={it.icon}
+                        label={it.label}
+                        description={it.description}
+                        onClick={it.onClick}
+                        color={it.color}
+                      />
+                    </Grid>
                   ))}
-                </Box>
+                </Grid>
               </Box>
             ))}
           </Stack>
@@ -303,34 +299,35 @@ export default function ToolsPage() {
         <Paper
           elevation={0}
           sx={{
-            width: { xs: '100%', lg: 320 },
+            width: { xs: '100%', lg: 300 },
             flexShrink: 0,
             alignSelf: 'flex-start',
             border: (theme) => `1px solid ${theme.palette.divider}`,
             position: { lg: 'sticky' },
-            top: { lg: 24 },
+            top: { lg: 88 },
           }}
         >
-          <Box sx={{ p: 3 }}>
+          <Box sx={{ p: 2.5 }}>
             <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
               General Information
             </Typography>
-            <Divider sx={{ mb: 2 }} />
-            <Stack spacing={2}>
+            <Stack spacing={1.5}>
               <InfoRow label="Current User" value={generalInfo.user} icon={<PersonIcon />} />
-              <InfoRow label="Primary Domain" value={generalInfo.domain} icon={<DnsIcon />} />
+              <InfoRow label="Primary Domain" value={generalInfo.domain} icon={<LanguageIcon />} />
               <InfoRow label="Shared IP Address" value={generalInfo.sharedIp} />
               <InfoRow label="Home Directory" value={generalInfo.homeDir} icon={<HomeIcon />} />
               <InfoRow label="Disk Usage" value={generalInfo.diskUsage} />
             </Stack>
-            <Divider sx={{ my: 3 }} />
+          </Box>
+          <Divider />
+          <Box sx={{ p: 2.5 }}>
             <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
               Statistics
             </Typography>
             <Stack spacing={2}>
-              <StatBar label="Disk Usage" percent={70} color="primary" />
-              <StatBar label="Processes" percent={45} color="success" />
-              <StatBar label="Memory" percent={55} color="warning" />
+              <StatBar label="Disk Usage" percent={70} barColor="#4285F4" bgColor="#E8F0FE" />
+              <StatBar label="Processes" percent={6} barColor="#34A853" bgColor="#E6F4EA" />
+              <StatBar label="Memory" percent={55} barColor="#FBBC04" bgColor="#FEF7E0" />
             </Stack>
           </Box>
         </Paper>
@@ -376,11 +373,13 @@ function InfoRow({
 function StatBar({
   label,
   percent,
-  color = 'primary',
+  barColor = '#4285F4',
+  bgColor = '#E8F0FE',
 }: {
   label: string;
   percent: number;
-  color?: 'primary' | 'success' | 'warning' | 'error' | 'info';
+  barColor?: string;
+  bgColor?: string;
 }) {
   return (
     <Box>
@@ -388,30 +387,23 @@ function StatBar({
         <Typography variant="body2" fontWeight={500}>
           {label}
         </Typography>
-        <Chip
-          size="small"
-          label={`${percent}%`}
-          color={color}
-          sx={{ height: 20, fontSize: '0.75rem' }}
-        />
+        <Typography variant="body2" sx={{ fontWeight: 600, color: barColor }}>
+          {percent}%
+        </Typography>
       </Box>
-      <Box
+      <LinearProgress
+        variant="determinate"
+        value={percent}
         sx={{
           height: 8,
-          bgcolor: (theme) => alpha(theme.palette[color].main, 0.12),
           borderRadius: 1,
-          overflow: 'hidden',
+          bgcolor: bgColor,
+          '& .MuiLinearProgress-bar': {
+            bgcolor: barColor,
+            borderRadius: 1,
+          },
         }}
-      >
-        <Box
-          sx={{
-            width: `${percent}%`,
-            height: '100%',
-            bgcolor: `${color}.main`,
-            transition: 'width 0.3s ease-in-out',
-          }}
-        />
-      </Box>
+      />
     </Box>
   );
 }

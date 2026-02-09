@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   Button,
   TextField,
   Table,
@@ -198,10 +196,10 @@ export default function SslPage() {
 
   const getStatusChip = (cert?: SslCertificate) => {
     if (!cert || cert.status === 'none') {
-      return <Chip icon={<LockOpenIcon />} label="No SSL" size="small" color="default" />;
+      return <Chip icon={<LockOpenIcon />} label="No SSL" size="small" sx={{ bgcolor: '#f5f5f5', color: '#757575' }} />;
     }
     if (cert.status === 'expired') {
-      return <Chip icon={<ErrorIcon />} label="Expired" size="small" color="error" />;
+      return <Chip icon={<ErrorIcon />} label="Expired" size="small" sx={{ bgcolor: '#FCECEA', color: '#EA4335', fontWeight: 600 }} />;
     }
     if (cert.daysRemaining !== undefined && cert.daysRemaining <= 14) {
       return (
@@ -209,7 +207,7 @@ export default function SslPage() {
           icon={<WarningIcon />}
           label={`Expiring (${cert.daysRemaining}d)`}
           size="small"
-          color="warning"
+          sx={{ bgcolor: '#FEF7E0', color: '#F4B400', fontWeight: 600 }}
         />
       );
     }
@@ -218,7 +216,7 @@ export default function SslPage() {
         icon={<CheckCircleIcon />}
         label={`Active (${cert.daysRemaining}d)`}
         size="small"
-        color="success"
+        sx={{ bgcolor: '#E6F4EA', color: '#34A853', fontWeight: 600 }}
       />
     );
   };
@@ -235,12 +233,18 @@ export default function SslPage() {
 
   return (
     <DashboardLayout>
-      <Box sx={{ p: 3 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={3}>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <SecurityIcon fontSize="large" color="primary" />
-            <Typography variant="h4">SSL Certificates</Typography>
-          </Stack>
+      <Box>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <SecurityIcon sx={{ color: '#34A853', fontSize: 28 }} />
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>SSL Certificates</Typography>
+              <Typography variant="body1" color="text.secondary">
+                Manage SSL/TLS certificates for your domains
+              </Typography>
+            </Box>
+          </Box>
           <Stack direction="row" spacing={1}>
             <Button
               variant="outlined"
@@ -262,7 +266,7 @@ export default function SslPage() {
               </Button>
             )}
           </Stack>
-        </Stack>
+        </Box>
 
         {error && (
           <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
@@ -270,59 +274,82 @@ export default function SslPage() {
           </Alert>
         )}
 
-        {/* Certbot Status Card */}
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Box>
-                <Typography variant="h6">Let's Encrypt (Certbot)</Typography>
-                {status?.installed ? (
-                  <Stack direction="row" spacing={2} mt={0.5}>
-                    <Chip label="Installed" color="success" size="small" />
-                    {status.version && (
-                      <Typography variant="body2" color="text.secondary">
-                        {status.version}
-                      </Typography>
-                    )}
-                    <Typography variant="body2" color="text.secondary">
-                      {status.certificateCount} certificate(s) managed
-                    </Typography>
-                    {status.renewalTimerActive && (
-                      <Chip label="Auto-renewal active" color="info" size="small" variant="outlined" />
-                    )}
-                  </Stack>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>
-                    Certbot is not installed. Install it to manage free SSL certificates.
-                  </Typography>
-                )}
+        {/* Stat Cards */}
+        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+          {[
+            { label: 'Active Certificates', value: certificates.filter(c => c.status === 'active').length, icon: <LockIcon />, color: '#34A853', bg: '#E6F4EA' },
+            { label: 'Domains', value: domains.length, icon: <SecurityIcon />, color: '#4285F4', bg: '#E8F0FE' },
+            { label: 'Expiring Soon', value: certificates.filter(c => c.daysRemaining !== undefined && c.daysRemaining <= 14 && c.status === 'active').length, icon: <WarningIcon />, color: '#F4B400', bg: '#FEF7E0' },
+          ].map(s => (
+            <Paper key={s.label} sx={{ flex: 1, p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {React.cloneElement(s.icon, { sx: { color: s.color, fontSize: 24 } })}
               </Box>
-              {!status?.installed && (
-                <Button
-                  variant="contained"
-                  onClick={handleInstallCertbot}
-                  disabled={installing === 'certbot'}
-                  startIcon={
-                    installing === 'certbot' ? <CircularProgress size={18} /> : <AddIcon />
-                  }
-                >
-                  Install Certbot
-                </Button>
+              <Box>
+                <Typography variant="h5" sx={{ fontWeight: 700 }}>{s.value}</Typography>
+                <Typography variant="body2" color="text.secondary">{s.label}</Typography>
+              </Box>
+            </Paper>
+          ))}
+        </Stack>
+
+        {/* Certbot Status */}
+        <Paper sx={{ mb: 3, p: 3 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Let's Encrypt (Certbot)</Typography>
+              {status?.installed ? (
+                <Stack direction="row" spacing={2} mt={0.5} alignItems="center">
+                  <Chip label="Installed" size="small" sx={{ bgcolor: '#E6F4EA', color: '#34A853', fontWeight: 600 }} />
+                  {status.version && (
+                    <Typography variant="body2" color="text.secondary">
+                      {status.version}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" color="text.secondary">
+                    {status.certificateCount} certificate(s) managed
+                  </Typography>
+                  {status.renewalTimerActive && (
+                    <Chip label="Auto-renewal active" size="small" sx={{ bgcolor: '#E8F0FE', color: '#4285F4', fontWeight: 600 }} />
+                  )}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary" mt={0.5}>
+                  Certbot is not installed. Install it to manage free SSL certificates.
+                </Typography>
               )}
-            </Stack>
-          </CardContent>
-        </Card>
+            </Box>
+            {!status?.installed && (
+              <Button
+                variant="contained"
+                onClick={handleInstallCertbot}
+                disabled={installing === 'certbot'}
+                startIcon={
+                  installing === 'certbot' ? <CircularProgress size={18} /> : <AddIcon />
+                }
+              >
+                Install Certbot
+              </Button>
+            )}
+          </Stack>
+        </Paper>
 
         {/* Domains + SSL Table */}
-        <TableContainer component={Paper}>
-          <Table>
+        <Paper sx={{ overflow: 'hidden' }}>
+          <Box sx={{ px: 2, py: 1.5, bgcolor: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
+            <Typography variant="body2" color="text.secondary">
+              {domains.length} domain{domains.length !== 1 ? 's' : ''} configured
+            </Typography>
+          </Box>
+          <TableContainer>
+            <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Domain</TableCell>
-                <TableCell>SSL Status</TableCell>
-                <TableCell>Issuer</TableCell>
-                <TableCell>Expires</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Domain</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>SSL Status</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Issuer</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Expires</TableCell>
+                <TableCell sx={{ fontWeight: 600 }} align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -354,7 +381,7 @@ export default function SslPage() {
                               {d.name}
                             </Typography>
                             {d.isPrimary && (
-                              <Chip label="Primary" size="small" variant="outlined" sx={{ mt: 0.3 }} />
+                              <Chip label="Primary" size="small" sx={{ mt: 0.3, bgcolor: '#E8F0FE', color: '#4285F4', fontWeight: 600 }} />
                             )}
                           </Box>
                         </Stack>
@@ -416,11 +443,13 @@ export default function SslPage() {
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+          </TableContainer>
+        </Paper>
 
         {/* Install SSL Dialog */}
         <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>
+          <DialogTitle sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LockIcon sx={{ color: '#34A853' }} />
             Install SSL Certificate — {selectedDomain}
           </DialogTitle>
           <DialogContent>
