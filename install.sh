@@ -59,22 +59,36 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd -r -s /bin/false -d "$INSTALL_DIR" "$SERVICE_USER"
 fi
 
-# Check if this is a fresh install via curl (files don't exist locally)
-if [ ! -d "backend" ] || [ ! -d "frontend" ]; then
+# Clone or update the repo directly in the install directory (keeps .git for easy updates)
+REPO_URL="https://github.com/SefionITServices/clearPanel-ubuntu.git"
+
+if [ -d "$INSTALL_DIR/.git" ]; then
+    echo -e "${YELLOW}📥 Updating existing clearPanel installation...${NC}"
+    cd "$INSTALL_DIR"
+    git stash 2>/dev/null || true
+    git pull origin main
+elif [ -d "backend" ] && [ -d "frontend" ]; then
+    # Running install.sh from inside a cloned repo — move/copy into INSTALL_DIR with git history
+    echo -e "${YELLOW}📁 Setting up installation directory from local repo...${NC}"
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR"
+        # Copy everything including .git so updates work
+        cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
+    fi
+    cd "$INSTALL_DIR"
+else
     echo -e "${YELLOW}📥 Downloading clearPanel source...${NC}"
     if command -v git &> /dev/null; then
-        git clone https://github.com/SefionITServices/clearPanel-ubuntu.git /tmp/clearpanel_source
-        cd /tmp/clearpanel_source
+        git clone "$REPO_URL" "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
     else
         echo -e "${RED}Error: git is not installed. Please install git first.${NC}"
-        echo "sudo apt-get install -y git"
         exit 1
     fi
 fi
 
-# Create installation directory
-echo -e "${YELLOW}📁 Creating installation directory...${NC}"
-mkdir -p "$INSTALL_DIR"
+# Create data directory (outside of git)
 mkdir -p "$INSTALL_DIR/data"
 
 # Create cPanel-like user home directory for default admin user
@@ -121,28 +135,9 @@ fi
 
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 
-# Copy application files
-if [ "$PWD" != "$INSTALL_DIR" ]; then
-    echo -e "${YELLOW}📋 Copying application files...${NC}"
-    cp -r backend "$INSTALL_DIR/"
-    cp -r frontend "$INSTALL_DIR/"
-    cp clearpanel.service "$INSTALL_DIR/"
-    cp nginx.conf.example "$INSTALL_DIR/"
-    # Copy scripts and helper files
-    [ -d scripts ] && cp -r scripts "$INSTALL_DIR/"
-    [ -d docs ] && cp -r docs "$INSTALL_DIR/"
-    [ -f setup-ssl.sh ] && cp setup-ssl.sh "$INSTALL_DIR/"
-    [ -f deploy.sh ] && cp deploy.sh "$INSTALL_DIR/"
-    [ -f package.json ] && cp package.json "$INSTALL_DIR/"
-    [ -f setup-status.json ] && cp setup-status.json "$INSTALL_DIR/"
-    [ -f install-bind9.sh ] && cp install-bind9.sh "$INSTALL_DIR/"
-    [ -f fix-bind9-permissions.sh ] && cp fix-bind9-permissions.sh "$INSTALL_DIR/"
-fi
-
-# Cleanup temp source if we created it
-if [ -d "/tmp/clearpanel_source" ]; then
-    cd /root
-    rm -rf /tmp/clearpanel_source
+# Ensure data directory is in .gitignore so git pull doesn't affect user data
+if ! grep -q "^data/" "$INSTALL_DIR/.gitignore" 2>/dev/null; then
+    echo "data/" >> "$INSTALL_DIR/.gitignore"
 fi
 
 # Set ownership
@@ -305,6 +300,7 @@ if systemctl is-active --quiet clearpanel; then
     echo "  View logs: sudo journalctl -u clearpanel -f"
     echo "  Restart: sudo systemctl restart clearpanel"
     echo "  Stop: sudo systemctl stop clearpanel"
+    echo "  Update: cd /opt/clearpanel && git pull && cd backend && npm run build && sudo systemctl restart clearpanel"
     echo ""
     echo -e "${YELLOW}🔍 Troubleshooting if panel is not accessible:${NC}"
     echo "1. Check service status: sudo systemctl status clearpanel"
