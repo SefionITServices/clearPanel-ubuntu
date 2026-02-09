@@ -33,6 +33,7 @@ import {
   Build as BuildIcon,
   Dns as DnsIcon,
   Lan as LanIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -47,6 +48,7 @@ const navItems = [
   { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
   { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
   { title: 'Domains', path: '/domains', icon: <DnsIcon /> },
+  { title: 'SSL', path: '/ssl', icon: <LockIcon /> },
   { title: 'DNS', path: '/dns', icon: <DnsIcon /> },
   { title: 'Nameservers', path: '/nameservers', icon: <LanIcon /> },
   { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },

@@ -223,6 +223,16 @@ clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart named
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-bind9
 
+# Allow clearpanel user to manage SSL certificates via certbot
+cat > /etc/sudoers.d/clearpanel-ssl << 'EOF'
+# Allow clearpanel user to install and manage SSL certificates
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot
+clearpanel ALL=(ALL) NOPASSWD: /snap/bin/certbot
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get update*
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y certbot*
+EOF
+chmod 440 /etc/sudoers.d/clearpanel-ssl
+
 # Enable and start BIND9 (handle alias: bind9 vs named)
 BIND_SVC="named"
 if systemctl list-unit-files bind9.service &>/dev/null && ! systemctl is-enabled bind9 2>&1 | grep -q "alias"; then
