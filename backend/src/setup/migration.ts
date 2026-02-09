@@ -10,7 +10,7 @@ const logger = new Logger('SetupMigration');
  * A minimal .env (without ADMIN_USERNAME) from install.sh does NOT trigger migration.
  */
 export async function migrateExistingInstallation(): Promise<void> {
-    const dataDir = process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data');
+    const dataDir = process.env.DATA_DIR || path.join(process.cwd(), '..', 'data');
     const envPath = path.join(process.cwd(), '.env');
     const setupStatusPath = path.join(dataDir, 'setup-status.json');
 

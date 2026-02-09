@@ -64,7 +64,7 @@ export default function SetupPage() {
         ns1: '',
         ns2: '',
         sessionSecret: '',
-        rootPath: '/opt/clearpanel/data',
+        rootPath: '/home',
         port: 3334,
         maxFileSize: 104857600,
     });

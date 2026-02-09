@@ -8,7 +8,7 @@ import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } 
 import { ServerSettingsService } from '../server/server-settings.service';
 
 const MAIL_DATA_FILE = path.join(
-  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
   'mail-domains.json',
 );
 const DEFAULT_SPAM_THRESHOLD = 6.0;

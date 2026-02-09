@@ -23,7 +23,7 @@ Environment=PORT=3334
 
 # Security
 PrivateTmp=true
-ReadWritePaths=/opt/clearpanel /home/clearpanel /etc/bind/zones /etc/nginx
+ReadWritePaths=/opt/clearpanel /home /etc/bind/zones /etc/nginx
 
 # Performance
 LimitNOFILE=65535

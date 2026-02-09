@@ -18,7 +18,7 @@ export interface DnsZone {
 }
 
 const DNS_FILE = path.join(
-  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
   'dns.json',
 );
 

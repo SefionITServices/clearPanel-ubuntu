@@ -11,7 +11,7 @@ export interface SetupConfig {
   hostname?: string;        // VPS hostname
   
   // Paths
-  rootPath?: string;       // Default: /opt/clearpanel/data
+  rootPath?: string;       // Default: /home
   
   // Advanced settings
   port?: number;           // Default: 3334

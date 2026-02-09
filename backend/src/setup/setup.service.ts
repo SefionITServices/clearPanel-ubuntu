@@ -18,9 +18,9 @@ import { DomainsService } from '../domains/domains.service';
 @Injectable()
 export class SetupService {
     private readonly logger = new Logger(SetupService.name);
-    private readonly dataDir = process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data');
+    private readonly dataDir = process.env.DATA_DIR || path.join(process.cwd(), '..', 'data');
     private readonly setupStatusPath = path.join(
-        process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+        process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
         'setup-status.json',
     );
     private readonly envPath = path.join(process.cwd(), '.env');
@@ -69,7 +69,7 @@ export class SetupService {
             }
 
             // Set defaults
-            config.rootPath = config.rootPath || '/opt/clearpanel/data';
+            config.rootPath = config.rootPath || '/home';
             config.port = config.port || 3334;
             config.maxFileSize = config.maxFileSize || 104857600;
 

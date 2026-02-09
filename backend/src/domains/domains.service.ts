@@ -12,7 +12,7 @@ import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
 
 const DOMAINS_FILE = path.join(
-  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
   'domains.json',
 );
 

@@ -8,7 +8,7 @@ import { ServerSettings } from './server-settings.interface';
 export class ServerSettingsService implements OnModuleInit {
   private readonly logger = new Logger(ServerSettingsService.name);
   private readonly settingsPath = path.join(
-    process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+    process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
     'server-settings.json',
   );
   private cache: ServerSettings | null = null;

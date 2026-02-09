@@ -126,7 +126,7 @@ if [ ! -f "$INSTALL_DIR/backend/.env" ]; then
 NODE_ENV=production
 PORT=3334
 SESSION_SECRET=$(openssl rand -hex 32)
-ROOT_PATH=/opt/clearpanel/data
+ROOT_PATH=/home
 EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/backend/.env"
     chmod 600 "$INSTALL_DIR/backend/.env"

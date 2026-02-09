@@ -22,7 +22,7 @@ export interface MailAutomationHistoryRecord {
 export class MailHistoryService {
   private readonly logger = new Logger(MailHistoryService.name);
   private readonly historyPath = path.join(
-    process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+    process.env.DATA_DIR || path.join(process.cwd(), '..', 'data'),
     'mail-automation-history.json',
   );
   private readonly maxRecords = 500;
