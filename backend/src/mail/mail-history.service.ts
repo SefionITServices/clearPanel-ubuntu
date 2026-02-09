@@ -21,7 +21,10 @@ export interface MailAutomationHistoryRecord {
 @Injectable()
 export class MailHistoryService {
   private readonly logger = new Logger(MailHistoryService.name);
-  private readonly historyPath = path.join(process.cwd(), 'mail-automation-history.json');
+  private readonly historyPath = path.join(
+    process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+    'mail-automation-history.json',
+  );
   private readonly maxRecords = 500;
 
   async append(records: Omit<MailAutomationHistoryRecord, 'id'>[]): Promise<void> {

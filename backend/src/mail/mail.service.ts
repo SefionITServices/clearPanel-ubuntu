@@ -7,7 +7,10 @@ import { MailAutomationService, AutomationLog, DkimResult } from './mail-automat
 import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } from './mail-history.service';
 import { ServerSettingsService } from '../server/server-settings.service';
 
-const MAIL_DATA_FILE = path.join(process.cwd(), 'mail-domains.json');
+const MAIL_DATA_FILE = path.join(
+  process.env.ROOT_PATH || path.join(process.cwd(), '..', 'data'),
+  'mail-domains.json',
+);
 const DEFAULT_SPAM_THRESHOLD = 6.0;
 const DEFAULT_GREYLISTING_DELAY_SECONDS = 300;
 

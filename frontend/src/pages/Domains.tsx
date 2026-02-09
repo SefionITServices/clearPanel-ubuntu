@@ -32,11 +32,11 @@ export default function DomainsPage() {
         data
           .map((d: any) => ({
             ...d,
-            isMain: d.name === 'sefion.cloud',
+            isMain: !!d.isPrimary,
             redirectsTo: 'Not Redirected',
             forceHttps: false,
           }))
-          .sort((a: any, b: any) => (a.name === 'sefion.cloud' ? -1 : b.name === 'sefion.cloud' ? 1 : 0))
+          .sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0))
       );
     });
   }, []);
@@ -88,11 +88,11 @@ export default function DomainsPage() {
         data
           .map((d: any) => ({
             ...d,
-            isMain: d.name === 'sefion.cloud',
+            isMain: !!d.isPrimary,
             redirectsTo: 'Not Redirected',
             forceHttps: false,
           }))
-          .sort((a: any, b: any) => (a.name === 'sefion.cloud' ? -1 : b.name === 'sefion.cloud' ? 1 : 0))
+          .sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0))
       );
       alert('Domain created successfully');
     } catch (error) {
@@ -121,11 +121,11 @@ export default function DomainsPage() {
           data
             .map((d: any) => ({
               ...d,
-              isMain: d.name === 'sefion.cloud',
+              isMain: !!d.isPrimary,
               redirectsTo: 'Not Redirected',
               forceHttps: false,
             }))
-            .sort((a: any, b: any) => (a.name === 'sefion.cloud' ? -1 : b.name === 'sefion.cloud' ? 1 : 0))
+            .sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0))
         );
         alert(`Domain "${row.name}" deleted successfully`);
       } else {

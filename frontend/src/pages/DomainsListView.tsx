@@ -42,14 +42,14 @@ export default function DomainsListView() {
 
   React.useEffect(() => {
     fetch('/api/domains').then(r => r.json()).then((data) => {
-      // Mark sefion.cloud as primary and sort it first
+      // Mark primary domain and sort it first
       const mapped = data.map((d: any) => ({
         ...d,
         id: d.id,
-        isMain: d.name === 'sefion.cloud',
+        isMain: !!d.isPrimary,
         redirectsTo: 'Not Redirected',
         forceHttps: false,
-      })).sort((a: any, b: any) => (a.name === 'sefion.cloud' ? -1 : b.name === 'sefion.cloud' ? 1 : 0));
+      })).sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0));
       setDomains(mapped);
     });
   }, []);
@@ -59,10 +59,10 @@ export default function DomainsListView() {
     const mapped = data.map((d: any) => ({
       ...d,
       id: d.id,
-      isMain: d.name === 'sefion.cloud',
+      isMain: !!d.isPrimary,
       redirectsTo: 'Not Redirected',
       forceHttps: false,
-    })).sort((a: any, b: any) => (a.name === 'sefion.cloud' ? -1 : b.name === 'sefion.cloud' ? 1 : 0));
+    })).sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0));
     setDomains(mapped);
   };
 

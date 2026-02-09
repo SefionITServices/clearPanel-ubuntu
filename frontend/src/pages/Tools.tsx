@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -27,6 +27,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 
 // Utility component for tool item
 function ToolCard({
@@ -89,6 +90,22 @@ function ToolCard({
 
 export default function ToolsPage() {
   const navigate = useNavigate();
+  const { username } = useAuth();
+  const [serverInfo, setServerInfo] = useState<{ primaryDomain?: string; serverIp?: string }>({});
+  const [diskUsage, setDiskUsage] = useState('Loading...');
+
+  useEffect(() => {
+    fetch('/api/server/nameservers').then(r => r.json()).then(data => {
+      setServerInfo({
+        primaryDomain: data.settings?.primaryDomain || '-',
+        serverIp: data.settings?.serverIp || '-',
+      });
+    }).catch(() => {});
+    fetch('/api/files/disk-usage').then(r => r.json()).then(data => {
+      if (data.used && data.total) setDiskUsage(`${data.used} / ${data.total}`);
+      else if (data.used) setDiskUsage(data.used);
+    }).catch(() => setDiskUsage('-'));
+  }, []);
 
   const toolSections: {
     title: string;
@@ -206,13 +223,11 @@ export default function ToolsPage() {
   ];
 
   const generalInfo = {
-    user: 'mainserver',
-    domain: 'example.com',
-    sharedIp: '178.16.138.65',
-    homeDir: '/home/mainserver',
-    lastLoginIp: '108.60.177.187',
-    diskUsage: '38.33 GB / ∞',
-    theme: 'jupiter',
+    user: username || '-',
+    domain: serverInfo.primaryDomain || '-',
+    sharedIp: serverInfo.serverIp || '-',
+    homeDir: username ? `/home/${username}` : '-',
+    diskUsage,
   };
 
   return (
@@ -283,7 +298,6 @@ export default function ToolsPage() {
               <InfoRow label="Primary Domain" value={generalInfo.domain} icon={<DnsIcon />} />
               <InfoRow label="Shared IP Address" value={generalInfo.sharedIp} />
               <InfoRow label="Home Directory" value={generalInfo.homeDir} icon={<HomeIcon />} />
-              <InfoRow label="Last Login IP" value={generalInfo.lastLoginIp} />
               <InfoRow label="Disk Usage" value={generalInfo.diskUsage} />
             </Stack>
             <Divider sx={{ my: 3 }} />

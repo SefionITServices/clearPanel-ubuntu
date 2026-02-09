@@ -19,6 +19,7 @@ export default function DnsEditorPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [form, setForm] = useState({ type: 'A', name: '', value: '', ttl: 3600, priority: '' });
   const [dirty, setDirty] = useState<Record<string, Partial<DnsRecord>>>({});
+  const [domainsList, setDomainsList] = useState<any[]>([]);
 
   const loadZones = async () => {
     try {
@@ -31,13 +32,17 @@ export default function DnsEditorPage() {
         return;
       }
       const [zonesData, domainsData] = await Promise.all([zonesRes.json(), domainsRes.ok ? domainsRes.json() : Promise.resolve([])]);
+      setDomainsList(domainsData || []);
       const domainNames: string[] = (domainsData || []).map((d: any) => d.name);
       // Filter zones to only those with existing domains to avoid stale entries
       const filtered = (zonesData || []).filter((z: any) => domainNames.includes(z.domain));
       setZones(filtered);
       if (!selectedDomain) {
-        // Prefer sefion.cloud if present, else first
-        const preferred = filtered.find((z: any) => z.domain === 'sefion.cloud') || filtered[0];
+        // Prefer the primary domain if present, else first
+        const preferred = filtered.find((z: any) => {
+          const matchingDomain = (domainsData || []).find((d: any) => d.name === z.domain);
+          return matchingDomain?.isPrimary;
+        }) || filtered[0];
         if (preferred) setSelectedDomain(preferred.domain);
       }
     } catch (err) {
@@ -98,9 +103,9 @@ export default function DnsEditorPage() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           DNS converts domain names into computer-readable IP addresses. Use this feature to manage DNS zones.
         </Typography>
-        {selectedDomain === 'sefion.cloud' && (
+        {domainsList.find(d => d.name === selectedDomain && d.isPrimary) && (
           <Typography variant="body2" color="primary" sx={{ mb: 1 }}>
-            Viewing primary domain: sefion.cloud (read-only recommendation: avoid changing this if already configured externally)
+            Viewing primary domain: {selectedDomain} (read-only recommendation: avoid changing this if already configured externally)
           </Typography>
         )}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>

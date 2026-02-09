@@ -46,7 +46,13 @@ export class DomainsController {
 
   @Get()
   async listDomains() {
-    return this.domainsService.listDomains();
+    const domains = await this.domainsService.listDomains();
+    const settings = await this.serverSettingsService.getSettings();
+    const primaryName = settings?.primaryDomain?.toLowerCase();
+    return domains.map(d => ({
+      ...d,
+      isPrimary: d.name.toLowerCase() === primaryName,
+    }));
   }
 
   @Get(':id/dns-instructions')

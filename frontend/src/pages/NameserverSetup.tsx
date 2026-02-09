@@ -208,7 +208,7 @@ export default function NameserverSetupPage() {
                   </Typography>
                   <TextField
                     fullWidth
-                    placeholder="204.83.99.245"
+                    placeholder="e.g. 203.0.113.5"
                     value={serverIp}
                     onChange={(event) => setServerIp(event.target.value.trim())}
                     disabled={saving}

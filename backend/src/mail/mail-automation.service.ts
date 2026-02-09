@@ -27,7 +27,7 @@ export interface DomainPolicySettings {
 @Injectable()
 export class MailAutomationService {
   private readonly logger = new Logger(MailAutomationService.name);
-  private readonly scriptsDir = path.join(process.cwd(), 'scripts', 'email');
+  private readonly scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
 
   async ensureStack(): Promise<AutomationLog[]> {
     const logs: AutomationLog[] = [];
