@@ -13,6 +13,7 @@ import { DnsServerModule } from './dns-server/dns-server.module';
 import { ServerModule } from './server/server.module';
 import { SetupModule } from './setup/setup.module';
 import { SslModule } from './ssl/ssl.module';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SslModule } from './ssl/ssl.module';
     ServerModule,
     SetupModule,
     SslModule,
+    DatabaseModule,
   ],
 })
 export class AppModule implements NestModule {

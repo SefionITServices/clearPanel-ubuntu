@@ -233,6 +233,22 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y certbot*
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-ssl
 
+# Allow clearpanel user to manage MySQL/MariaDB
+cat > /etc/sudoers.d/clearpanel-mysql << 'EOF'
+# Allow clearpanel user to manage MySQL/MariaDB databases and users
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql --version
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin ping
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqldump
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-server*
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-client*
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl enable mariadb
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl start mariadb
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart mariadb
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl status mariadb
+EOF
+chmod 440 /etc/sudoers.d/clearpanel-mysql
+
 # Enable and start BIND9 (handle alias: bind9 vs named)
 BIND_SVC="named"
 if systemctl list-unit-files bind9.service &>/dev/null && ! systemctl is-enabled bind9 2>&1 | grep -q "alias"; then

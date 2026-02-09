@@ -16,6 +16,7 @@ import DnsEditorPage from './pages/DnsEditor';
 import DomainsListView from './pages/DomainsListView';
 import NameserverSetupPage from './pages/NameserverSetup';
 import SslPage from './pages/Ssl';
+import DatabasesPage from './pages/Databases';
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { authenticated, loading } = useAuth();
@@ -106,6 +107,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <SslPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/databases"
+              element={
+                <ProtectedRoute>
+                  <DatabasesPage />
                 </ProtectedRoute>
               }
             />

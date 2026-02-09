@@ -195,6 +195,13 @@ export default function ToolsPage() {
           color: 'success.main',
         },
         {
+          label: 'Databases',
+          icon: <StorageIcon sx={{ fontSize: 28 }} />,
+          description: 'MySQL databases & users',
+          onClick: () => navigate('/databases'),
+          color: 'primary.main',
+        },
+        {
           label: 'Domains',
           icon: <DnsIcon sx={{ fontSize: 28 }} />,
           description: 'Manage hosted domains',
