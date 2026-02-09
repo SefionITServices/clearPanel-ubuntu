@@ -63,6 +63,18 @@ export class DomainsService {
     const domains = await this.readDomains();
     const logs: AutomationLog[] = [];
 
+    const normalizedName = name.trim().toLowerCase();
+    const existing = domains.find((d) => d.name.trim().toLowerCase() === normalizedName);
+    if (existing) {
+      logs.push({
+        task: 'Domain exists',
+        success: true,
+        message: `Domain ${name} already exists; attempting to ensure DNS/BIND/Nginx are configured`,
+      });
+      // Continue using existing metadata to (re)provision below.
+      name = existing.name;
+    }
+
     const serverSettings = await this.serverSettingsService.getSettings();
     const userRoot = this.resolveUserRootPath(username);
     const isPrimaryDomain = serverSettings.primaryDomain?.toLowerCase() === name.toLowerCase();
@@ -99,13 +111,19 @@ export class DomainsService {
 
     const serverIp = await this.serverSettingsService.getServerIp();
 
-    const domain: Domain = {
-      id: randomUUID(),
-      name,
-      folderPath: finalPath,
-      createdAt: new Date(),
-      nameservers,
-    };
+    const domain: Domain = existing
+      ? {
+        ...existing,
+        folderPath: existing.folderPath || finalPath,
+        nameservers: nameservers.length ? nameservers : existing.nameservers,
+      }
+      : {
+        id: randomUUID(),
+        name,
+        folderPath: finalPath,
+        createdAt: new Date(),
+        nameservers,
+      };
 
     const nameserverMessage = (() => {
       switch (nameserverSelection.source) {
@@ -234,8 +252,17 @@ export class DomainsService {
       // Continue even if vhost fails
     }
 
-    domains.push(domain);
-    await this.writeDomains(domains);
+    if (!existing) {
+      domains.push(domain);
+      await this.writeDomains(domains);
+    } else {
+      // Persist any updated folderPath/nameservers if needed.
+      const idx = domains.findIndex((d) => d.id === existing.id);
+      if (idx !== -1) {
+        domains[idx] = domain;
+        await this.writeDomains(domains);
+      }
+    }
 
     let mailResult: MailDomainResult | undefined;
     try {

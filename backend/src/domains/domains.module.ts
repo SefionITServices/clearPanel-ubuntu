@@ -12,5 +12,6 @@ import { FilesModule } from '../files/files.module';
   imports: [DnsModule, WebServerModule, DnsServerModule, ServerModule, MailModule, FilesModule],
   providers: [DomainsService],
   controllers: [DomainsController],
+  exports: [DomainsService],
 })
 export class DomainsModule { }
