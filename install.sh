@@ -93,6 +93,12 @@ fi
 mkdir -p "$INSTALL_DIR/data"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 
+# Grant clearpanel user permission to create user home dirs under /home
+# Uses POSIX ACLs so we don't change /home ownership
+echo -e "${YELLOW}🔑 Granting $SERVICE_USER write access to /home...${NC}"
+apt-get install -y acl > /dev/null 2>&1 || true
+setfacl -m u:"$SERVICE_USER":rwx /home
+
 # Ensure data directory is in .gitignore so git pull doesn't affect user data
 if ! grep -q "^data/" "$INSTALL_DIR/.gitignore" 2>/dev/null; then
     echo "data/" >> "$INSTALL_DIR/.gitignore"

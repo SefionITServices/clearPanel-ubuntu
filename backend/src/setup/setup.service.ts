@@ -223,7 +223,13 @@ export class SetupService {
             try {
                 await fs.mkdir(fullPath, { recursive: true });
             } catch (error) {
-                this.logger.warn(`Failed to create ${fullPath}:`, error);
+                this.logger.error(`Failed to create ${fullPath}:`, error);
+                // Fail fast on home root and public_html — these are critical
+                if (dir === '' || dir === 'public_html') {
+                    throw new Error(
+                        `Cannot create ${fullPath}. Ensure the clearpanel user has write permission to ${path.dirname(userHome)}.`,
+                    );
+                }
             }
         }
 
@@ -244,6 +250,9 @@ export class SetupService {
             await fs.access(indexPath);
             return; // Already exists
         } catch { }
+
+        // Ensure the directory exists before writing
+        await fs.mkdir(publicHtml, { recursive: true });
 
         const html = `<!DOCTYPE html>
 <html lang="en">
