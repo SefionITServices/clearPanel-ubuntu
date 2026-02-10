@@ -202,6 +202,9 @@ mkdir -p /etc/bind/zones
 # Add clearpanel user to bind group for zone file management
 usermod -a -G bind "$SERVICE_USER" 2>/dev/null || true
 
+# Add clearpanel user to journal/log groups so Log Viewer can read journalctl
+usermod -a -G systemd-journal,adm "$SERVICE_USER" 2>/dev/null || true
+
 # Set permissions so bind group can write (required for clearpanel user)
 # Prefer root:bind ownership with setgid so new files inherit bind group.
 chgrp -R bind /etc/bind/zones 2>/dev/null || true
