@@ -136,6 +136,18 @@ export class AppStoreService {
       tags: ['wordpress', 'cli', 'cms'],
       website: 'https://wp-cli.org',
     },
+    {
+      id: 'pgadmin',
+      name: 'pgAdmin 4',
+      description: 'Web-based PostgreSQL administration tool',
+      longDescription:
+        'pgAdmin is the most popular open-source administration and development platform for PostgreSQL. It provides a graphical interface for managing databases, running queries, and monitoring server performance.',
+      icon: 'TableChart',
+      color: '#336791',
+      category: 'database',
+      tags: ['postgresql', 'database', 'admin', 'web'],
+      website: 'https://www.pgadmin.org',
+    },
   ];
 
   // ─── helpers ────────────────────────────────────────────────────────
@@ -269,6 +281,39 @@ export class AppStoreService {
     return { id: 'wp-cli', installed, running: installed, version };
   }
 
+  private async pgAdminStatus(): Promise<AppStatus> {
+    let installed = false;
+    let running = false;
+    let version = '';
+    // Check if pgadmin4 package is installed
+    try {
+      const v = await this.sudo(`dpkg -s pgadmin4 2>/dev/null | grep '^Version:' | awk '{print $2}'`);
+      if (v) { installed = true; version = v; }
+    } catch {}
+    // Also check pip-based install
+    if (!installed) {
+      try {
+        const v = (await exec('pip3 show pgadmin4 2>/dev/null | grep Version')).stdout.trim();
+        const m = v.match(/Version:\s*(\S+)/);
+        if (m) { installed = true; version = m[1]; }
+      } catch {}
+    }
+    // Check if pgadmin4 web service is running
+    if (installed) {
+      try {
+        running = await this.serviceRunning('pgadmin4');
+      } catch {}
+      if (!running) {
+        // Also check if it's running via apache/nginx reverse proxy
+        try {
+          const out = await this.sudo(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://localhost/pgadmin 2>/dev/null || echo 000`);
+          running = out.startsWith('2') || out.startsWith('3');
+        } catch {}
+      }
+    }
+    return { id: 'pgadmin', installed, running, version, url: '/pgadmin' };
+  }
+
   // ─── public: get status of one or all apps ──────────────────────────
 
   async getAppStatus(id: string): Promise<AppStatus> {
@@ -301,6 +346,7 @@ export class AppStoreService {
       fail2ban: () => this.fail2banStatus(),
       certbot: () => this.certbotStatus(),
       'wp-cli': () => this.wpCliStatus(),
+      pgadmin: () => this.pgAdminStatus(),
     };
   }
 
@@ -330,6 +376,7 @@ export class AppStoreService {
       fail2ban: () => this.installGenericApt('fail2ban', 'fail2ban', 'Fail2Ban'),
       certbot: () => this.installCertbot(),
       'wp-cli': () => this.installWpCli(),
+      pgadmin: () => this.installPgAdmin(),
     };
   }
 
@@ -343,6 +390,7 @@ export class AppStoreService {
       fail2ban: () => this.uninstallGenericApt('fail2ban', 'Fail2Ban'),
       certbot: () => this.uninstallGenericApt('certbot', 'Certbot'),
       'wp-cli': () => this.uninstallWpCli(),
+      pgadmin: () => this.uninstallPgAdmin(),
     };
   }
 
@@ -599,6 +647,94 @@ location /phpmyadmin {
     }
   }
 
+  // ─── pgAdmin 4 ──────────────────────────────────────────────────────
+
+  private async installPgAdmin(): Promise<{ success: boolean; message: string; logs?: string }> {
+    try {
+      const cmds = [
+        // Install the public key for the APT repository
+        'bash -c "curl -fsS https://www.pgadmin.org/static/packages_pgadmin_org.pub | gpg --dearmor -o /usr/share/keyrings/packages-pgadmin-org.gpg 2>/dev/null || true"',
+        // Create the repository configuration file
+        'bash -c \'echo "deb [signed-by=/usr/share/keyrings/packages-pgadmin-org.gpg] https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/$(lsb_release -cs) pgadmin4 main" > /etc/apt/sources.list.d/pgadmin4.list\'',
+        'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        'DEBIAN_FRONTEND=noninteractive apt-get install -y pgadmin4-web',
+      ];
+      let logs = '';
+      for (const cmd of cmds) {
+        try { logs += await this.sudo(cmd, 180_000) + '\n'; } catch (e: any) { logs += `WARN: ${e.message}\n`; }
+      }
+
+      // Run the pgAdmin web setup non-interactively
+      try {
+        logs += await this.sudo(
+          'bash -c "echo \\"admin@localhost\\nadmin\\nadmin\\" | /usr/pgadmin4/bin/setup-web.sh --yes 2>&1"',
+          120_000,
+        ) + '\n';
+      } catch (e: any) {
+        logs += `Setup note: ${e.message}\n`;
+      }
+
+      // Configure nginx reverse proxy for pgAdmin
+      await this.configurePgAdminNginx();
+
+      return { success: true, message: 'pgAdmin 4 installed successfully', logs };
+    } catch (e: any) {
+      this.logger.error(`pgAdmin install failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async configurePgAdminNginx(): Promise<void> {
+    const nginxSnippet = `# pgAdmin configuration – managed by clearPanel
+location /pgadmin {
+    proxy_pass http://127.0.0.1:5050/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Script-Name /pgadmin;
+    proxy_redirect off;
+}
+`;
+    const snippetPath = '/etc/nginx/snippets/pgadmin.conf';
+    await this.sudo(`bash -c 'cat > ${snippetPath} << "HEREDOC"\n${nginxSnippet}\nHEREDOC'`);
+
+    // Include in default server block if not already included
+    try {
+      const defaultConf = await this.sudo('cat /etc/nginx/sites-available/default');
+      if (!defaultConf.includes('pgadmin.conf')) {
+        const updated = defaultConf.replace(
+          /^}$/m,
+          `    include snippets/pgadmin.conf;\n}`,
+        );
+        await this.sudo(`bash -c 'cat > /etc/nginx/sites-available/default << "HEREDOC"\n${updated}\nHEREDOC'`);
+      }
+    } catch {}
+
+    try {
+      await this.sudo('nginx -t');
+      await this.sudo('systemctl reload nginx');
+    } catch (e: any) {
+      this.logger.error(`pgAdmin nginx config failed: ${e.message}`);
+    }
+  }
+
+  private async uninstallPgAdmin(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y pgadmin4-web pgadmin4');
+      await this.sudo('rm -f /etc/nginx/snippets/pgadmin.conf');
+      try {
+        const sites = await this.sudo('ls /etc/nginx/sites-available/');
+        for (const site of sites.split('\n').filter(Boolean)) {
+          try { await this.sudo(`sed -i '/pgadmin\\.conf/d' /etc/nginx/sites-available/${site}`); } catch {}
+        }
+        await this.sudo('nginx -t && systemctl reload nginx');
+      } catch {}
+      return { success: true, message: 'pgAdmin 4 uninstalled' };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
   // ─── Generic APT install / uninstall ────────────────────────────────
 
   private async installGenericApt(
@@ -667,6 +803,7 @@ location /phpmyadmin {
       fail2ban: () => this.diagnoseFail2ban(),
       certbot: () => this.diagnoseCertbot(),
       'wp-cli': () => this.diagnoseWpCli(),
+      pgadmin: () => this.diagnosePgAdmin(),
     };
     const fn = map[id];
     if (!fn) return { success: false, checks: [{ name: 'Error', status: 'error', detail: `Unknown app: ${id}` }] };
@@ -1067,6 +1204,54 @@ location /phpmyadmin {
         checks.push({ name: 'WP-CLI Updates', status: hasUpdate ? 'warn' : 'ok', detail: hasUpdate ? 'A WP-CLI update is available' : 'WP-CLI is up to date' });
       } catch {}
     }
+
+    return checks;
+  }
+
+  private async diagnosePgAdmin(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    // Check if pgadmin4 is installed
+    let installed = false;
+    let version = '';
+    try {
+      const v = await this.sudo(`dpkg -s pgadmin4-web 2>/dev/null | grep '^Version:' | awk '{print $2}'`);
+      if (v) { installed = true; version = v; }
+    } catch {}
+    if (!installed) {
+      try {
+        const v = await this.sudo(`dpkg -s pgadmin4 2>/dev/null | grep '^Version:' | awk '{print $2}'`);
+        if (v) { installed = true; version = v; }
+      } catch {}
+    }
+    checks.push({ name: 'pgAdmin Package', status: installed ? 'ok' : 'error', detail: installed ? `pgadmin4 v${version} installed` : 'pgAdmin is not installed' });
+
+    // Check PostgreSQL
+    const pgRunning = await this.serviceRunning('postgresql');
+    checks.push({ name: 'PostgreSQL', status: pgRunning ? 'ok' : 'error', detail: pgRunning ? 'PostgreSQL is running' : 'PostgreSQL is NOT running — pgAdmin requires it' });
+
+    // Check nginx
+    const nginxRunning = await this.serviceRunning('nginx');
+    checks.push({ name: 'Nginx', status: nginxRunning ? 'ok' : 'error', detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running' });
+
+    // Check nginx config snippet
+    const snippetExists = await this.fileExists('/etc/nginx/snippets/pgadmin.conf');
+    checks.push({ name: 'Nginx pgAdmin Config', status: snippetExists ? 'ok' : 'warn', detail: snippetExists ? 'snippets/pgadmin.conf exists' : 'pgAdmin nginx snippet not found' });
+
+    // Check if pgAdmin web is reachable
+    let httpStatus = '';
+    try {
+      httpStatus = await this.sudo(`curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost/pgadmin/ 2>/dev/null`);
+    } catch { httpStatus = '000'; }
+    const httpOk = httpStatus.startsWith('2') || httpStatus.startsWith('3');
+    checks.push({
+      name: 'HTTP Response',
+      status: httpOk ? 'ok' : 'warn',
+      detail: httpOk ? `HTTP ${httpStatus} — pgAdmin is reachable`
+        : httpStatus === '502' ? 'HTTP 502 — pgAdmin service may not be running'
+        : httpStatus === '404' ? 'HTTP 404 — Nginx not proxying to pgAdmin'
+        : `HTTP ${httpStatus} — pgAdmin may not be configured yet`,
+    });
 
     return checks;
   }

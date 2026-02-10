@@ -78,8 +78,17 @@ export class DatabaseService {
    * Run a PostgreSQL command as postgres user
    */
   private async pgExec(sql: string): Promise<string> {
-    const escaped = sql.replace(/"/g, '\\"').replace(/'/g, "\\'");
-    return this.sudo(`-u postgres psql -t -A -c "${sql}"`, 30000);
+    const escaped = sql.replace(/"/g, '\\"');
+    return this.sudo(`-u postgres psql -t -A -c "${escaped}"`, 30000);
+  }
+
+  /**
+   * Run a PostgreSQL command against a specific database
+   */
+  private async pgExecDb(database: string, sql: string): Promise<string> {
+    const escaped = sql.replace(/"/g, '\\"');
+    const safeDb = database.replace(/[^a-zA-Z0-9_]/g, '');
+    return this.sudo(`-u postgres psql -t -A -d "${safeDb}" -c "${escaped}"`, 30000);
   }
 
   // ========================
@@ -466,5 +475,166 @@ export class DatabaseService {
     }
 
     return results;
+  }
+
+  // ========================
+  // POSTGRESQL — Databases
+  // ========================
+
+  async listPgDatabases(): Promise<DatabaseInfo[]> {
+    const prefix = this.getPrefix();
+    const raw = await this.pgExec(
+      `SELECT d.datname, pg_database_size(d.datname) as size FROM pg_database d WHERE d.datname LIKE '${prefix}_%' ORDER BY d.datname`
+    );
+    if (!raw) return [];
+    return raw.split('\n').filter(Boolean).map((line) => {
+      const [name, size] = line.split('|');
+      return { name, size: parseInt(size, 10) || 0, tables: 0 };
+    });
+  }
+
+  async createPgDatabase(name: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+    if (!safeName) throw new Error('Invalid database name');
+    const fullName = safeName.startsWith(`${prefix}_`) ? safeName : `${prefix}_${safeName}`;
+    if (fullName.length > 63) throw new Error('Database name too long (max 63 chars)');
+    await this.pgExec(`CREATE DATABASE ${fullName}`);
+    return { success: true, message: `Database "${fullName}" created` };
+  }
+
+  async deletePgDatabase(name: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    // Terminate active connections before dropping
+    try {
+      await this.pgExec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${name}' AND pid <> pg_backend_pid()`);
+    } catch {}
+    await this.pgExec(`DROP DATABASE IF EXISTS ${name}`);
+    return { success: true, message: `Database "${name}" deleted` };
+  }
+
+  async listPgTables(database: string): Promise<{ name: string; rows: number; size: number; engine: string }[]> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const raw = await this.pgExecDb(database,
+      `SELECT tablename, pg_total_relation_size(quote_ident(tablename))::bigint as size FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`
+    );
+    if (!raw) return [];
+    return raw.split('\n').filter(Boolean).map((line) => {
+      const [name, size] = line.split('|');
+      return { name, rows: 0, size: parseInt(size, 10) || 0, engine: 'PostgreSQL' };
+    });
+  }
+
+  // ========================
+  // POSTGRESQL — Users / Roles
+  // ========================
+
+  async listPgUsers(): Promise<DatabaseUser[]> {
+    const prefix = this.getPrefix();
+    const raw = await this.pgExec(
+      `SELECT rolname FROM pg_roles WHERE rolname LIKE '${prefix}_%' AND rolcanlogin = true ORDER BY rolname`
+    );
+    if (!raw) return [];
+    const users: DatabaseUser[] = [];
+    for (const rolname of raw.split('\n').filter(Boolean)) {
+      const user = rolname.trim();
+      let databases: string[] = [];
+      try {
+        const dbRaw = await this.pgExec(
+          `SELECT datname FROM pg_database WHERE has_database_privilege('${user}', datname, 'CONNECT') AND datname LIKE '${prefix}_%' AND datistemplate = false`
+        );
+        databases = dbRaw.split('\n').filter(Boolean);
+      } catch {}
+      users.push({ user, host: 'local', databases });
+    }
+    return users;
+  }
+
+  async createPgUser(name: string, password: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+    if (!safeName) throw new Error('Invalid username');
+    if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
+    const fullName = safeName.startsWith(`${prefix}_`) ? safeName : `${prefix}_${safeName}`;
+    if (fullName.length > 63) throw new Error('Username too long (max 63 chars)');
+    const safePassword = password.replace(/'/g, "''");
+    await this.pgExec(`CREATE ROLE ${fullName} WITH LOGIN PASSWORD '${safePassword}'`);
+    return { success: true, message: `User "${fullName}" created` };
+  }
+
+  async deletePgUser(name: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your user');
+    // Revoke connect from all databases first
+    try {
+      const dbs = await this.pgExec(`SELECT datname FROM pg_database WHERE datname LIKE '${prefix}_%'`);
+      for (const db of dbs.split('\n').filter(Boolean)) {
+        try { await this.pgExec(`REVOKE ALL PRIVILEGES ON DATABASE ${db.trim()} FROM ${name}`); } catch {}
+      }
+    } catch {}
+    await this.pgExec(`DROP ROLE IF EXISTS ${name}`);
+    return { success: true, message: `User "${name}" deleted` };
+  }
+
+  async changePgPassword(name: string, password: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
+    const safePassword = password.replace(/'/g, "''");
+    await this.pgExec(`ALTER ROLE ${name} WITH PASSWORD '${safePassword}'`);
+    return { success: true, message: 'Password changed' };
+  }
+
+  // ========================
+  // POSTGRESQL — Privileges
+  // ========================
+
+  async grantPgPrivileges(
+    user: string,
+    database: string,
+    privileges: string[] = ['ALL'],
+  ): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!user.startsWith(`${prefix}_`)) throw new Error('Access denied: not your user');
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    const validPrivs = ['ALL', 'CREATE', 'CONNECT', 'TEMPORARY', 'TEMP'];
+    const cleanPrivs = privileges.map(p => p.toUpperCase()).filter(p => validPrivs.includes(p));
+    if (cleanPrivs.length === 0) throw new Error('No valid privileges specified');
+    const privStr = cleanPrivs.join(', ');
+    await this.pgExec(`GRANT ${privStr} ON DATABASE ${database} TO ${user}`);
+    // Also grant schema usage and table privileges
+    try {
+      await this.pgExecDb(database, `GRANT USAGE ON SCHEMA public TO ${user}`);
+      await this.pgExecDb(database, `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${user}`);
+      await this.pgExecDb(database, `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${user}`);
+    } catch {}
+    return { success: true, message: `Granted ${privStr} on ${database} to ${user}` };
+  }
+
+  async revokePgPrivileges(user: string, database: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!user.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    try {
+      await this.pgExecDb(database, `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${user}`);
+      await this.pgExecDb(database, `REVOKE USAGE ON SCHEMA public FROM ${user}`);
+    } catch {}
+    await this.pgExec(`REVOKE ALL PRIVILEGES ON DATABASE ${database} FROM ${user}`);
+    return { success: true, message: `Revoked privileges on ${database} from ${user}` };
+  }
+
+  async getPgUserPrivileges(user: string): Promise<UserPrivilege[]> {
+    const prefix = this.getPrefix();
+    if (!user.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const raw = await this.pgExec(
+      `SELECT datname FROM pg_database WHERE has_database_privilege('${user}', datname, 'CONNECT') AND datname LIKE '${prefix}_%' AND datistemplate = false`
+    );
+    if (!raw) return [];
+    return raw.split('\n').filter(Boolean).map((db) => ({
+      database: db.trim(),
+      privileges: ['CONNECT'],
+    }));
   }
 }

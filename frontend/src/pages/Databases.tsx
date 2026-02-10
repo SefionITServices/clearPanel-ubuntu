@@ -72,36 +72,36 @@ const dbAPI = {
   engines: () => fetchJSON(`${API}/engines`),
   install: () => fetchJSON(`${API}/install`, { method: 'POST' }),
   installEngine: (engine: string) => fetchJSON(`${API}/install/${engine}`, { method: 'POST' }),
-  listDatabases: () => fetchJSON(`${API}/list`),
-  createDatabase: (name: string) => fetchJSON(`${API}/create`, {
+  listDatabases: (engine?: string) => fetchJSON(`${API}/list${engine ? `?engine=${engine}` : ''}`),
+  createDatabase: (name: string, engine?: string) => fetchJSON(`${API}/create`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, engine }),
   }),
-  deleteDatabase: (name: string) => fetchJSON(`${API}/delete`, {
+  deleteDatabase: (name: string, engine?: string) => fetchJSON(`${API}/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, engine }),
   }),
-  listTables: (database: string) => fetchJSON(`${API}/tables?database=${encodeURIComponent(database)}`),
-  listUsers: () => fetchJSON(`${API}/users`),
-  createUser: (name: string, password: string, host?: string) => fetchJSON(`${API}/users/create`, {
+  listTables: (database: string, engine?: string) => fetchJSON(`${API}/tables?database=${encodeURIComponent(database)}${engine ? `&engine=${engine}` : ''}`),
+  listUsers: (engine?: string) => fetchJSON(`${API}/users${engine ? `?engine=${engine}` : ''}`),
+  createUser: (name: string, password: string, host?: string, engine?: string) => fetchJSON(`${API}/users/create`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, password, host }),
+    body: JSON.stringify({ name, password, host, engine }),
   }),
-  deleteUser: (name: string, host?: string) => fetchJSON(`${API}/users/delete`, {
+  deleteUser: (name: string, host?: string, engine?: string) => fetchJSON(`${API}/users/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, host }),
+    body: JSON.stringify({ name, host, engine }),
   }),
-  changePassword: (name: string, password: string, host?: string) => fetchJSON(`${API}/users/password`, {
+  changePassword: (name: string, password: string, host?: string, engine?: string) => fetchJSON(`${API}/users/password`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, password, host }),
+    body: JSON.stringify({ name, password, host, engine }),
   }),
-  grant: (user: string, database: string, privileges?: string[], host?: string) => fetchJSON(`${API}/privileges/grant`, {
+  grant: (user: string, database: string, privileges?: string[], host?: string, engine?: string) => fetchJSON(`${API}/privileges/grant`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user, database, privileges, host }),
+    body: JSON.stringify({ user, database, privileges, host, engine }),
   }),
-  revoke: (user: string, database: string, host?: string) => fetchJSON(`${API}/privileges/revoke`, {
+  revoke: (user: string, database: string, host?: string, engine?: string) => fetchJSON(`${API}/privileges/revoke`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user, database, host }),
+    body: JSON.stringify({ user, database, host, engine }),
   }),
 };
 
@@ -145,6 +145,9 @@ export default function DatabasesPage() {
   const [engines, setEngines] = useState<EngineInfo[]>([]);
   const [installingEngine, setInstallingEngine] = useState<string | null>(null);
 
+  // Active engine (mysql or postgresql)
+  const [activeEngine, setActiveEngine] = useState<string>('mysql');
+
   // Databases
   const [databases, setDatabases] = useState<DbInfo[]>([]);
   const [createDbOpen, setCreateDbOpen] = useState(false);
@@ -176,7 +179,9 @@ export default function DatabasesPage() {
   const [grantDb, setGrantDb] = useState('');
   const [grantPrivs, setGrantPrivs] = useState<string[]>(['ALL PRIVILEGES']);
 
-  const PRIVS_OPTIONS = ['ALL PRIVILEGES', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'INDEX'];
+  const PRIVS_OPTIONS = activeEngine === 'postgresql'
+    ? ['ALL', 'CREATE', 'CONNECT', 'TEMPORARY']
+    : ['ALL PRIVILEGES', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'INDEX'];
 
   // ---- Load data ----
 
@@ -187,23 +192,32 @@ export default function DatabasesPage() {
         dbAPI.engines(),
       ]);
       setDbStatus({ installed: statusData.installed, running: statusData.running, version: statusData.version });
-      setEngines(enginesData.engines || []);
+      const engList: EngineInfo[] = enginesData.engines || [];
+      setEngines(engList);
+      // Auto-select active engine: prefer MariaDB/MySQL if installed, else PostgreSQL
+      const mysqlEng = engList.find(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed && e.running);
+      const pgEng = engList.find(e => e.engine === 'postgresql' && e.installed && e.running);
+      if (mysqlEng && !pgEng) setActiveEngine('mysql');
+      else if (pgEng && !mysqlEng) setActiveEngine('postgresql');
+      // If both, keep current selection
     } catch (e: any) { setError(e.message); }
   }, []);
+
+  const engineParam = activeEngine === 'postgresql' ? 'postgresql' : undefined;
 
   const loadDatabases = useCallback(async () => {
     try {
-      const data = await dbAPI.listDatabases();
+      const data = await dbAPI.listDatabases(engineParam);
       setDatabases(data.databases || []);
     } catch (e: any) { setError(e.message); }
-  }, []);
+  }, [engineParam]);
 
   const loadUsers = useCallback(async () => {
     try {
-      const data = await dbAPI.listUsers();
+      const data = await dbAPI.listUsers(engineParam);
       setUsers(data.users || []);
     } catch (e: any) { setError(e.message); }
-  }, []);
+  }, [engineParam]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -213,7 +227,7 @@ export default function DatabasesPage() {
       await Promise.all([loadDatabases(), loadUsers()]);
     }
     setLoading(false);
-  }, [dbStatus?.installed, dbStatus?.running]);
+  }, [dbStatus?.installed, dbStatus?.running, loadDatabases, loadUsers]);
 
   useEffect(() => {
     (async () => {
@@ -223,12 +237,13 @@ export default function DatabasesPage() {
     })();
   }, []);
 
+  // Reload data when engine changes or when DB becomes available
   useEffect(() => {
     if (dbStatus?.installed && dbStatus?.running) {
       loadDatabases();
       loadUsers();
     }
-  }, [dbStatus?.installed, dbStatus?.running]);
+  }, [dbStatus?.installed, dbStatus?.running, activeEngine]);
 
   // ---- Actions ----
 
@@ -257,7 +272,7 @@ export default function DatabasesPage() {
   const handleCreateDb = async () => {
     if (!createDbName) return;
     try {
-      const data = await dbAPI.createDatabase(createDbName);
+      const data = await dbAPI.createDatabase(createDbName, engineParam);
       setCreateDbOpen(false);
       setCreateDbName('');
       setSuccess(data.message);
@@ -268,7 +283,7 @@ export default function DatabasesPage() {
   const handleDeleteDb = async (name: string) => {
     if (!window.confirm(`Delete database "${name}"? This will permanently destroy all data!`)) return;
     try {
-      await dbAPI.deleteDatabase(name);
+      await dbAPI.deleteDatabase(name, engineParam);
       setSuccess(`Database "${name}" deleted`);
       loadDatabases();
     } catch (e: any) { setError(e.message); }
@@ -282,7 +297,7 @@ export default function DatabasesPage() {
     setExpandedDb(dbName);
     setTablesLoading(true);
     try {
-      const data = await dbAPI.listTables(dbName);
+      const data = await dbAPI.listTables(dbName, engineParam);
       setTables(data.tables || []);
     } catch (e: any) { setError(e.message); setTables([]); }
     setTablesLoading(false);
@@ -291,7 +306,7 @@ export default function DatabasesPage() {
   const handleCreateUser = async () => {
     if (!newUserName || !newUserPassword) return;
     try {
-      const data = await dbAPI.createUser(newUserName, newUserPassword, newUserHost);
+      const data = await dbAPI.createUser(newUserName, newUserPassword, newUserHost, engineParam);
       setCreateUserOpen(false);
       setNewUserName('');
       setNewUserPassword('');
@@ -304,7 +319,7 @@ export default function DatabasesPage() {
   const handleDeleteUser = async (name: string, host: string) => {
     if (!window.confirm(`Delete user "${name}"@"${host}"?`)) return;
     try {
-      await dbAPI.deleteUser(name, host);
+      await dbAPI.deleteUser(name, host, engineParam);
       setSuccess(`User "${name}" deleted`);
       loadUsers();
     } catch (e: any) { setError(e.message); }
@@ -313,7 +328,7 @@ export default function DatabasesPage() {
   const handleChangePassword = async () => {
     if (!changePassValue) return;
     try {
-      await dbAPI.changePassword(changePassUser, changePassValue, changePassHost);
+      await dbAPI.changePassword(changePassUser, changePassValue, changePassHost, engineParam);
       setChangePassOpen(false);
       setChangePassValue('');
       setSuccess('Password changed');
@@ -323,7 +338,7 @@ export default function DatabasesPage() {
   const handleGrant = async () => {
     if (!grantUser || !grantDb) return;
     try {
-      await dbAPI.grant(grantUser, grantDb, grantPrivs, grantHost);
+      await dbAPI.grant(grantUser, grantDb, grantPrivs, grantHost, engineParam);
       setGrantOpen(false);
       setSuccess(`Privileges granted on ${grantDb} to ${grantUser}`);
       loadUsers();
@@ -333,7 +348,7 @@ export default function DatabasesPage() {
   const handleRevoke = async (user: string, database: string, host: string) => {
     if (!window.confirm(`Revoke all privileges on "${database}" from "${user}"?`)) return;
     try {
-      await dbAPI.revoke(user, database, host);
+      await dbAPI.revoke(user, database, host, engineParam);
       setSuccess(`Revoked privileges on ${database} from ${user}`);
       loadUsers();
     } catch (e: any) { setError(e.message); }
@@ -351,7 +366,12 @@ export default function DatabasesPage() {
     );
   }
 
-  if (!dbStatus?.installed || !dbStatus?.running) {
+  // Check if ANY engine is installed and running (not just MySQL)
+  const anyMysqlRunning = engines.some(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed && e.running);
+  const pgRunning = engines.some(e => e.engine === 'postgresql' && e.installed && e.running);
+  const anyEngineRunning = anyMysqlRunning || pgRunning;
+
+  if (!anyEngineRunning) {
     const engineCards = [
       {
         engine: 'mariadb',
@@ -436,12 +456,12 @@ export default function DatabasesPage() {
                         />
                         {(card.engine === 'mariadb' || card.engine === 'mysql') && isRunning && (
                           <Typography variant="caption" color="success.main">
-                            ✅ Active — manage databases below
+                            Active — manage databases below
                           </Typography>
                         )}
                         {card.engine === 'postgresql' && isRunning && (
                           <Typography variant="caption" color="success.main">
-                            ✅ Active — PostgreSQL management coming soon
+                            Active — manage databases below
                           </Typography>
                         )}
                       </Stack>
@@ -467,8 +487,8 @@ export default function DatabasesPage() {
             })}
           </Stack>
 
-          {/* If a MySQL-compatible engine is installed and running, show link to management */}
-          {dbStatus?.installed && dbStatus?.running && (
+          {/* If any engine is installed and running, show link to management */}
+          {anyEngineRunning && (
             <Paper sx={{ mt: 3, p: 3, textAlign: 'center' }}>
               <Typography variant="body1" sx={{ mb: 1 }}>
                 A database engine is installed and running. Scroll down or refresh to access database management.
@@ -485,34 +505,77 @@ export default function DatabasesPage() {
 
   // ---- Main render ----
 
+  const activeEngineLabel = activeEngine === 'postgresql' ? 'PostgreSQL'
+    : engines.find(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed)?.label || 'MySQL';
+  const activeEngineVersion = activeEngine === 'postgresql'
+    ? (engines.find(e => e.engine === 'postgresql')?.version || '')
+    : (dbStatus?.version || '');
+
   return (
     <DashboardLayout>
       <Box>
         {/* Header */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
+            <Storage sx={{ color: activeEngine === 'postgresql' ? '#336791' : '#4285F4', fontSize: 28 }} />
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
               <Typography variant="body1" color="text.secondary">
-                {dbStatus.version}
+                {activeEngineLabel} {activeEngineVersion ? `— ${activeEngineVersion.split('\n')[0].substring(0, 80)}` : ''}
               </Typography>
             </Box>
           </Box>
           <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              startIcon={<OpenInNew />}
-              onClick={() => window.open('/phpmyadmin', '_blank')}
-              sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#F89C0E', '&:hover': { bgcolor: '#e08c00' } }}
-            >
-              phpMyAdmin
-            </Button>
+            {activeEngine === 'postgresql' ? (
+              <Button
+                variant="contained"
+                startIcon={<OpenInNew />}
+                onClick={() => window.open('/pgadmin', '_blank')}
+                sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#336791', '&:hover': { bgcolor: '#2a567a' } }}
+              >
+                pgAdmin
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                startIcon={<OpenInNew />}
+                onClick={() => window.open('/phpmyadmin', '_blank')}
+                sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#F89C0E', '&:hover': { bgcolor: '#e08c00' } }}
+              >
+                phpMyAdmin
+              </Button>
+            )}
             <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
               Refresh
             </Button>
           </Stack>
         </Box>
+
+        {/* Engine Selector - show when both MySQL and PG are running */}
+        {anyMysqlRunning && pgRunning && (
+          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+            <Chip
+              label={engines.find(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed)?.label || 'MySQL'}
+              onClick={() => setActiveEngine('mysql')}
+              color={activeEngine !== 'postgresql' ? 'primary' : 'default'}
+              variant={activeEngine !== 'postgresql' ? 'filled' : 'outlined'}
+              icon={<Storage />}
+              sx={{ fontWeight: 600, px: 1 }}
+            />
+            <Chip
+              label="PostgreSQL"
+              onClick={() => setActiveEngine('postgresql')}
+              color={activeEngine === 'postgresql' ? 'primary' : 'default'}
+              variant={activeEngine === 'postgresql' ? 'filled' : 'outlined'}
+              icon={<Storage />}
+              sx={{
+                fontWeight: 600,
+                px: 1,
+                ...(activeEngine === 'postgresql' && { bgcolor: '#336791', '&:hover': { bgcolor: '#2a567a' } }),
+              }}
+            />
+          </Stack>
+        )}
 
         {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 

@@ -14,6 +14,10 @@ export class DatabaseController {
     return true;
   }
 
+  private isPg(engine?: string): boolean {
+    return engine === 'postgresql' || engine === 'pg';
+  }
+
   // ========================
   // STATUS
   // ========================
@@ -75,10 +79,12 @@ export class DatabaseController {
   // ========================
 
   @Get('list')
-  async listDatabases(@Req() req: Request, @Res() res: Response) {
+  async listDatabases(@Query('engine') engine: string, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
-      const databases = await this.db.listDatabases();
+      const databases = this.isPg(engine)
+        ? await this.db.listPgDatabases()
+        : await this.db.listDatabases();
       return res.json({ success: true, databases });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -86,11 +92,13 @@ export class DatabaseController {
   }
 
   @Post('create')
-  async createDatabase(@Body() body: { name: string }, @Req() req: Request, @Res() res: Response) {
+  async createDatabase(@Body() body: { name: string; engine?: string }, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
     try {
-      const data = await this.db.createDatabase(body.name);
+      const data = this.isPg(body.engine)
+        ? await this.db.createPgDatabase(body.name)
+        : await this.db.createDatabase(body.name);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -98,11 +106,13 @@ export class DatabaseController {
   }
 
   @Post('delete')
-  async deleteDatabase(@Body() body: { name: string }, @Req() req: Request, @Res() res: Response) {
+  async deleteDatabase(@Body() body: { name: string; engine?: string }, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
     try {
-      const data = await this.db.deleteDatabase(body.name);
+      const data = this.isPg(body.engine)
+        ? await this.db.deletePgDatabase(body.name)
+        : await this.db.deleteDatabase(body.name);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -110,11 +120,18 @@ export class DatabaseController {
   }
 
   @Get('tables')
-  async listTables(@Query('database') database: string, @Req() req: Request, @Res() res: Response) {
+  async listTables(
+    @Query('database') database: string,
+    @Query('engine') engine: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     if (!this.ensureAuth(req, res)) return;
     if (!database) return res.status(400).json({ success: false, error: 'database required' });
     try {
-      const tables = await this.db.listTables(database);
+      const tables = this.isPg(engine)
+        ? await this.db.listPgTables(database)
+        : await this.db.listTables(database);
       return res.json({ success: true, tables });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -126,10 +143,12 @@ export class DatabaseController {
   // ========================
 
   @Get('users')
-  async listUsers(@Req() req: Request, @Res() res: Response) {
+  async listUsers(@Query('engine') engine: string, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
-      const users = await this.db.listUsers();
+      const users = this.isPg(engine)
+        ? await this.db.listPgUsers()
+        : await this.db.listUsers();
       return res.json({ success: true, users });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -138,7 +157,7 @@ export class DatabaseController {
 
   @Post('users/create')
   async createUser(
-    @Body() body: { name: string; password: string; host?: string },
+    @Body() body: { name: string; password: string; host?: string; engine?: string },
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -147,7 +166,9 @@ export class DatabaseController {
       return res.status(400).json({ success: false, error: 'name and password required' });
     }
     try {
-      const data = await this.db.createUser(body.name, body.password, body.host);
+      const data = this.isPg(body.engine)
+        ? await this.db.createPgUser(body.name, body.password)
+        : await this.db.createUser(body.name, body.password, body.host);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -156,14 +177,16 @@ export class DatabaseController {
 
   @Post('users/delete')
   async deleteUser(
-    @Body() body: { name: string; host?: string },
+    @Body() body: { name: string; host?: string; engine?: string },
     @Req() req: Request,
     @Res() res: Response,
   ) {
     if (!this.ensureAuth(req, res)) return;
     if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
     try {
-      const data = await this.db.deleteUser(body.name, body.host);
+      const data = this.isPg(body.engine)
+        ? await this.db.deletePgUser(body.name)
+        : await this.db.deleteUser(body.name, body.host);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -172,7 +195,7 @@ export class DatabaseController {
 
   @Post('users/password')
   async changePassword(
-    @Body() body: { name: string; password: string; host?: string },
+    @Body() body: { name: string; password: string; host?: string; engine?: string },
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -181,7 +204,9 @@ export class DatabaseController {
       return res.status(400).json({ success: false, error: 'name and password required' });
     }
     try {
-      const data = await this.db.changePassword(body.name, body.password, body.host);
+      const data = this.isPg(body.engine)
+        ? await this.db.changePgPassword(body.name, body.password)
+        : await this.db.changePassword(body.name, body.password, body.host);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -194,7 +219,7 @@ export class DatabaseController {
 
   @Post('privileges/grant')
   async grant(
-    @Body() body: { user: string; database: string; privileges?: string[]; host?: string },
+    @Body() body: { user: string; database: string; privileges?: string[]; host?: string; engine?: string },
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -203,7 +228,9 @@ export class DatabaseController {
       return res.status(400).json({ success: false, error: 'user and database required' });
     }
     try {
-      const data = await this.db.grantPrivileges(body.user, body.database, body.privileges, body.host);
+      const data = this.isPg(body.engine)
+        ? await this.db.grantPgPrivileges(body.user, body.database, body.privileges)
+        : await this.db.grantPrivileges(body.user, body.database, body.privileges, body.host);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -212,7 +239,7 @@ export class DatabaseController {
 
   @Post('privileges/revoke')
   async revoke(
-    @Body() body: { user: string; database: string; host?: string },
+    @Body() body: { user: string; database: string; host?: string; engine?: string },
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -221,7 +248,9 @@ export class DatabaseController {
       return res.status(400).json({ success: false, error: 'user and database required' });
     }
     try {
-      const data = await this.db.revokePrivileges(body.user, body.database, body.host);
+      const data = this.isPg(body.engine)
+        ? await this.db.revokePgPrivileges(body.user, body.database)
+        : await this.db.revokePrivileges(body.user, body.database, body.host);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -232,13 +261,16 @@ export class DatabaseController {
   async getPrivileges(
     @Query('user') user: string,
     @Query('host') host: string,
+    @Query('engine') engine: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
     if (!this.ensureAuth(req, res)) return;
     if (!user) return res.status(400).json({ success: false, error: 'user required' });
     try {
-      const privileges = await this.db.getUserPrivileges(user, host);
+      const privileges = this.isPg(engine)
+        ? await this.db.getPgUserPrivileges(user)
+        : await this.db.getUserPrivileges(user, host);
       return res.json({ success: true, privileges });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
