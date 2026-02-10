@@ -38,6 +38,7 @@ import {
   Store as StoreIcon,
   Code as CodeIcon,
   Email as EmailIcon,
+  Article as LogsIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -71,6 +72,7 @@ const navSections = [
     title: 'System',
     items: [
       { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
+      { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
       { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
     ],
   },
