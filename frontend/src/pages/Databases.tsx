@@ -239,11 +239,17 @@ export default function DatabasesPage() {
 
   // Reload data when engine changes or when DB becomes available
   useEffect(() => {
-    if (dbStatus?.installed && dbStatus?.running) {
+    const mysqlUp = engines.some(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed && e.running);
+    const pgUp = engines.some(e => e.engine === 'postgresql' && e.installed && e.running);
+    const activeUp = activeEngine === 'postgresql' ? pgUp : mysqlUp;
+    if (activeUp) {
       loadDatabases();
       loadUsers();
+    } else {
+      setDatabases([]);
+      setUsers([]);
     }
-  }, [dbStatus?.installed, dbStatus?.running, activeEngine]);
+  }, [engines, activeEngine, loadDatabases, loadUsers]);
 
   // ---- Actions ----
 
@@ -370,158 +376,126 @@ export default function DatabasesPage() {
   const anyMysqlRunning = engines.some(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed && e.running);
   const pgRunning = engines.some(e => e.engine === 'postgresql' && e.installed && e.running);
   const anyEngineRunning = anyMysqlRunning || pgRunning;
+  const isActiveEngineRunning = activeEngine === 'postgresql' ? pgRunning : anyMysqlRunning;
 
-  if (!anyEngineRunning) {
-    const engineCards = [
-      {
-        engine: 'mariadb',
-        label: 'MariaDB',
-        description: 'Community-developed fork of MySQL. Drop-in replacement with enhanced performance and features.',
-        color: '#003545',
-        features: ['MySQL compatible', 'Better performance', 'Open source', 'Active community'],
-      },
-      {
-        engine: 'mysql',
-        label: 'MySQL',
-        description: 'The world\'s most popular open-source relational database. Widely supported and documented.',
-        color: '#00758F',
-        features: ['Industry standard', 'Wide support', 'Mature ecosystem', 'Oracle backed'],
-      },
-      {
-        engine: 'postgresql',
-        label: 'PostgreSQL',
-        description: 'Advanced open-source relational database with powerful features and extensibility.',
-        color: '#336791',
-        features: ['ACID compliant', 'JSON support', 'Extensions', 'Advanced queries'],
-      },
-    ];
-
-    return (
-      <DashboardLayout>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-            <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
-            <Box>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
-              <Typography variant="body1" color="text.secondary">Install and manage open-source database engines</Typography>
-            </Box>
-          </Box>
-          {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-            {engineCards.map((card) => {
-              const eng = engines.find(e => e.engine === card.engine);
-              const isInstalled = eng?.installed || false;
-              const isRunning = eng?.running || false;
-              const isInstalling = installingEngine === card.engine;
-
-              return (
-                <Paper key={card.engine} sx={{ flex: 1, overflow: 'hidden', border: isInstalled ? '2px solid #34A853' : '1px solid #e0e0e0', transition: 'all 0.2s' }}>
-                  <Box sx={{ p: 3, bgcolor: card.color, color: '#fff' }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700 }}>{card.label}</Typography>
-                    {isInstalled && (
-                      <Chip
-                        label={isRunning ? 'Running' : 'Installed'}
-                        size="small"
-                        sx={{
-                          mt: 1,
-                          bgcolor: isRunning ? '#34A853' : '#F4B400',
-                          color: '#fff',
-                          fontWeight: 600,
-                        }}
-                      />
-                    )}
-                  </Box>
-                  <Box sx={{ p: 3 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 48 }}>
-                      {card.description}
-                    </Typography>
-
-                    <Stack spacing={0.5} sx={{ mb: 3 }}>
-                      {card.features.map((f) => (
-                        <Typography key={f} variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Box component="span" sx={{ color: '#34A853', fontWeight: 700 }}>✓</Box> {f}
-                        </Typography>
-                      ))}
-                    </Stack>
-
-                    {isInstalled ? (
-                      <Stack spacing={1}>
-                        <Chip
-                          label={eng?.version ? eng.version.split('\n')[0].substring(0, 60) : 'Installed'}
-                          size="small"
-                          variant="outlined"
-                          sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
-                        />
-                        {(card.engine === 'mariadb' || card.engine === 'mysql') && isRunning && (
-                          <Typography variant="caption" color="success.main">
-                            Active — manage databases below
-                          </Typography>
-                        )}
-                        {card.engine === 'postgresql' && isRunning && (
-                          <Typography variant="caption" color="success.main">
-                            Active — manage databases below
-                          </Typography>
-                        )}
-                      </Stack>
-                    ) : (
-                      <Button
-                        variant="contained"
-                        fullWidth
-                        onClick={() => handleInstallEngine(card.engine)}
-                        disabled={!!installingEngine}
-                        startIcon={isInstalling ? <CircularProgress size={18} color="inherit" /> : <Download />}
-                        sx={{
-                          textTransform: 'none',
-                          bgcolor: card.color,
-                          '&:hover': { bgcolor: card.color, opacity: 0.9 },
-                        }}
-                      >
-                        {isInstalling ? `Installing ${card.label}...` : `Install ${card.label}`}
-                      </Button>
-                    )}
-                  </Box>
-                </Paper>
-              );
-            })}
-          </Stack>
-
-          {/* If any engine is installed and running, show link to management */}
-          {anyEngineRunning && (
-            <Paper sx={{ mt: 3, p: 3, textAlign: 'center' }}>
-              <Typography variant="body1" sx={{ mb: 1 }}>
-                A database engine is installed and running. Scroll down or refresh to access database management.
-              </Typography>
-              <Button variant="contained" onClick={loadAll} sx={{ textTransform: 'none' }}>
-                Go to Database Management
-              </Button>
-            </Paper>
-          )}
-        </Box>
-      </DashboardLayout>
-    );
-  }
+  const engineCards: { engine: string; label: string; description: string; color: string }[] = [
+    { engine: 'mariadb', label: 'MariaDB', description: 'Community-developed fork of MySQL with enhanced performance.', color: '#003545' },
+    { engine: 'mysql', label: 'MySQL', description: "World's most popular open-source relational database.", color: '#00758F' },
+    { engine: 'postgresql', label: 'PostgreSQL', description: 'Advanced open-source database with powerful features.', color: '#336791' },
+  ];
 
   // ---- Main render ----
 
   const activeEngineLabel = activeEngine === 'postgresql' ? 'PostgreSQL'
     : engines.find(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed)?.label || 'MySQL';
-  const activeEngineVersion = activeEngine === 'postgresql'
-    ? (engines.find(e => e.engine === 'postgresql')?.version || '')
-    : (dbStatus?.version || '');
 
   return (
     <DashboardLayout>
       <Box>
         {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+          <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
+            <Typography variant="body1" color="text.secondary">Install and manage database engines</Typography>
+          </Box>
+        </Box>
+
+        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+        {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+        {/* Engine Cards - always visible */}
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
+          {engineCards.map((card) => {
+            const eng = engines.find(e => e.engine === card.engine);
+            const isInstalled = eng?.installed || false;
+            const isRunning = eng?.running || false;
+            const isInstalling = installingEngine === card.engine;
+            const isManaging = isRunning && (
+              (card.engine === 'postgresql' && activeEngine === 'postgresql') ||
+              ((card.engine === 'mariadb' || card.engine === 'mysql') && activeEngine !== 'postgresql')
+            );
+
+            return (
+              <Paper
+                key={card.engine}
+                sx={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  border: isManaging ? `2px solid ${card.color}` : isInstalled ? '2px solid #34A853' : '1px solid #e0e0e0',
+                  transition: 'all 0.2s',
+                  ...(isManaging && { boxShadow: `0 0 0 1px ${card.color}20, 0 4px 12px ${card.color}15` }),
+                }}
+              >
+                <Box sx={{ p: 2, bgcolor: card.color, color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>{card.label}</Typography>
+                  {isInstalled && (
+                    <Chip
+                      label={isRunning ? 'Running' : 'Stopped'}
+                      size="small"
+                      sx={{ bgcolor: isRunning ? '#34A853' : '#F4B400', color: '#fff', fontWeight: 600 }}
+                    />
+                  )}
+                </Box>
+                <Box sx={{ p: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, minHeight: 40 }}>
+                    {card.description}
+                  </Typography>
+                  {eng?.version && (
+                    <Chip
+                      label={eng.version.split('\n')[0].substring(0, 50)}
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontFamily: 'monospace', fontSize: '0.7rem', mb: 1.5 }}
+                    />
+                  )}
+
+                  {isInstalled && isRunning ? (
+                    <Button
+                      variant={isManaging ? 'contained' : 'outlined'}
+                      fullWidth
+                      size="small"
+                      startIcon={<Storage />}
+                      onClick={() => setActiveEngine(card.engine === 'postgresql' ? 'postgresql' : 'mysql')}
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        ...(isManaging && { bgcolor: card.color, '&:hover': { bgcolor: card.color, opacity: 0.9 } }),
+                      }}
+                    >
+                      {isManaging ? 'Managing' : 'Manage'}
+                    </Button>
+                  ) : isInstalled && !isRunning ? (
+                    <Chip label="Stopped" color="warning" size="small" variant="outlined" />
+                  ) : (
+                    <Button
+                      variant="contained"
+                      fullWidth
+                      size="small"
+                      onClick={() => handleInstallEngine(card.engine)}
+                      disabled={!!installingEngine}
+                      startIcon={isInstalling ? <CircularProgress size={16} color="inherit" /> : <Download />}
+                      sx={{ textTransform: 'none', bgcolor: card.color, '&:hover': { bgcolor: card.color, opacity: 0.9 } }}
+                    >
+                      {isInstalling ? `Installing ${card.label}...` : `Install ${card.label}`}
+                    </Button>
+                  )}
+                </Box>
+              </Paper>
+            );
+          })}
+        </Stack>
+
+        {/* Management Section */}
+        {isActiveEngineRunning ? (
+        <>
+        <Paper sx={{ p: 2, mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Storage sx={{ color: activeEngine === 'postgresql' ? '#336791' : '#4285F4', fontSize: 28 }} />
+            <Storage sx={{ color: activeEngine === 'postgresql' ? '#336791' : '#00758F' }} />
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
-              <Typography variant="body1" color="text.secondary">
-                {activeEngineLabel} {activeEngineVersion ? `— ${activeEngineVersion.split('\n')[0].substring(0, 80)}` : ''}
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>{activeEngineLabel} Management</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {engines.find(e => activeEngine === 'postgresql' ? e.engine === 'postgresql' : (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed)?.version?.split('\n')[0].substring(0, 80) || ''}
               </Typography>
             </Box>
           </Box>
@@ -529,6 +503,7 @@ export default function DatabasesPage() {
             {activeEngine === 'postgresql' ? (
               <Button
                 variant="contained"
+                size="small"
                 startIcon={<OpenInNew />}
                 onClick={() => window.open('/pgadmin', '_blank')}
                 sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#336791', '&:hover': { bgcolor: '#2a567a' } }}
@@ -538,6 +513,7 @@ export default function DatabasesPage() {
             ) : (
               <Button
                 variant="contained"
+                size="small"
                 startIcon={<OpenInNew />}
                 onClick={() => window.open('/phpmyadmin', '_blank')}
                 sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#F89C0E', '&:hover': { bgcolor: '#e08c00' } }}
@@ -545,39 +521,11 @@ export default function DatabasesPage() {
                 phpMyAdmin
               </Button>
             )}
-            <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
+            <Button variant="outlined" size="small" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
               Refresh
             </Button>
           </Stack>
-        </Box>
-
-        {/* Engine Selector - show when both MySQL and PG are running */}
-        {anyMysqlRunning && pgRunning && (
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Chip
-              label={engines.find(e => (e.engine === 'mariadb' || e.engine === 'mysql') && e.installed)?.label || 'MySQL'}
-              onClick={() => setActiveEngine('mysql')}
-              color={activeEngine !== 'postgresql' ? 'primary' : 'default'}
-              variant={activeEngine !== 'postgresql' ? 'filled' : 'outlined'}
-              icon={<Storage />}
-              sx={{ fontWeight: 600, px: 1 }}
-            />
-            <Chip
-              label="PostgreSQL"
-              onClick={() => setActiveEngine('postgresql')}
-              color={activeEngine === 'postgresql' ? 'primary' : 'default'}
-              variant={activeEngine === 'postgresql' ? 'filled' : 'outlined'}
-              icon={<Storage />}
-              sx={{
-                fontWeight: 600,
-                px: 1,
-                ...(activeEngine === 'postgresql' && { bgcolor: '#336791', '&:hover': { bgcolor: '#2a567a' } }),
-              }}
-            />
-          </Stack>
-        )}
-
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+        </Paper>
 
         {/* Stat Cards */}
         <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
@@ -833,6 +781,20 @@ export default function DatabasesPage() {
           </>
         )}
         </Paper>
+        </>
+        ) : (
+        <Paper sx={{ p: 4, textAlign: 'center', bgcolor: '#f8f9fa' }}>
+          <Box sx={{ mb: 2 }}>
+            <Storage sx={{ fontSize: 48, color: '#bdbdbd' }} />
+          </Box>
+          <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+            No database engine running
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Install a database engine above to start managing databases
+          </Typography>
+        </Paper>
+        )}
 
         {/* ==================== DIALOGS ==================== */}
 
