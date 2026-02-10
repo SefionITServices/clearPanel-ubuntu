@@ -181,6 +181,60 @@ export interface MailMetricsResponse {
   dovecotConnections?: number;
 }
 
+// ---- Queue Management ----
+
+export interface MailQueueStatus {
+  total?: number;
+  sample?: string[];
+  message?: string;
+  error?: string;
+}
+
+// ---- Mail Logs ----
+
+export interface MailLogsResponse {
+  lines: string[];
+  total: number;
+}
+
+// ---- DNS Propagation Check ----
+
+export interface DnsPropagationRecord {
+  record: { type: string; name: string; expected: string };
+  actual: string[];
+  match: boolean;
+}
+
+export interface DnsPropagationResult {
+  domain: string;
+  results: DnsPropagationRecord[];
+  allPropagated: boolean;
+}
+
+// ---- Mailbox Backup / Restore ----
+
+export interface BackupEntry {
+  file: string;
+  domain: string;
+  email: string;
+  timestamp: string;
+  sizeBytes: number;
+}
+
+export interface BackupResult {
+  path: string;
+  sizeBytes: number;
+  automationLogs: AutomationLog[];
+}
+
+// ---- Rate Limiting ----
+
+export interface RateLimitEntry {
+  email: string;
+  limit: number;
+  updatedAt?: string;
+}
+
 const API_BASE = '/api/mail';
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
@@ -343,5 +397,76 @@ export const mailAPI = {
 
   async getMailMetrics(): Promise<MailMetricsResponse> {
     return fetchJSON<MailMetricsResponse>(`${API_BASE}/metrics`);
+  },
+
+  // ---- Queue Management ----
+
+  async getQueue(): Promise<MailQueueStatus> {
+    return fetchJSON<MailQueueStatus>(`${API_BASE}/queue`);
+  },
+
+  async flushQueue(): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/queue/flush`, { method: 'POST' });
+  },
+
+  async deleteQueueMessage(queueId: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/queue/${queueId}`, { method: 'DELETE' });
+  },
+
+  async deleteAllQueueMessages(): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/queue`, { method: 'DELETE' });
+  },
+
+  async retryQueueMessage(queueId: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/queue/${queueId}/retry`, { method: 'POST' });
+  },
+
+  // ---- Mail Logs ----
+
+  async getMailLogs(lines?: number, search?: string): Promise<MailLogsResponse> {
+    const params = new URLSearchParams();
+    if (lines) params.set('lines', String(lines));
+    if (search) params.set('search', search);
+    const query = params.toString();
+    return fetchJSON<MailLogsResponse>(`${API_BASE}/logs${query ? `?${query}` : ''}`);
+  },
+
+  // ---- DNS Propagation Check ----
+
+  async checkDnsPropagation(domainId: string): Promise<DnsPropagationResult> {
+    return fetchJSON<DnsPropagationResult>(`${API_BASE}/domains/${domainId}/dns/check`);
+  },
+
+  // ---- Mailbox Backup / Restore ----
+
+  async listBackups(domain?: string): Promise<BackupEntry[]> {
+    const params = domain ? `?domain=${encodeURIComponent(domain)}` : '';
+    return fetchJSON<BackupEntry[]>(`${API_BASE}/backups${params}`);
+  },
+
+  async backupMailbox(domainId: string, mailboxId: string): Promise<BackupResult> {
+    return fetchJSON<BackupResult>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/backup`, {
+      method: 'POST',
+    });
+  },
+
+  async restoreMailbox(domainId: string, mailboxId: string, backupFile: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ backupFile }),
+    });
+  },
+
+  // ---- Rate Limiting ----
+
+  async getRateLimits(domainId: string): Promise<RateLimitEntry[]> {
+    return fetchJSON<RateLimitEntry[]>(`${API_BASE}/domains/${domainId}/rate-limits`);
+  },
+
+  async setupRateLimit(domainId: string, email: string, limitPerHour: number): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/domains/${domainId}/rate-limits`, {
+      method: 'POST',
+      body: JSON.stringify({ email, limitPerHour }),
+    });
   },
 };

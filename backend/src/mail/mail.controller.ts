@@ -273,4 +273,113 @@ export class MailController {
   getMailMetrics() {
     return this.mailService.getMailMetrics();
   }
+
+  // ---- Queue Management ----
+
+  @SkipThrottle()
+  @Get('queue')
+  getQueue() {
+    return this.mailStatusService.getStatus().then(s => s.queue);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('queue/flush')
+  flushQueue() {
+    return this.mailService.flushQueue();
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Delete('queue/:queueId')
+  deleteQueueMessage(@Param('queueId') queueId: string) {
+    return this.mailService.deleteQueueMessage(queueId);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Delete('queue')
+  deleteAllQueueMessages() {
+    return this.mailService.deleteAllQueueMessages();
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('queue/:queueId/retry')
+  retryQueueMessage(@Param('queueId') queueId: string) {
+    return this.mailService.retryQueueMessage(queueId);
+  }
+
+  // ---- Mail Logs ----
+
+  @SkipThrottle()
+  @Get('logs')
+  getMailLogs(
+    @Query('lines') lines?: string,
+    @Query('search') search?: string,
+  ) {
+    let parsedLines: number | undefined;
+    if (lines !== undefined) {
+      const n = Number.parseInt(lines, 10);
+      if (!Number.isNaN(n) && n > 0) parsedLines = Math.min(n, 1000);
+    }
+    return this.mailService.getMailLogs(parsedLines, search);
+  }
+
+  // ---- DNS Propagation Check ----
+
+  @SkipThrottle()
+  @Get('domains/:id/dns/check')
+  checkDnsPropagation(@Param('id') id: string) {
+    return this.mailService.checkDnsPropagation(id);
+  }
+
+  // ---- Mailbox Backup / Restore ----
+
+  @SkipThrottle()
+  @Get('backups')
+  listBackups(@Query('domain') domain?: string) {
+    return this.mailService.listBackups(domain);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/backup')
+  backupMailbox(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailService.backupMailbox(id, mailboxId);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/restore')
+  restoreMailbox(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Body() body: { backupFile: string },
+  ) {
+    if (!body?.backupFile) {
+      throw new BadRequestException('backupFile is required');
+    }
+    return this.mailService.restoreMailbox(id, mailboxId, body.backupFile);
+  }
+
+  // ---- Per-User Rate Limiting ----
+
+  @SkipThrottle()
+  @Get('domains/:id/rate-limits')
+  getRateLimits(@Param('id') id: string) {
+    return this.mailService.getRateLimits(id);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/rate-limits')
+  setupRateLimit(
+    @Param('id') id: string,
+    @Body() body: { email: string; limitPerHour: number },
+  ) {
+    if (!body?.email) {
+      throw new BadRequestException('email is required (use * for domain-wide)');
+    }
+    if (!body?.limitPerHour || body.limitPerHour < 1) {
+      throw new BadRequestException('limitPerHour must be a positive integer');
+    }
+    return this.mailService.setupRateLimit(id, body.email, body.limitPerHour);
+  }
 }

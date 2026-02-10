@@ -1050,4 +1050,148 @@ export class MailService {
   async getMailMetrics(): Promise<MailMetrics> {
     return this.statusService.getMetrics();
   }
+
+  // ---- Queue Management ----
+
+  async flushQueue(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.flushQueue();
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'flush-queue',
+      target: 'postfix',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async deleteQueueMessage(queueId: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.deleteQueueMessage(queueId);
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'delete-queue-message',
+      target: queueId,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async deleteAllQueueMessages(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.deleteAllQueueMessages();
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'purge-queue',
+      target: 'all',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async retryQueueMessage(queueId: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.retryQueueMessage(queueId);
+    return { automationLogs: logs };
+  }
+
+  // ---- Mail Logs ----
+
+  async getMailLogs(lines?: number, search?: string): Promise<{ lines: string[]; total: number }> {
+    return this.automation.getMailLogs(lines, search);
+  }
+
+  // ---- DNS Propagation Check ----
+
+  async checkDnsPropagation(domainId: string): Promise<{
+    domain: string;
+    results: { record: { type: string; name: string; expected: string }; actual: string[]; match: boolean }[];
+    allPropagated: boolean;
+  }> {
+    const suggestions = await this.getDnsSuggestions(domainId);
+    const records = suggestions.records.map(r => ({
+      type: r.type,
+      name: r.name,
+      value: r.value,
+    }));
+
+    const results = await this.automation.checkDnsPropagation(suggestions.domain, records);
+    const allPropagated = results.every(r => r.match);
+
+    return {
+      domain: suggestions.domain,
+      results,
+      allPropagated,
+    };
+  }
+
+  // ---- Mailbox Backup / Restore ----
+
+  async backupMailbox(domainId: string, mailboxId: string): Promise<{ path: string; sizeBytes: number; automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const result = await this.automation.backupMailbox(domain.domain, mailbox.email);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'backup',
+      target: mailbox.email,
+      logs: result.logs,
+    });
+
+    return { path: result.path, sizeBytes: result.sizeBytes, automationLogs: result.logs };
+  }
+
+  async restoreMailbox(domainId: string, mailboxId: string, backupFile: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.restoreMailbox(domain.domain, mailbox.email, backupFile);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'restore',
+      target: mailbox.email,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async listBackups(domain?: string): Promise<{ file: string; domain: string; email: string; timestamp: string; sizeBytes: number }[]> {
+    return this.automation.listBackups(domain);
+  }
+
+  // ---- Per-User Rate Limiting ----
+
+  async setupRateLimit(
+    domainId: string,
+    email: string,
+    limitPerHour: number,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const logs = await this.automation.setupRateLimit(domain.domain, email, limitPerHour);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-rate-limit',
+      target: email === '*' ? `@${domain.domain}` : email,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getRateLimits(domainId: string): Promise<{ email: string; limit: number; updatedAt?: string }[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getRateLimits(domain.domain);
+  }
 }

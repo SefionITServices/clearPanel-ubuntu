@@ -351,6 +351,304 @@ export class MailAutomationService {
     return hash;
   }
 
+  // ---- Queue Management ----
+
+  async flushQueue(): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    try {
+      const { stdout, stderr } = await execAsync('postqueue -f');
+      logs.push({
+        task: 'Flush mail queue',
+        success: true,
+        message: 'Queue flush requested',
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Flush mail queue',
+        success: false,
+        message: 'Failed to flush queue',
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async deleteQueueMessage(queueId: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    if (!/^[0-9A-Fa-f]+$/.test(queueId)) {
+      logs.push({
+        task: 'Delete queue message',
+        success: false,
+        message: `Invalid queue ID: ${queueId}`,
+      });
+      return logs;
+    }
+    try {
+      const { stdout, stderr } = await execAsync(`postsuper -d ${queueId}`);
+      logs.push({
+        task: 'Delete queue message',
+        success: true,
+        message: `Deleted message ${queueId}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Delete queue message',
+        success: false,
+        message: `Failed to delete message ${queueId}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async deleteAllQueueMessages(): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    try {
+      const { stdout, stderr } = await execAsync('postsuper -d ALL');
+      logs.push({
+        task: 'Delete all queue messages',
+        success: true,
+        message: 'All queued messages deleted',
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Delete all queue messages',
+        success: false,
+        message: 'Failed to purge mail queue',
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async retryQueueMessage(queueId: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    if (!/^[0-9A-Fa-f]+$/.test(queueId)) {
+      logs.push({
+        task: 'Retry queue message',
+        success: false,
+        message: `Invalid queue ID: ${queueId}`,
+      });
+      return logs;
+    }
+    try {
+      const { stdout, stderr } = await execAsync(`postqueue -i ${queueId}`);
+      logs.push({
+        task: 'Retry queue message',
+        success: true,
+        message: `Requeued message ${queueId}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Retry queue message',
+        success: false,
+        message: `Failed to retry message ${queueId}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  // ---- Mail Logs ----
+
+  async getMailLogs(lines?: number, search?: string): Promise<{ lines: string[]; total: number }> {
+    const logFile = '/var/log/mail.log';
+    const limit = lines || 100;
+    try {
+      let command = `tail -${limit} ${logFile} 2>/dev/null`;
+      if (search) {
+        const safeSearch = search.replace(/[^a-zA-Z0-9@._\-]/g, '');
+        if (safeSearch) {
+          command += ` | grep -i '${safeSearch}'`;
+        }
+      }
+      const { stdout } = await execAsync(command);
+      const logLines = stdout.trim().split('\n').filter(Boolean);
+      return { lines: logLines, total: logLines.length };
+    } catch {
+      return { lines: [], total: 0 };
+    }
+  }
+
+  // ---- DNS Propagation Check ----
+
+  async checkDnsPropagation(
+    domain: string,
+    records: { type: string; name: string; value: string }[],
+  ): Promise<{ record: { type: string; name: string; expected: string }; actual: string[]; match: boolean }[]> {
+    const results: { record: { type: string; name: string; expected: string }; actual: string[]; match: boolean }[] = [];
+
+    for (const rec of records) {
+      const fqdn = rec.name === '@' ? domain : `${rec.name}.${domain}`;
+      let actual: string[] = [];
+      let match = false;
+
+      try {
+        const recordType = rec.type.toUpperCase();
+        const { stdout } = await execAsync(
+          `dig +short ${recordType} ${fqdn} @8.8.8.8 2>/dev/null`,
+          { timeout: 10000 },
+        );
+        actual = stdout.trim().split('\n').filter(Boolean).map(l => l.replace(/\.$/,'').replace(/^"|"$/g, ''));
+
+        const normalizedExpected = rec.value.replace(/^"|"$/g, '').trim();
+
+        if (recordType === 'MX') {
+          match = actual.some(a => {
+            const parts = a.split(/\s+/);
+            return parts.length >= 2 && parts[1].replace(/\.$/, '') === normalizedExpected;
+          });
+        } else {
+          match = actual.some(a => a === normalizedExpected || a.includes(normalizedExpected));
+        }
+      } catch { /* dig failed — not propagated */ }
+
+      results.push({
+        record: { type: rec.type, name: rec.name, expected: rec.value },
+        actual,
+        match,
+      });
+    }
+
+    return results;
+  }
+
+  // ---- Mailbox Backup / Restore ----
+
+  async backupMailbox(domain: string, email: string): Promise<{ path: string; sizeBytes: number; logs: AutomationLog[] }> {
+    const logs: AutomationLog[] = [];
+    const user = email.split('@')[0];
+    const backupDir = `/var/backups/clearpanel/mail`;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFile = `${backupDir}/${domain}_${user}_${timestamp}.tar.gz`;
+
+    try {
+      await execAsync(`mkdir -p '${backupDir}'`);
+      await execAsync(`tar -czf '${backupFile}' -C '/var/vmail/${domain}' '${user}' 2>/dev/null`);
+      const { stdout } = await execAsync(`stat -c '%s' '${backupFile}' 2>/dev/null`);
+      const sizeBytes = parseInt(stdout.trim(), 10) || 0;
+
+      logs.push({
+        task: 'Backup mailbox',
+        success: true,
+        message: `Backed up ${email} (${(sizeBytes / 1024 / 1024).toFixed(2)} MB)`,
+      });
+
+      return { path: backupFile, sizeBytes, logs };
+    } catch (error) {
+      logs.push({
+        task: 'Backup mailbox',
+        success: false,
+        message: `Failed to backup ${email}`,
+        detail: this.errorMessage(error),
+      });
+      return { path: '', sizeBytes: 0, logs };
+    }
+  }
+
+  async restoreMailbox(domain: string, email: string, backupPath: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const user = email.split('@')[0];
+    const targetDir = `/var/vmail/${domain}`;
+
+    if (!backupPath.startsWith('/var/backups/clearpanel/mail/') || !backupPath.endsWith('.tar.gz')) {
+      logs.push({
+        task: 'Restore mailbox',
+        success: false,
+        message: 'Invalid backup path',
+      });
+      return logs;
+    }
+
+    try {
+      await execAsync(`tar -xzf '${backupPath}' -C '${targetDir}' 2>/dev/null`);
+      await execAsync(`chown -R vmail:vmail '${targetDir}/${user}' 2>/dev/null`);
+
+      logs.push({
+        task: 'Restore mailbox',
+        success: true,
+        message: `Restored ${email} from backup`,
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Restore mailbox',
+        success: false,
+        message: `Failed to restore ${email}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async listBackups(domain?: string): Promise<{ file: string; domain: string; email: string; timestamp: string; sizeBytes: number }[]> {
+    const backupDir = '/var/backups/clearpanel/mail';
+    try {
+      const { stdout } = await execAsync(`ls -1 '${backupDir}' 2>/dev/null`);
+      const files = stdout.trim().split('\n').filter(f => f.endsWith('.tar.gz'));
+      const results: { file: string; domain: string; email: string; timestamp: string; sizeBytes: number }[] = [];
+
+      for (const file of files) {
+        const match = file.match(/^(.+?)_(.+?)_(\d{4}-\d{2}-\d{2}T.+)\.tar\.gz$/);
+        if (!match) continue;
+
+        const [, fileDomain, user, timestamp] = match;
+        if (domain && fileDomain !== domain) continue;
+
+        try {
+          const { stdout: sizeOut } = await execAsync(`stat -c '%s' '${backupDir}/${file}' 2>/dev/null`);
+          const sizeBytes = parseInt(sizeOut.trim(), 10) || 0;
+          results.push({ file, domain: fileDomain, email: `${user}@${fileDomain}`, timestamp, sizeBytes });
+        } catch {
+          results.push({ file, domain: fileDomain, email: `${user}@${fileDomain}`, timestamp, sizeBytes: 0 });
+        }
+      }
+
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
+  // ---- Per-User Rate Limiting ----
+
+  async setupRateLimit(domain: string, email: string, limitPerHour: number): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-rate-limit.sh');
+    try {
+      const { stdout, stderr } = await this.runScript(script, [domain, email, String(limitPerHour)]);
+      logs.push({
+        task: 'Setup rate limit',
+        success: true,
+        message: `Rate limit set for ${email === '*' ? `@${domain}` : email}: ${limitPerHour}/hour`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup rate limit',
+        success: false,
+        message: `Failed to set rate limit for ${email}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async getRateLimits(domain: string): Promise<{ email: string; limit: number; updatedAt?: string }[]> {
+    const stateDir = path.join(process.cwd(), '..', 'backend', 'mail-state', 'rate-limits');
+    const filePath = path.join(stateDir, `${domain}.json`);
+    try {
+      const raw = await import('node:fs/promises').then(fs => fs.readFile(filePath, 'utf-8'));
+      const data = JSON.parse(raw);
+      return data.limits || [];
+    } catch {
+      return [];
+    }
+  }
+
   private async runScript(script: string, args: string[], options?: { redactArgs?: boolean }) {
     const quotedArgs = args.map((value) => `'${value.replace(/'/g, "'\\''")}'`);
     const command = ['bash', script, ...quotedArgs].join(' ');

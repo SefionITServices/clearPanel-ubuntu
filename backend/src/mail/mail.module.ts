@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MailController } from './mail.controller';
+import { MailAutoconfigController } from './mail-autoconfig.controller';
 import { MailService } from './mail.service';
 import { MailAutomationService } from './mail-automation.service';
 import { MailStatusService } from './mail-status.service';
@@ -10,7 +11,7 @@ import { DnsServerModule } from '../dns-server/dns-server.module';
 
 @Module({
   imports: [ServerModule, DnsModule, DnsServerModule],
-  controllers: [MailController],
+  controllers: [MailController, MailAutoconfigController],
   providers: [MailService, MailAutomationService, MailStatusService, MailHistoryService],
   exports: [MailService, MailStatusService],
 })
