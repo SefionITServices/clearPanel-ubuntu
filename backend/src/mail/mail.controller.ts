@@ -382,4 +382,127 @@ export class MailController {
     }
     return this.mailService.setupRateLimit(id, body.email, body.limitPerHour);
   }
+
+  // ---- Sieve Filters (ManageSieve) ----
+
+  @SkipThrottle()
+  @Get('domains/:id/mailboxes/:mailboxId/sieve')
+  listSieveFilters(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailService.listSieveFilters(id, mailboxId);
+  }
+
+  @SkipThrottle()
+  @Get('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  getSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+  ) {
+    return this.mailService.getSieveFilter(id, mailboxId, filterName);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  putSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+    @Body() body: { script: string },
+  ) {
+    if (!body?.script) {
+      throw new BadRequestException('script is required');
+    }
+    return this.mailService.putSieveFilter(id, mailboxId, filterName, body.script);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Delete('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  deleteSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+  ) {
+    return this.mailService.deleteSieveFilter(id, mailboxId, filterName);
+  }
+
+  // ---- Catch-All Mailbox ----
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/catch-all')
+  setupCatchAll(
+    @Param('id') id: string,
+    @Body() body: { action: 'enable' | 'disable'; targetEmail?: string },
+  ) {
+    if (!body?.action || !['enable', 'disable'].includes(body.action)) {
+      throw new BadRequestException('action must be "enable" or "disable"');
+    }
+    if (body.action === 'enable' && !body.targetEmail) {
+      throw new BadRequestException('targetEmail is required to enable catch-all');
+    }
+    return this.mailService.setupCatchAll(id, body.action, body.targetEmail);
+  }
+
+  // ---- Quota Warnings ----
+
+  @SkipThrottle()
+  @Get('quota-warning')
+  getQuotaWarningConfig() {
+    return this.mailService.getQuotaWarningConfig();
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('quota-warning')
+  setupQuotaWarning(
+    @Body() body: { threshold: number; adminEmail?: string },
+  ) {
+    if (!body?.threshold || body.threshold < 1 || body.threshold > 100) {
+      throw new BadRequestException('threshold must be between 1 and 100');
+    }
+    return this.mailService.setupQuotaWarning(body.threshold, body.adminEmail);
+  }
+
+  // ---- SMTP Relay ----
+
+  @SkipThrottle()
+  @Get('smtp-relay')
+  getSmtpRelay() {
+    return this.mailService.getSmtpRelay();
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('smtp-relay')
+  setupSmtpRelay(
+    @Body() body: { host: string; port: number; username?: string; password?: string },
+  ) {
+    if (!body?.host) {
+      throw new BadRequestException('host is required');
+    }
+    if (!body?.port || body.port < 1 || body.port > 65535) {
+      throw new BadRequestException('port must be between 1 and 65535');
+    }
+    return this.mailService.setupSmtpRelay(body.host, body.port, body.username, body.password);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Delete('smtp-relay')
+  removeSmtpRelay() {
+    return this.mailService.removeSmtpRelay();
+  }
+
+  // ---- DMARC Reports ----
+
+  @SkipThrottle()
+  @Get('domains/:id/dmarc-reports')
+  getDmarcReports(@Param('id') id: string) {
+    return this.mailService.getDmarcReports(id);
+  }
+
+  @SkipThrottle()
+  @Get('domains/:id/dmarc-reports/summary')
+  getDmarcSummary(@Param('id') id: string) {
+    return this.mailService.getDmarcSummary(id);
+  }
 }

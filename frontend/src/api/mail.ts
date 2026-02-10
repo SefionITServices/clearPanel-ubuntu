@@ -35,6 +35,7 @@ export interface MailDomain {
   dkimSelector?: string;
   dkimPublicKey?: string;
   dkimUpdatedAt?: string;
+  catchAllAddress?: string;
   createdAt: string;
   updatedAt?: string;
   mailboxes: MailboxSummary[];
@@ -233,6 +234,79 @@ export interface RateLimitEntry {
   email: string;
   limit: number;
   updatedAt?: string;
+}
+
+// ---- Sieve Filters ----
+
+export interface SieveFilterEntry {
+  name: string;
+  active: boolean;
+}
+
+export interface SieveFilterDetail {
+  name: string;
+  script: string;
+}
+
+// ---- Catch-All ----
+
+export interface CatchAllResult {
+  domain: MailDomain;
+  automationLogs: AutomationLog[];
+}
+
+// ---- Quota Warning ----
+
+export interface QuotaWarningConfig {
+  threshold: number;
+  adminEmail?: string;
+  updatedAt?: string;
+}
+
+// ---- SMTP Relay ----
+
+export interface SmtpRelayConfig {
+  configured: boolean;
+  host?: string;
+  port?: number;
+  authenticated?: boolean;
+}
+
+// ---- DMARC Reports ----
+
+export interface DmarcReportRecord {
+  sourceIp: string;
+  count: number;
+  disposition: string;
+  dkimEval: string;
+  spfEval: string;
+  dkimResult: string;
+  spfResult: string;
+}
+
+export interface DmarcReport {
+  org: string;
+  reportId: string;
+  dateBegin: string;
+  dateEnd: string;
+  domain: string;
+  policy: string;
+  subdomainPolicy: string;
+  pct: number;
+  records: DmarcReportRecord[];
+  totalMessages: number;
+  passCount: number;
+  failCount: number;
+}
+
+export interface DmarcReportSummary {
+  reportCount: number;
+  totalMessages: number;
+  passCount: number;
+  failCount: number;
+  passRate: number;
+  organizations: string[];
+  topSenders: { ip: string; count: number }[];
 }
 
 const API_BASE = '/api/mail';
@@ -468,5 +542,79 @@ export const mailAPI = {
       method: 'POST',
       body: JSON.stringify({ email, limitPerHour }),
     });
+  },
+
+  // ---- Sieve Filters (ManageSieve) ----
+
+  async listSieveFilters(domainId: string, mailboxId: string): Promise<SieveFilterEntry[]> {
+    return fetchJSON<SieveFilterEntry[]>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sieve`);
+  },
+
+  async getSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<SieveFilterDetail> {
+    return fetchJSON<SieveFilterDetail>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sieve/${encodeURIComponent(filterName)}`);
+  },
+
+  async putSieveFilter(domainId: string, mailboxId: string, filterName: string, script: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sieve/${encodeURIComponent(filterName)}`, {
+      method: 'POST',
+      body: JSON.stringify({ script }),
+    });
+  },
+
+  async deleteSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sieve/${encodeURIComponent(filterName)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ---- Catch-All Mailbox ----
+
+  async setupCatchAll(domainId: string, action: 'enable' | 'disable', targetEmail?: string): Promise<CatchAllResult> {
+    return fetchJSON<CatchAllResult>(`${API_BASE}/domains/${domainId}/catch-all`, {
+      method: 'POST',
+      body: JSON.stringify({ action, targetEmail }),
+    });
+  },
+
+  // ---- Quota Warnings ----
+
+  async getQuotaWarningConfig(): Promise<QuotaWarningConfig | null> {
+    return fetchJSON<QuotaWarningConfig | null>(`${API_BASE}/quota-warning`);
+  },
+
+  async setupQuotaWarning(threshold: number, adminEmail?: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/quota-warning`, {
+      method: 'POST',
+      body: JSON.stringify({ threshold, adminEmail }),
+    });
+  },
+
+  // ---- SMTP Relay ----
+
+  async getSmtpRelay(): Promise<SmtpRelayConfig> {
+    return fetchJSON<SmtpRelayConfig>(`${API_BASE}/smtp-relay`);
+  },
+
+  async setupSmtpRelay(host: string, port: number, username?: string, password?: string): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/smtp-relay`, {
+      method: 'POST',
+      body: JSON.stringify({ host, port, username, password }),
+    });
+  },
+
+  async removeSmtpRelay(): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/smtp-relay`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ---- DMARC Reports ----
+
+  async getDmarcReports(domainId: string): Promise<DmarcReport[]> {
+    return fetchJSON<DmarcReport[]>(`${API_BASE}/domains/${domainId}/dmarc-reports`);
+  },
+
+  async getDmarcSummary(domainId: string): Promise<DmarcReportSummary> {
+    return fetchJSON<DmarcReportSummary>(`${API_BASE}/domains/${domainId}/dmarc-reports/summary`);
   },
 };

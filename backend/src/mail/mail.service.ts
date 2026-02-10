@@ -1194,4 +1194,166 @@ export class MailService {
 
     return this.automation.getRateLimits(domain.domain);
   }
+
+  // ---- Sieve Filters (ManageSieve) ----
+
+  async listSieveFilters(domainId: string, mailboxId: string): Promise<{ name: string; active: boolean }[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    return this.automation.listSieveFilters(domain.domain, mailbox.email);
+  }
+
+  async getSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<{ name: string; script: string }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const script = await this.automation.getSieveFilter(domain.domain, mailbox.email, filterName);
+    return { name: filterName, script };
+  }
+
+  async putSieveFilter(domainId: string, mailboxId: string, filterName: string, scriptContent: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.putSieveFilter(domain.domain, mailbox.email, filterName, scriptContent);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'sieve-put',
+      target: `${mailbox.email}/${filterName}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async deleteSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.deleteSieveFilter(domain.domain, mailbox.email, filterName);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'sieve-delete',
+      target: `${mailbox.email}/${filterName}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  // ---- Catch-All Mailbox ----
+
+  async setupCatchAll(domainId: string, action: 'enable' | 'disable', targetEmail?: string): Promise<{ domain: MailDomain; automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    if (action === 'enable' && !targetEmail) {
+      throw new BadRequestException('targetEmail is required to enable catch-all');
+    }
+
+    const logs = await this.automation.setupCatchAll(domain.domain, action, targetEmail);
+    domain.catchAllAddress = action === 'enable' ? targetEmail : undefined;
+    domain.updatedAt = new Date().toISOString();
+    await this.writeDomains(domains);
+
+    await this.history.log({
+      scope: 'domain' as MailAutomationScope,
+      action: `catch-all-${action}`,
+      target: domain.domain,
+      logs,
+    });
+
+    return { domain, automationLogs: logs };
+  }
+
+  // ---- Quota Warnings ----
+
+  async setupQuotaWarning(threshold: number, adminEmail?: string): Promise<{ automationLogs: AutomationLog[] }> {
+    if (threshold < 1 || threshold > 100) {
+      throw new BadRequestException('threshold must be between 1 and 100');
+    }
+
+    const logs = await this.automation.setupQuotaWarning(threshold, adminEmail);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-quota-warning',
+      target: `${threshold}%`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getQuotaWarningConfig(): Promise<{ threshold: number; adminEmail?: string; updatedAt?: string } | null> {
+    return this.automation.getQuotaWarningConfig();
+  }
+
+  // ---- SMTP Relay ----
+
+  async setupSmtpRelay(host: string, port: number, username?: string, password?: string): Promise<{ automationLogs: AutomationLog[] }> {
+    if (!host) throw new BadRequestException('host is required');
+    if (!port || port < 1 || port > 65535) throw new BadRequestException('port must be 1-65535');
+
+    const logs = await this.automation.setupSmtpRelay(host, port, username, password);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-smtp-relay',
+      target: `[${host}]:${port}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getSmtpRelay(): Promise<{ configured: boolean; host?: string; port?: number; authenticated?: boolean }> {
+    return this.automation.getSmtpRelay();
+  }
+
+  async removeSmtpRelay(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.removeSmtpRelay();
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'remove-smtp-relay',
+      target: 'relayhost',
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  // ---- DMARC Report Parsing ----
+
+  async getDmarcReports(domainId: string): Promise<unknown[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getDmarcReports(domain.domain);
+  }
+
+  async getDmarcSummary(domainId: string): Promise<unknown> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getDmarcSummary(domain.domain);
+  }
 }

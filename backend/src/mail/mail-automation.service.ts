@@ -613,6 +613,243 @@ export class MailAutomationService {
     }
   }
 
+  // ---- Sieve Filters (ManageSieve) ----
+
+  async listSieveFilters(domain: string, email: string): Promise<{ name: string; active: boolean }[]> {
+    const script = path.join(this.scriptsDir, 'manage-sieve.sh');
+    try {
+      const { stdout } = await this.runScript(script, ['list', domain, email]);
+      return JSON.parse(stdout.trim());
+    } catch {
+      return [];
+    }
+  }
+
+  async getSieveFilter(domain: string, email: string, filterName: string): Promise<string> {
+    const script = path.join(this.scriptsDir, 'manage-sieve.sh');
+    try {
+      const { stdout } = await this.runScript(script, ['get', domain, email, filterName]);
+      const parsed = JSON.parse(stdout.trim());
+      return parsed.script || '';
+    } catch {
+      return '';
+    }
+  }
+
+  async putSieveFilter(domain: string, email: string, filterName: string, scriptContent: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'manage-sieve.sh');
+    try {
+      const { stdout, stderr } = await this.runScript(script, ['put', domain, email, filterName, scriptContent]);
+      logs.push({
+        task: 'Upload Sieve filter',
+        success: true,
+        message: `Filter '${filterName}' uploaded for ${email}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Upload Sieve filter',
+        success: false,
+        message: `Failed to upload filter '${filterName}' for ${email}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async deleteSieveFilter(domain: string, email: string, filterName: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'manage-sieve.sh');
+    try {
+      const { stdout, stderr } = await this.runScript(script, ['delete', domain, email, filterName]);
+      logs.push({
+        task: 'Delete Sieve filter',
+        success: true,
+        message: `Filter '${filterName}' deleted for ${email}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Delete Sieve filter',
+        success: false,
+        message: `Failed to delete filter '${filterName}' for ${email}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  // ---- Catch-All Mailbox ----
+
+  async setupCatchAll(domain: string, action: 'enable' | 'disable', targetEmail?: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-catchall.sh');
+    try {
+      const args = action === 'enable'
+        ? [action, domain, targetEmail || '']
+        : [action, domain];
+      const { stdout, stderr } = await this.runScript(script, args);
+      logs.push({
+        task: 'Setup catch-all',
+        success: true,
+        message: action === 'enable'
+          ? `Catch-all enabled for @${domain} → ${targetEmail}`
+          : `Catch-all disabled for @${domain}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup catch-all',
+        success: false,
+        message: `Failed to ${action} catch-all for @${domain}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  // ---- Quota Warnings ----
+
+  async setupQuotaWarning(threshold: number, adminEmail?: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-quota-warning.sh');
+    try {
+      const args = adminEmail
+        ? [String(threshold), adminEmail]
+        : [String(threshold)];
+      const { stdout, stderr } = await this.runScript(script, args);
+      logs.push({
+        task: 'Setup quota warning',
+        success: true,
+        message: `Quota warning threshold set to ${threshold}%`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup quota warning',
+        success: false,
+        message: `Failed to configure quota warning`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async getQuotaWarningConfig(): Promise<{ threshold: number; adminEmail?: string; updatedAt?: string } | null> {
+    const stateDir = path.join(process.cwd(), '..', 'backend', 'mail-state');
+    const filePath = path.join(stateDir, 'quota-warning.json');
+    try {
+      const raw = await import('node:fs/promises').then(fs => fs.readFile(filePath, 'utf-8'));
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  // ---- SMTP Relay ----
+
+  async setupSmtpRelay(host: string, port: number, username?: string, password?: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-smtp-relay.sh');
+    try {
+      const args = username && password
+        ? ['set', host, String(port), username, password]
+        : ['set', host, String(port)];
+      const { stdout, stderr } = await this.runScript(script, args, { redactArgs: !!password });
+      logs.push({
+        task: 'Setup SMTP relay',
+        success: true,
+        message: `SMTP relay configured: [${host}]:${port}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup SMTP relay',
+        success: false,
+        message: `Failed to configure SMTP relay`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async getSmtpRelay(): Promise<{ configured: boolean; host?: string; port?: number; authenticated?: boolean }> {
+    const script = path.join(this.scriptsDir, 'setup-smtp-relay.sh');
+    try {
+      const { stdout } = await this.runScript(script, ['get']);
+      return JSON.parse(stdout.trim());
+    } catch {
+      return { configured: false };
+    }
+  }
+
+  async removeSmtpRelay(): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-smtp-relay.sh');
+    try {
+      const { stdout, stderr } = await this.runScript(script, ['remove']);
+      logs.push({
+        task: 'Remove SMTP relay',
+        success: true,
+        message: 'SMTP relay configuration removed',
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Remove SMTP relay',
+        success: false,
+        message: 'Failed to remove SMTP relay',
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  // ---- DMARC Report Parsing ----
+
+  async getDmarcReports(domain: string): Promise<unknown[]> {
+    const script = path.join(this.scriptsDir, 'parse-dmarc-reports.sh');
+    try {
+      const { stdout } = await this.runScript(script, ['fetch', domain]);
+      return JSON.parse(stdout.trim());
+    } catch {
+      return [];
+    }
+  }
+
+  async getDmarcSummary(domain: string): Promise<unknown> {
+    const script = path.join(this.scriptsDir, 'parse-dmarc-reports.sh');
+    try {
+      const { stdout } = await this.runScript(script, ['summary', domain]);
+      return JSON.parse(stdout.trim());
+    } catch {
+      return { reportCount: 0, totalMessages: 0, passCount: 0, failCount: 0, passRate: 0, organizations: [], topSenders: [] };
+    }
+  }
+
+  async ingestDmarcReport(domain: string, filePath: string): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'parse-dmarc-reports.sh');
+    try {
+      const { stdout, stderr } = await this.runScript(script, ['ingest', domain, filePath]);
+      logs.push({
+        task: 'Ingest DMARC report',
+        success: true,
+        message: `DMARC report ingested for ${domain}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Ingest DMARC report',
+        success: false,
+        message: `Failed to ingest DMARC report for ${domain}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
   // ---- Per-User Rate Limiting ----
 
   async setupRateLimit(domain: string, email: string, limitPerHour: number): Promise<AutomationLog[]> {

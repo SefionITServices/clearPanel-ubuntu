@@ -56,6 +56,8 @@ import SearchIcon from '@mui/icons-material/Search';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SpeedIcon from '@mui/icons-material/Speed';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { SmtpRelayPanel, QuotaWarningPanel } from '../components/MailGlobalPanels';
+import { SieveFiltersPanel, CatchAllPanel, DmarcReportsPanel } from '../components/MailDomainPanels';
 import {
   AutomationLog,
   DomainSettingsUpdate,
@@ -1435,6 +1437,12 @@ export default function MailDomainsPage() {
             </Stack>
           </Paper>
 
+          {/* SMTP Relay Panel */}
+          <SmtpRelayPanel onFeedback={(type, message) => setFeedback({ type, message })} />
+
+          {/* Quota Warnings Panel */}
+          <QuotaWarningPanel onFeedback={(type, message) => setFeedback({ type, message })} />
+
           {/* Mail Metrics Panel */}
           <Paper sx={{ p: 2, border: (theme) => `1px solid ${theme.palette.divider}` }}>
             <Stack spacing={2}>
@@ -2268,6 +2276,11 @@ export default function MailDomainsPage() {
                                       </Button>
                                     </Stack>
                                   </Stack>
+                                  <SieveFiltersPanel
+                                    domainId={domain.id}
+                                    mailbox={mailbox}
+                                    onFeedback={(type, message) => setFeedback({ type, message })}
+                                  />
                                 </Box>
                               );
                             })}
@@ -2404,6 +2417,24 @@ export default function MailDomainsPage() {
                           </Button>
                         </Stack>
                       </Box>
+
+                      <Divider />
+
+                      {/* Catch-All */}
+                      <CatchAllPanel
+                        domain={domain}
+                        onDomainUpdate={(updated) => setDomains((prev) => prev.map((d) => d.id === updated.id ? updated : d))}
+                        onFeedback={(type, message) => setFeedback({ type, message })}
+                      />
+
+                      <Divider />
+
+                      {/* DMARC Reports */}
+                      <DmarcReportsPanel
+                        domainId={domain.id}
+                        domainName={domain.domain}
+                        onFeedback={(type, message) => setFeedback({ type, message })}
+                      />
 
                       <Divider />
 
