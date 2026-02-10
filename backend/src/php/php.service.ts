@@ -90,8 +90,12 @@ export class PhpService {
       const { stdout } = await exec(cmd, { timeout });
       return stdout.trim();
     } catch {
-      const { stdout } = await exec(`sudo ${cmd}`, { timeout });
-      return stdout.trim();
+      try {
+        const { stdout } = await exec(`sudo ${cmd}`, { timeout });
+        return stdout.trim();
+      } catch {
+        return '';
+      }
     }
   }
 
@@ -133,20 +137,37 @@ export class PhpService {
 
     const results: PhpVersion[] = [];
     for (const ver of KNOWN_VERSIONS) {
-      const installed = await this.which(`php${ver}`);
-      const fpmService = `php${ver}-fpm`;
-      const fpmRunning = installed ? await this.serviceActive(fpmService) : false;
-      const fpmEnabled = installed ? await this.serviceEnabled(fpmService) : false;
-      const fpmSocketPath = `/var/run/php/php${ver}-fpm.sock`;
+      try {
+        const installed = await this.which(`php${ver}`);
+        const fpmService = `php${ver}-fpm`;
+        let fpmRunning = false;
+        let fpmEnabled = false;
+        if (installed) {
+          try { fpmRunning = await this.serviceActive(fpmService); } catch {}
+          try { fpmEnabled = await this.serviceEnabled(fpmService); } catch {}
+        }
+        const fpmSocketPath = `/var/run/php/php${ver}-fpm.sock`;
 
-      results.push({
-        version: ver,
-        installed,
-        active: ver === defaultVersion,
-        fpmRunning,
-        fpmEnabled,
-        fpmSocketPath,
-      });
+        results.push({
+          version: ver,
+          installed,
+          active: ver === defaultVersion,
+          fpmRunning,
+          fpmEnabled,
+          fpmSocketPath,
+        });
+      } catch (e) {
+        // Even if check fails, still include the version as not-installed
+        this.logger.warn(`Error checking PHP ${ver}: ${e}`);
+        results.push({
+          version: ver,
+          installed: false,
+          active: false,
+          fpmRunning: false,
+          fpmEnabled: false,
+          fpmSocketPath: `/var/run/php/php${ver}-fpm.sock`,
+        });
+      }
     }
     return results;
   }

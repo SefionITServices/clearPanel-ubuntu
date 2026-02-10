@@ -76,6 +76,8 @@ const phpAPI = {
 
 // ─── Color helpers ────────────────────────────────────────────────────
 
+const KNOWN_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+
 const VERSION_COLORS: Record<string, string> = {
   '7.4': '#8892BF', '8.0': '#777BB3', '8.1': '#4F5B93',
   '8.2': '#7B68EE', '8.3': '#4285F4', '8.4': '#1A73E8',
@@ -101,14 +103,26 @@ export default function PhpManagerPage() {
   const toast = (message: string, severity: 'success' | 'error' | 'info' = 'success') =>
     setSnackbar({ open: true, message, severity });
 
+  // Fallback: if API fails, still show all known versions as available to install
+  const fallbackVersions: PhpVersion[] = KNOWN_VERSIONS.map(v => ({
+    version: v, installed: false, active: false,
+    fpmRunning: false, fpmEnabled: false, fpmSocketPath: `/var/run/php/php${v}-fpm.sock`,
+  }));
+
   const loadVersions = useCallback(async () => {
     try {
       const data = await phpAPI.versions();
-      if (data.success) {
+      if (data.success && data.versions?.length) {
         setVersions(data.versions);
         setDefaultVersion(data.defaultVersion || '');
+      } else {
+        // API returned but no versions — show fallback
+        setVersions(fallbackVersions);
       }
-    } catch {} finally { setLoading(false); }
+    } catch {
+      // API unreachable — still show all versions so user can install
+      setVersions(fallbackVersions);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { loadVersions(); }, [loadVersions]);
