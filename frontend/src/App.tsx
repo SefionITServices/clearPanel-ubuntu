@@ -19,6 +19,7 @@ import SslPage from './pages/Ssl';
 import DatabasesPage from './pages/Databases';
 import AppStorePage from './pages/AppStore';
 import PhpManagerPage from './pages/PhpManager';
+import MailDomainsPage from './pages/MailDomains';
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { authenticated, loading } = useAuth();
@@ -133,6 +134,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <PhpManagerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/mail-domains"
+              element={
+                <ProtectedRoute>
+                  <MailDomainsPage />
                 </ProtectedRoute>
               }
             />

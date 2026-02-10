@@ -261,6 +261,86 @@ export class MailAutomationService {
     return logs;
   }
 
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  async setupMailTls(
+    hostname: string,
+    email: string,
+    reuseExisting?: boolean,
+  ): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-mail-tls.sh');
+    const args = [hostname, email];
+    if (reuseExisting) args.push('--reuse-existing');
+    try {
+      const { stdout, stderr } = await this.runScript(script, args);
+      logs.push({
+        task: 'Setup mail TLS',
+        success: true,
+        message: `TLS configured for ${hostname}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup mail TLS',
+        success: false,
+        message: `Failed to setup TLS for ${hostname}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async setupPostscreen(dryRun?: boolean): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-postscreen.sh');
+    const args = dryRun ? ['--dry-run'] : [];
+    try {
+      const { stdout, stderr } = await this.runScript(script, args);
+      logs.push({
+        task: 'Setup postscreen',
+        success: true,
+        message: 'Postscreen + reputation guards configured',
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup postscreen',
+        success: false,
+        message: 'Failed to configure postscreen',
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
+  async setupDmarc(
+    domain: string,
+    reportEmail?: string,
+  ): Promise<AutomationLog[]> {
+    const logs: AutomationLog[] = [];
+    const script = path.join(this.scriptsDir, 'setup-dmarc.sh');
+    const args = [domain];
+    if (reportEmail) args.push(reportEmail);
+    try {
+      const { stdout, stderr } = await this.runScript(script, args);
+      logs.push({
+        task: 'Setup DMARC',
+        success: true,
+        message: `DMARC + ARC configured for ${domain}`,
+        detail: this.compact(stdout, stderr),
+      });
+    } catch (error) {
+      logs.push({
+        task: 'Setup DMARC',
+        success: false,
+        message: `Failed to setup DMARC for ${domain}`,
+        detail: this.errorMessage(error),
+      });
+    }
+    return logs;
+  }
+
   async hashPassword(password: string): Promise<string> {
     const script = path.join(this.scriptsDir, 'hash-password.sh');
     const { stdout } = await this.runScript(script, [password], { redactArgs: true });

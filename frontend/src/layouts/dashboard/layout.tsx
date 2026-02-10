@@ -37,6 +37,7 @@ import {
   Storage as StorageIcon,
   Store as StoreIcon,
   Code as CodeIcon,
+  Email as EmailIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -63,6 +64,7 @@ const navSections = [
       { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
       { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
       { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
+      { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
     ],
   },
   {

@@ -9,7 +9,34 @@ MAIL_AUTOMATION_COMMON_SOURCED=1
 SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-STATE_ROOT="${MAIL_STATE_DIR:-$REPO_ROOT/backend/mail-state}"
+
+# --- Mode detection ---
+# Set MAIL_MODE=production to use real paths; defaults to "dev" for local development.
+MAIL_MODE="${MAIL_MODE:-dev}"
+
+if [[ "$MAIL_MODE" == "production" ]]; then
+  # Production paths
+  MAIL_CONFIG_DIR="/etc/clearpanel/mail"
+  VMAIL_HOME="/var/vmail"
+  VMAIL_USER="vmail"
+  VMAIL_GROUP="vmail"
+  VMAIL_UID="${VMAIL_UID:-5000}"
+  VMAIL_GID="${VMAIL_GID:-5000}"
+  STATE_ROOT="${MAIL_STATE_DIR:-/var/lib/clearpanel/mail}"
+  POSTFIX_VDOMAINS="$MAIL_CONFIG_DIR/vdomains"
+  POSTFIX_VMAILBOX="$MAIL_CONFIG_DIR/vmailbox"
+  POSTFIX_VALIAS="$MAIL_CONFIG_DIR/valias"
+  DOVECOT_PASSWD="$MAIL_CONFIG_DIR/passwd"
+  RSPAMD_LOCAL_DIR="/etc/rspamd/local.d"
+  RSPAMD_OVERRIDE_DIR="/etc/rspamd/override.d"
+  OPENDKIM_KEYS_DIR="/etc/opendkim/keys"
+  OPENDKIM_KEY_TABLE="/etc/opendkim/key.table"
+  OPENDKIM_SIGNING_TABLE="/etc/opendkim/signing.table"
+else
+  # Development simulation (original behaviour)
+  STATE_ROOT="${MAIL_STATE_DIR:-$REPO_ROOT/backend/mail-state}"
+fi
+
 DOMAINS_DIR="$STATE_ROOT/domains"
 MAILBOX_DIR="$STATE_ROOT/mailboxes"
 ALIASES_DIR="$STATE_ROOT/aliases"
@@ -21,9 +48,64 @@ POLICY_DIR="$STATE_ROOT/policies"
 ensure_state_root() {
   mkdir -p "$STATE_ROOT" "$DOMAINS_DIR" "$MAILBOX_DIR" "$ALIASES_DIR" \
     "$DKIM_KEYS_DIR" "$DKIM_PUBLIC_DIR" "$LOG_DIR" "$POLICY_DIR"
+
+  if [[ "$MAIL_MODE" == "production" ]]; then
+    mkdir -p "$MAIL_CONFIG_DIR" "$VMAIL_HOME"
+    # Ensure vmail user exists
+    if ! id "$VMAIL_USER" &>/dev/null; then
+      groupadd -g "$VMAIL_GID" "$VMAIL_GROUP" 2>/dev/null || true
+      useradd -u "$VMAIL_UID" -g "$VMAIL_GID" -d "$VMAIL_HOME" -s /usr/sbin/nologin "$VMAIL_USER" 2>/dev/null || true
+    fi
+    chown -R "${VMAIL_USER}:${VMAIL_GROUP}" "$VMAIL_HOME" 2>/dev/null || true
+    # Ensure Postfix map files exist
+    touch "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_PASSWD" 2>/dev/null || true
+  fi
+}
+
+# --- Postfix map helpers ---
+postmap_rebuild() {
+  local mapfile="$1"
+  if [[ "$MAIL_MODE" == "production" ]] && command -v postmap >/dev/null 2>&1; then
+    postmap "$mapfile" 2>/dev/null || true
+  fi
+}
+
+postfix_reload() {
+  if [[ "$MAIL_MODE" == "production" ]] && command -v postfix >/dev/null 2>&1; then
+    postfix reload 2>/dev/null || true
+  fi
+}
+
+dovecot_reload() {
+  if [[ "$MAIL_MODE" == "production" ]] && command -v doveadm >/dev/null 2>&1; then
+    doveadm reload 2>/dev/null || true
+  fi
+}
+
+rspamd_reload() {
+  if [[ "$MAIL_MODE" == "production" ]] && command -v rspamadm >/dev/null 2>&1; then
+    systemctl reload rspamd 2>/dev/null || true
+  fi
 }
 
 generate_dkim_key_material() {
+  local domain="${1:-}"
+  local selector="${2:-default}"
+
+  # Production: use opendkim-genkey for a real RSA key pair
+  if [[ "$MAIL_MODE" == "production" ]] && command -v opendkim-genkey >/dev/null 2>&1 && [[ -n "$domain" ]]; then
+    local key_dir="$DKIM_KEYS_DIR/$domain"
+    mkdir -p "$key_dir"
+    opendkim-genkey -b 2048 -d "$domain" -s "$selector" -D "$key_dir"
+    # opendkim-genkey creates ${selector}.private and ${selector}.txt
+    chown opendkim:opendkim "$key_dir/${selector}.private" 2>/dev/null || true
+    chmod 600 "$key_dir/${selector}.private" 2>/dev/null || true
+    # Extract the p= value from the TXT record file
+    grep -oP 'p=\K[^"]+' "$key_dir/${selector}.txt" | tr -d ' \n\t'
+    return 0
+  fi
+
+  # Dev fallback: generate pseudo-random base64 blob
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 64 | tr -d '\n'
     return 0
@@ -58,6 +140,23 @@ write_dkim_record() {
 
   printf '%s\n' "$public_key" >"$key_dir/${selector}.pub"
   printf '%s\n' "$record" >"$public_dir/${selector}.txt"
+
+  # Production: update OpenDKIM tables
+  if [[ "$MAIL_MODE" == "production" ]]; then
+    mkdir -p "$(dirname "$OPENDKIM_KEY_TABLE")"
+    # key.table: selector._domainkey.domain  domain:selector:/path/to/key
+    local key_entry="${selector}._domainkey.${domain}  ${domain}:${selector}:${key_dir}/${selector}.private"
+    # Remove old entry for this domain/selector, then append
+    sed -i "/^${selector}\._domainkey\.${domain}\s/d" "$OPENDKIM_KEY_TABLE" 2>/dev/null || true
+    printf '%s\n' "$key_entry" >>"$OPENDKIM_KEY_TABLE"
+
+    # signing.table: *@domain  selector._domainkey.domain
+    local sign_entry="*@${domain}  ${selector}._domainkey.${domain}"
+    sed -i "/^\*@${domain}\s/d" "$OPENDKIM_SIGNING_TABLE" 2>/dev/null || true
+    printf '%s\n' "$sign_entry" >>"$OPENDKIM_SIGNING_TABLE"
+
+    systemctl reload opendkim 2>/dev/null || true
+  fi
 
   printf '%s\n' "$record"
 }

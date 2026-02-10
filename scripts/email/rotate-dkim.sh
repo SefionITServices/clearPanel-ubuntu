@@ -16,7 +16,14 @@ source "$SCRIPT_DIR/common.sh"
 
 ensure_state_root
 
-PUBLIC_KEY="$(generate_dkim_key_material)"
+# Remove old key files for this selector
+rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.pub" 2>/dev/null || true
+rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.private" 2>/dev/null || true
+rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.txt" 2>/dev/null || true
+rm -f "$DKIM_PUBLIC_DIR/$DOMAIN/${SELECTOR}.txt" 2>/dev/null || true
+
+# Generate new key
+PUBLIC_KEY="$(generate_dkim_key_material "$DOMAIN" "$SELECTOR")"
 DKIM_RECORD="$(write_dkim_record "$DOMAIN" "$SELECTOR" "$PUBLIC_KEY")"
 
 printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"

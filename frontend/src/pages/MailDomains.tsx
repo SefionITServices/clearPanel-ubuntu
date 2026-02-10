@@ -12,11 +12,19 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  IconButton,
   InputAdornment,
   Paper,
   Stack,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
@@ -25,6 +33,14 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import DnsIcon from '@mui/icons-material/Dns';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import LockIcon from '@mui/icons-material/Lock';
+import SecurityIcon from '@mui/icons-material/Security';
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import {
   AutomationLog,
@@ -35,6 +51,9 @@ import {
   MailboxSummary,
   MailAliasSummary,
   UpdateMailboxPayload,
+  DnsRecord,
+  MailStatusResponse,
+  SecurityStatus,
   mailAPI,
 } from '../api/mail';
 
@@ -183,6 +202,29 @@ export default function MailDomainsPage() {
   const [aliasEditForm, setAliasEditForm] = useState<{ destination: string }>({ destination: '' });
   const [aliasEditError, setAliasEditError] = useState<string | null>(null);
   const [aliasEditBusy, setAliasEditBusy] = useState(false);
+
+  // DNS suggestions
+  const [dnsExpanded, setDnsExpanded] = useState<Record<string, boolean>>({});
+  const [dnsRecords, setDnsRecords] = useState<Record<string, DnsRecord[]>>({});
+  const [dnsLoading, setDnsLoading] = useState<Record<string, boolean>>({});
+  const [dnsErrors, setDnsErrors] = useState<Record<string, string | undefined>>({});
+
+  // DKIM rotation
+  const [dkimBusy, setDkimBusy] = useState<Record<string, boolean>>({});
+
+  // Mail status
+  const [mailStatus, setMailStatus] = useState<MailStatusResponse | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+
+  // Security panel
+  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null);
+  const [securityLoading, setSecurityLoading] = useState(true);
+  const [securityExpanded, setSecurityExpanded] = useState(false);
+  const [tlsForm, setTlsForm] = useState({ hostname: '', email: '' });
+  const [tlsBusy, setTlsBusy] = useState(false);
+  const [postscreenBusy, setPostscreenBusy] = useState(false);
+  const [dmarcForm, setDmarcForm] = useState({ domain: '', reportEmail: '' });
+  const [dmarcBusy, setDmarcBusy] = useState(false);
 
   const hasAnyDomains = domains.length > 0;
   const defaultMailboxFormState = { localPart: '', password: '', quotaMb: '' } as const;
@@ -748,6 +790,165 @@ export default function MailDomainsPage() {
     }
   };
 
+  // --- DNS Suggestions ---
+  const handleToggleDns = async (domain: MailDomain) => {
+    const next = !(dnsExpanded[domain.id] ?? false);
+    setDnsExpanded((prev) => ({ ...prev, [domain.id]: next }));
+
+    if (next && !dnsRecords[domain.id] && !dnsLoading[domain.id]) {
+      setDnsLoading((prev) => ({ ...prev, [domain.id]: true }));
+      setDnsErrors((prev) => {
+        const clone = { ...prev };
+        delete clone[domain.id];
+        return clone;
+      });
+      try {
+        const response = await mailAPI.getDnsSuggestions(domain.id);
+        setDnsRecords((prev) => ({ ...prev, [domain.id]: response.records }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load DNS suggestions';
+        setDnsErrors((prev) => ({ ...prev, [domain.id]: message }));
+      } finally {
+        setDnsLoading((prev) => {
+          const clone = { ...prev };
+          delete clone[domain.id];
+          return clone;
+        });
+      }
+    }
+  };
+
+  // --- DKIM Rotation ---
+  const handleRotateDkim = async (domain: MailDomain) => {
+    if (!window.confirm(`Rotate DKIM key for "${domain.domain}"? The old key will be replaced.`)) {
+      return;
+    }
+
+    setDkimBusy((prev) => ({ ...prev, [domain.id]: true }));
+    try {
+      const result = await mailAPI.rotateDkim(domain.id);
+      await handleDomainResult(domain.id, 'dkim', domain.domain, result);
+      setFeedback({ type: 'success', message: `Rotated DKIM key for ${domain.domain}` });
+      // Refresh DNS suggestions if expanded
+      if (dnsExpanded[domain.id]) {
+        const response = await mailAPI.getDnsSuggestions(domain.id);
+        setDnsRecords((prev) => ({ ...prev, [domain.id]: response.records }));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to rotate DKIM key';
+      setFeedback({ type: 'error', message });
+    } finally {
+      setDkimBusy((prev) => {
+        const clone = { ...prev };
+        delete clone[domain.id];
+        return clone;
+      });
+    }
+  };
+
+  // --- Load Mail Status ---
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStatus() {
+      try {
+        const status = await mailAPI.getStatus();
+        if (!cancelled) setMailStatus(status);
+      } catch {
+        // Status is non-critical; silently ignore
+      } finally {
+        if (!cancelled) setStatusLoading(false);
+      }
+    }
+    loadStatus();
+    return () => { cancelled = true; };
+  }, []);
+
+  // --- Load Security Status ---
+  const loadSecurityStatus = async () => {
+    setSecurityLoading(true);
+    try {
+      const status = await mailAPI.getSecurityStatus();
+      setSecurityStatus(status);
+    } catch {
+      // Non-critical
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    mailAPI.getSecurityStatus().then((s) => {
+      if (!cancelled) {
+        setSecurityStatus(s);
+        setSecurityLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setSecurityLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // --- Security Handlers ---
+  const handleSetupTls = async () => {
+    if (!tlsForm.hostname || !tlsForm.email) {
+      setFeedback({ type: 'error', message: 'Mail hostname and admin email are required' });
+      return;
+    }
+    setTlsBusy(true);
+    try {
+      const result = await mailAPI.setupMailTls({ hostname: tlsForm.hostname, email: tlsForm.email });
+      const allOk = result.automationLogs.every((l) => l.success);
+      setFeedback({
+        type: allOk ? 'success' : 'error',
+        message: allOk ? `TLS configured for ${tlsForm.hostname}` : result.automationLogs.find((l) => !l.success)?.message || 'TLS setup failed',
+      });
+      await loadSecurityStatus();
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'TLS setup failed' });
+    } finally {
+      setTlsBusy(false);
+    }
+  };
+
+  const handleSetupPostscreen = async () => {
+    setPostscreenBusy(true);
+    try {
+      const result = await mailAPI.setupPostscreen();
+      const allOk = result.automationLogs.every((l) => l.success);
+      setFeedback({
+        type: allOk ? 'success' : 'error',
+        message: allOk ? 'Postscreen & reputation guards enabled' : result.automationLogs.find((l) => !l.success)?.message || 'Postscreen setup failed',
+      });
+      await loadSecurityStatus();
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Postscreen setup failed' });
+    } finally {
+      setPostscreenBusy(false);
+    }
+  };
+
+  const handleSetupDmarc = async () => {
+    if (!dmarcForm.domain) {
+      setFeedback({ type: 'error', message: 'Domain is required for DMARC setup' });
+      return;
+    }
+    setDmarcBusy(true);
+    try {
+      const result = await mailAPI.setupDmarc({ domain: dmarcForm.domain, reportEmail: dmarcForm.reportEmail || undefined });
+      const allOk = result.automationLogs.every((l) => l.success);
+      setFeedback({
+        type: allOk ? 'success' : 'error',
+        message: allOk ? `DMARC + ARC configured for ${dmarcForm.domain}` : result.automationLogs.find((l) => !l.success)?.message || 'DMARC setup failed',
+      });
+      await loadSecurityStatus();
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'DMARC setup failed' });
+    } finally {
+      setDmarcBusy(false);
+    }
+  };
+
   const activeMailboxDomain = mailboxDialog ? findDomainById(mailboxDialog.domainId) : undefined;
   const activeMailbox =
     mailboxDialog && activeMailboxDomain
@@ -768,13 +969,205 @@ export default function MailDomainsPage() {
             <MailOutlineIcon sx={{ color: '#4285F4', fontSize: 28 }} />
             <Box>
               <Typography variant="h4" fontWeight={700}>
-                Mail Domain Policies
+                Mail Domains
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                Adjust spam and malware enforcement for each hosted mail domain
+                Manage mailboxes, aliases, DNS records, and DKIM keys for your hosted domains
               </Typography>
             </Box>
           </Box>
+
+          {/* Mail Service Status */}
+          {!statusLoading && mailStatus && (
+            <Paper sx={{ p: 2, border: (theme) => `1px solid ${theme.palette.divider}` }}>
+              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mr: 1 }}>
+                  Services:
+                </Typography>
+                {mailStatus.services.map((svc) => (
+                  <Chip
+                    key={svc.name}
+                    size="small"
+                    icon={svc.active ? <CheckCircleIcon /> : <CancelIcon />}
+                    color={svc.active ? 'success' : 'error'}
+                    label={svc.name}
+                    variant="outlined"
+                  />
+                ))}
+                {mailStatus.queueDepth !== undefined && (
+                  <Chip size="small" variant="outlined" label={`Queue: ${mailStatus.queueDepth}`} />
+                )}
+              </Stack>
+            </Paper>
+          )}
+
+          {/* Security Hardening Panel */}
+          <Paper sx={{ p: 2, border: (theme) => `1px solid ${theme.palette.divider}` }}>
+            <Stack spacing={2}>
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                onClick={() => setSecurityExpanded((prev) => !prev)}
+              >
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <SecurityIcon color="primary" />
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Security &amp; TLS
+                  </Typography>
+                  {!securityLoading && securityStatus && (
+                    <Stack direction="row" spacing={0.5} sx={{ ml: 1 }}>
+                      <Chip
+                        size="small"
+                        icon={securityStatus.tls.configured ? <CheckCircleIcon /> : <CancelIcon />}
+                        color={securityStatus.tls.configured ? 'success' : 'default'}
+                        label="TLS"
+                        variant="outlined"
+                      />
+                      <Chip
+                        size="small"
+                        icon={securityStatus.postscreen.enabled ? <CheckCircleIcon /> : <CancelIcon />}
+                        color={securityStatus.postscreen.enabled ? 'success' : 'default'}
+                        label="Postscreen"
+                        variant="outlined"
+                      />
+                      <Chip
+                        size="small"
+                        icon={securityStatus.dmarc.domains.length > 0 ? <CheckCircleIcon /> : <CancelIcon />}
+                        color={securityStatus.dmarc.domains.length > 0 ? 'success' : 'default'}
+                        label="DMARC"
+                        variant="outlined"
+                      />
+                    </Stack>
+                  )}
+                </Stack>
+                <IconButton size="small">
+                  {securityExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+              </Box>
+
+              <Collapse in={securityExpanded}>
+                <Stack spacing={3} sx={{ pt: 1 }}>
+                  {/* TLS Setup */}
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <LockIcon fontSize="small" color="action" />
+                        <Typography variant="subtitle2" fontWeight={600}>Mail TLS Certificate</Typography>
+                        {securityStatus?.tls.configured && (
+                          <Chip size="small" color="success" label={`Active: ${securityStatus.tls.hostname}`} />
+                        )}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        Obtain a Let&apos;s Encrypt certificate for your mail hostname and configure Postfix + Dovecot TLS.
+                      </Typography>
+                      {!securityStatus?.tls.configured && (
+                        <Stack direction="row" spacing={1.5} alignItems="flex-end">
+                          <TextField
+                            label="Mail hostname"
+                            size="small"
+                            value={tlsForm.hostname}
+                            onChange={(e) => setTlsForm((prev) => ({ ...prev, hostname: e.target.value }))}
+                            placeholder="mail.example.com"
+                            sx={{ minWidth: 240 }}
+                          />
+                          <TextField
+                            label="Admin email"
+                            size="small"
+                            value={tlsForm.email}
+                            onChange={(e) => setTlsForm((prev) => ({ ...prev, email: e.target.value }))}
+                            placeholder="admin@example.com"
+                            sx={{ minWidth: 240 }}
+                          />
+                          <Button
+                            variant="contained"
+                            size="small"
+                            disabled={tlsBusy}
+                            onClick={() => void handleSetupTls()}
+                          >
+                            {tlsBusy ? 'Setting up…' : 'Setup TLS'}
+                          </Button>
+                        </Stack>
+                      )}
+                    </Stack>
+                  </Paper>
+
+                  {/* Postscreen */}
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <ShieldIcon fontSize="small" color="action" />
+                        <Typography variant="subtitle2" fontWeight={600}>Postscreen &amp; Reputation Guards</Typography>
+                        {securityStatus?.postscreen.enabled && (
+                          <Chip size="small" color="success" label="Enabled" />
+                        )}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        Enable DNSBL checks, protocol tests, SRS and rate limiting to block spam senders before they reach your SMTP daemon.
+                      </Typography>
+                      {!securityStatus?.postscreen.enabled && (
+                        <Box>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            disabled={postscreenBusy}
+                            onClick={() => void handleSetupPostscreen()}
+                          >
+                            {postscreenBusy ? 'Configuring…' : 'Enable Postscreen'}
+                          </Button>
+                        </Box>
+                      )}
+                    </Stack>
+                  </Paper>
+
+                  {/* DMARC */}
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <VerifiedUserIcon fontSize="small" color="action" />
+                        <Typography variant="subtitle2" fontWeight={600}>DMARC &amp; ARC</Typography>
+                        {securityStatus && securityStatus.dmarc.domains.length > 0 && (
+                          <Chip size="small" color="success" label={`${securityStatus.dmarc.domains.length} domain(s)`} />
+                        )}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        Configure DMARC enforcement and aggregate reporting via Rspamd. ARC signing is also enabled for forwarded mail.
+                      </Typography>
+                      <Stack direction="row" spacing={1.5} alignItems="flex-end">
+                        <TextField
+                          label="Domain"
+                          size="small"
+                          value={dmarcForm.domain}
+                          onChange={(e) => setDmarcForm((prev) => ({ ...prev, domain: e.target.value }))}
+                          placeholder="example.com"
+                          sx={{ minWidth: 200 }}
+                        />
+                        <TextField
+                          label="Report email (optional)"
+                          size="small"
+                          value={dmarcForm.reportEmail}
+                          onChange={(e) => setDmarcForm((prev) => ({ ...prev, reportEmail: e.target.value }))}
+                          placeholder="dmarc@example.com"
+                          sx={{ minWidth: 240 }}
+                        />
+                        <Button
+                          variant="contained"
+                          size="small"
+                          disabled={dmarcBusy}
+                          onClick={() => void handleSetupDmarc()}
+                        >
+                          {dmarcBusy ? 'Configuring…' : 'Setup DMARC'}
+                        </Button>
+                      </Stack>
+                      {securityStatus && securityStatus.dmarc.domains.length > 0 && (
+                        <Typography variant="body2" color="text.secondary">
+                          Configured for: {securityStatus.dmarc.domains.join(', ')}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </Paper>
+                </Stack>
+              </Collapse>
+            </Stack>
+          </Paper>
 
           {feedback && (
             <Alert
@@ -944,6 +1337,94 @@ export default function MailDomainsPage() {
                           Restore defaults on save
                         </Button>
                       </Stack>
+
+                      <Divider />
+
+                      {/* DNS Suggestions & DKIM */}
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => { void handleToggleDns(domain); }}
+                          startIcon={<DnsIcon fontSize="small" />}
+                          endIcon={dnsExpanded[domain.id] ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                          sx={{ alignSelf: 'flex-start' }}
+                        >
+                          {dnsExpanded[domain.id] ? 'Hide DNS records' : 'View DNS records'}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => { void handleRotateDkim(domain); }}
+                          startIcon={<VpnKeyIcon fontSize="small" />}
+                          disabled={Boolean(dkimBusy[domain.id])}
+                          sx={{ alignSelf: 'flex-start' }}
+                        >
+                          {dkimBusy[domain.id] ? 'Rotating…' : 'Rotate DKIM key'}
+                        </Button>
+                      </Stack>
+                      <Collapse in={dnsExpanded[domain.id] ?? false} timeout="auto" unmountOnExit>
+                        <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
+                          {dnsLoading[domain.id] ? (
+                            <Stack spacing={1} alignItems="center" justifyContent="center" sx={{ py: 2 }}>
+                              <CircularProgress size={18} />
+                              <Typography variant="body2" color="text.secondary">
+                                Loading DNS suggestions…
+                              </Typography>
+                            </Stack>
+                          ) : dnsErrors[domain.id] ? (
+                            <Alert severity="error">{dnsErrors[domain.id]}</Alert>
+                          ) : dnsRecords[domain.id] && dnsRecords[domain.id].length > 0 ? (
+                            <TableContainer>
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                                    <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
+                                    <TableCell sx={{ fontWeight: 600 }}>Value</TableCell>
+                                    {dnsRecords[domain.id].some((r) => r.priority !== undefined) && (
+                                      <TableCell sx={{ fontWeight: 600 }}>Priority</TableCell>
+                                    )}
+                                    <TableCell sx={{ width: 40 }} />
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {dnsRecords[domain.id].map((record, idx) => (
+                                    <TableRow key={idx}>
+                                      <TableCell>
+                                        <Chip size="small" label={record.type} variant="outlined" />
+                                      </TableCell>
+                                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                        {record.name}
+                                      </TableCell>
+                                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', maxWidth: 400 }}>
+                                        {record.value}
+                                      </TableCell>
+                                      {dnsRecords[domain.id].some((r) => r.priority !== undefined) && (
+                                        <TableCell>{record.priority ?? '—'}</TableCell>
+                                      )}
+                                      <TableCell>
+                                        <Tooltip title="Copy value">
+                                          <IconButton
+                                            size="small"
+                                            onClick={() => { void navigator.clipboard.writeText(record.value); }}
+                                          >
+                                            <ContentCopyIcon fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              No DNS records available for this domain.
+                            </Typography>
+                          )}
+                        </Paper>
+                      </Collapse>
 
                       <Divider />
 
@@ -1442,6 +1923,7 @@ export default function MailDomainsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
     </DashboardLayout>
   );
 }

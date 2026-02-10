@@ -93,6 +93,46 @@ export interface UpdateAliasPayload {
   destination: string;
 }
 
+export interface CreateDomainPayload {
+  domain: string;
+  spamThreshold?: number;
+  greylistingEnabled?: boolean;
+  greylistingDelaySeconds?: number;
+  virusScanEnabled?: boolean;
+}
+
+export interface DnsRecord {
+  type: string;
+  name: string;
+  value: string;
+  priority?: number;
+}
+
+export interface DnsSuggestionsResponse {
+  domain: string;
+  records: DnsRecord[];
+}
+
+export interface MailServiceStatus {
+  name: string;
+  active: boolean;
+}
+
+export interface MailStatusResponse {
+  services: MailServiceStatus[];
+  queueDepth?: number;
+}
+
+export interface SecurityStatus {
+  tls: { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string };
+  postscreen: { enabled: boolean; configuredAt?: string };
+  dmarc: { domains: string[]; configuredAt?: string };
+}
+
+export interface AutomationResult {
+  automationLogs: AutomationLog[];
+}
+
 const API_BASE = '/api/mail';
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
@@ -126,8 +166,25 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const mailAPI = {
+  async getStatus(): Promise<MailStatusResponse> {
+    return fetchJSON<MailStatusResponse>(`${API_BASE}/status`);
+  },
+
   async listDomains(): Promise<MailDomain[]> {
     return fetchJSON<MailDomain[]>(`${API_BASE}/domains`);
+  },
+
+  async createDomain(payload: CreateDomainPayload): Promise<MailDomainResult> {
+    return fetchJSON<MailDomainResult>(`${API_BASE}/domains`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteDomain(domainId: string): Promise<MailDomainResult> {
+    return fetchJSON<MailDomainResult>(`${API_BASE}/domains/${domainId}`, {
+      method: 'DELETE',
+    });
   },
 
   async updateDomainSettings(domainId: string, updates: DomainSettingsUpdate): Promise<MailDomainResult> {
@@ -187,6 +244,44 @@ export const mailAPI = {
   async removeAlias(domainId: string, aliasId: string): Promise<MailDomainResult> {
     return fetchJSON<MailDomainResult>(`${API_BASE}/domains/${domainId}/aliases/${aliasId}`, {
       method: 'DELETE',
+    });
+  },
+
+  async getDnsSuggestions(domainId: string): Promise<DnsSuggestionsResponse> {
+    return fetchJSON<DnsSuggestionsResponse>(`${API_BASE}/domains/${domainId}/dns`);
+  },
+
+  async rotateDkim(domainId: string, selector?: string): Promise<MailDomainResult> {
+    return fetchJSON<MailDomainResult>(`${API_BASE}/domains/${domainId}/dkim/rotate`, {
+      method: 'POST',
+      body: JSON.stringify(selector ? { selector } : {}),
+    });
+  },
+
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  async getSecurityStatus(): Promise<SecurityStatus> {
+    return fetchJSON<SecurityStatus>(`${API_BASE}/security/status`);
+  },
+
+  async setupMailTls(payload: { hostname: string; email: string; reuseExisting?: boolean }): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/security/tls`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async setupPostscreen(dryRun?: boolean): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/security/postscreen`, {
+      method: 'POST',
+      body: JSON.stringify({ dryRun }),
+    });
+  },
+
+  async setupDmarc(payload: { domain: string; reportEmail?: string }): Promise<AutomationResult> {
+    return fetchJSON<AutomationResult>(`${API_BASE}/security/dmarc`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

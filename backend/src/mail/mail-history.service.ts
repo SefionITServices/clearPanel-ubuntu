@@ -4,7 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getDataFilePath } from '../common/paths';
 
-export type MailAutomationScope = 'stack' | 'domain' | 'mailbox' | 'alias' | 'dkim';
+export type MailAutomationScope = 'stack' | 'domain' | 'mailbox' | 'alias' | 'dkim' | 'tls' | 'security';
 
 export interface MailAutomationHistoryRecord {
   id: string;

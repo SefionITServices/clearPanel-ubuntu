@@ -839,4 +839,95 @@ export class MailService {
     }
     return trimmed;
   }
+
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  async setupMailTls(
+    hostname: string,
+    email: string,
+    reuseExisting?: boolean,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupMailTls(hostname, email, reuseExisting);
+    await this.history.log({
+      scope: 'tls' as MailAutomationScope,
+      action: 'setup-tls',
+      target: hostname,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async setupPostscreen(dryRun?: boolean): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupPostscreen(dryRun);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-postscreen',
+      target: 'postfix',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async setupDmarc(
+    domain: string,
+    reportEmail?: string,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupDmarc(domain, reportEmail);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-dmarc',
+      target: domain,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async getSecurityStatus(): Promise<{
+    tls: { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string };
+    postscreen: { enabled: boolean; configuredAt?: string };
+    dmarc: { domains: string[]; configuredAt?: string };
+  }> {
+    const stateRoot =
+      process.env.MAIL_MODE === 'production'
+        ? '/etc/clearpanel/mail'
+        : path.join(process.cwd(), '..', 'backend', 'mail-state');
+
+    const result = {
+      tls: { configured: false } as { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string },
+      postscreen: { enabled: false } as { enabled: boolean; configuredAt?: string },
+      dmarc: { domains: [] as string[], configuredAt: undefined as string | undefined },
+    };
+
+    try {
+      const tlsRaw = await fs.readFile(path.join(stateRoot, 'tls.json'), 'utf-8');
+      const tls = JSON.parse(tlsRaw);
+      result.tls = { configured: true, hostname: tls.hostname, certDir: tls.certDir, configuredAt: tls.configuredAt };
+    } catch { /* not configured */ }
+
+    try {
+      const psRaw = await fs.readFile(path.join(stateRoot, 'postscreen.json'), 'utf-8');
+      const ps = JSON.parse(psRaw);
+      result.postscreen = { enabled: ps.enabled === true, configuredAt: ps.configuredAt };
+    } catch { /* not configured */ }
+
+    try {
+      const dmarcDir = path.join(stateRoot, 'dmarc');
+      const files = await fs.readdir(dmarcDir);
+      const domains: string[] = [];
+      let latestDate: string | undefined;
+      for (const f of files) {
+        if (f.endsWith('.json')) {
+          try {
+            const raw = await fs.readFile(path.join(dmarcDir, f), 'utf-8');
+            const d = JSON.parse(raw);
+            domains.push(d.domain);
+            if (!latestDate || d.configuredAt > latestDate) latestDate = d.configuredAt;
+          } catch { /* skip */ }
+        }
+      }
+      result.dmarc = { domains, configuredAt: latestDate };
+    } catch { /* not configured */ }
+
+    return result;
+  }
 }

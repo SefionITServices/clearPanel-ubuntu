@@ -220,4 +220,43 @@ export class MailController {
   rotateDkim(@Param('id') id: string, @Body() body: { selector?: string }) {
     return this.mailService.rotateDkim(id, body?.selector);
   }
+
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  @SkipThrottle()
+  @Get('security/status')
+  getSecurityStatus() {
+    return this.mailService.getSecurityStatus();
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/tls')
+  setupMailTls(
+    @Body() body: { hostname: string; email: string; reuseExisting?: boolean },
+  ) {
+    if (!body.hostname) {
+      throw new BadRequestException('hostname is required');
+    }
+    if (!body.email) {
+      throw new BadRequestException('email is required');
+    }
+    return this.mailService.setupMailTls(body.hostname, body.email, body.reuseExisting);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/postscreen')
+  setupPostscreen(@Body() body: { dryRun?: boolean }) {
+    return this.mailService.setupPostscreen(body?.dryRun);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/dmarc')
+  setupDmarc(
+    @Body() body: { domain: string; reportEmail?: string },
+  ) {
+    if (!body.domain) {
+      throw new BadRequestException('domain is required');
+    }
+    return this.mailService.setupDmarc(body.domain, body.reportEmail);
+  }
 }
