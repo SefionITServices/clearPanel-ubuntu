@@ -55,6 +55,68 @@ export class SslService {
   }
 
   /**
+   * Pre-flight DNS check: resolve domain and compare to server IP
+   */
+  private async checkDnsResolution(domain: string): Promise<{ ok: boolean; resolvedIp?: string; serverIp?: string; message?: string }> {
+    try {
+      // Get server's public IP
+      let serverIp = '';
+      try {
+        const { stdout } = await execAsync('curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me', { timeout: 10000 });
+        serverIp = stdout.trim();
+      } catch {
+        // fallback: try hostname -I
+        try {
+          const { stdout } = await execAsync('hostname -I | awk \'{print $1}\'', { timeout: 5000 });
+          serverIp = stdout.trim();
+        } catch {}
+      }
+
+      // Resolve domain
+      let resolvedIp = '';
+      try {
+        const { stdout } = await execAsync(`dig +short A ${domain} @8.8.8.8 | head -1`, { timeout: 10000 });
+        resolvedIp = stdout.trim();
+      } catch {
+        try {
+          const { stdout } = await execAsync(`host ${domain} 2>/dev/null | grep 'has address' | head -1 | awk '{print $NF}'`, { timeout: 10000 });
+          resolvedIp = stdout.trim();
+        } catch {}
+      }
+
+      if (!resolvedIp) {
+        return { ok: false, serverIp, message: `Domain "${domain}" does not resolve to any IP address. Make sure DNS A record is set.` };
+      }
+
+      if (serverIp && resolvedIp !== serverIp) {
+        return {
+          ok: false,
+          resolvedIp,
+          serverIp,
+          message: `Domain "${domain}" resolves to ${resolvedIp} but this server's IP is ${serverIp}. Update the DNS A record to point to ${serverIp}.`,
+        };
+      }
+
+      return { ok: true, resolvedIp, serverIp };
+    } catch {
+      // Don't block SSL install if pre-flight check itself fails
+      return { ok: true, message: 'DNS pre-flight check skipped' };
+    }
+  }
+
+  /**
+   * Try to read the latest certbot log for detailed error info
+   */
+  private async readCertbotLog(): Promise<string> {
+    try {
+      const { stdout } = await execAsync('sudo -n tail -50 /var/log/letsencrypt/letsencrypt.log 2>/dev/null', { timeout: 5000 });
+      return stdout.trim();
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Request and install an SSL certificate for a domain using Let's Encrypt
    */
   async installCertificate(
@@ -75,6 +137,18 @@ export class SslService {
       logs.push('Certbot installed successfully');
     }
 
+    // Verify nginx is running
+    try {
+      const { stdout } = await execAsync('sudo -n systemctl is-active nginx', { timeout: 5000 });
+      if (stdout.trim() !== 'active') {
+        logs.push('Warning: Nginx is not running, attempting to start...');
+        await execAsync('sudo -n systemctl start nginx', { timeout: 10000 });
+        logs.push('Nginx started');
+      }
+    } catch {
+      logs.push('Warning: Could not verify nginx status');
+    }
+
     // Verify nginx vhost exists for the domain
     const vhostExists = await fs
       .access(`/etc/nginx/sites-available/${domain}`)
@@ -89,17 +163,52 @@ export class SslService {
       };
     }
 
+    // Pre-flight DNS check
+    logs.push('Checking DNS resolution...');
+    const dnsCheck = await this.checkDnsResolution(domain);
+    if (!dnsCheck.ok) {
+      logs.push(`DNS check failed: ${dnsCheck.message}`);
+      return {
+        success: false,
+        message: dnsCheck.message || `DNS check failed for ${domain}`,
+        logs,
+      };
+    }
+    logs.push(`DNS OK: ${domain} resolves to ${dnsCheck.resolvedIp}${dnsCheck.serverIp ? ` (server IP: ${dnsCheck.serverIp})` : ''}`);
+
+    if (includeWww) {
+      const wwwCheck = await this.checkDnsResolution(`www.${domain}`);
+      if (!wwwCheck.ok) {
+        logs.push(`www DNS check failed: ${wwwCheck.message}`);
+        logs.push('Falling back to installing without www...');
+        includeWww = false;
+      } else {
+        logs.push(`DNS OK: www.${domain} resolves to ${wwwCheck.resolvedIp}`);
+      }
+    }
+
+    // Check port 80 is accessible
+    try {
+      await execAsync(`curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://${domain}/.well-known/acme-challenge/test 2>/dev/null || true`, { timeout: 10000 });
+    } catch {
+      logs.push('Warning: Could not verify port 80 accessibility');
+    }
+
     // Build certbot command
     const domains = includeWww ? `-d ${domain} -d www.${domain}` : `-d ${domain}`;
-    const cmd = `sudo -n certbot --nginx ${domains} --non-interactive --agree-tos --email ${email} --redirect`;
+    const cmd = `sudo -n certbot --nginx ${domains} --non-interactive --agree-tos --email ${email} --redirect -v`;
 
     logs.push(`Running: certbot --nginx ${domains}`);
     this.logger.log(`Installing SSL for ${domain} (email: ${email})`);
 
     try {
-      const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
+      const { stdout, stderr } = await execAsync(cmd, { timeout: 180000 });
       if (stdout) logs.push(stdout.trim());
-      if (stderr) logs.push(stderr.trim());
+      if (stderr) {
+        // Filter out debug noise, keep useful lines
+        const usefulStderr = stderr.split('\n').filter(l => !l.startsWith('Saving debug log')).join('\n').trim();
+        if (usefulStderr) logs.push(usefulStderr);
+      }
 
       // Verify certificate was installed
       const cert = await this.getCertificateInfo(domain);
@@ -111,18 +220,43 @@ export class SslService {
         logs,
       };
     } catch (error: any) {
-      const errOutput = error.stderr || error.stdout || error.message || String(error);
-      logs.push(errOutput);
-      this.logger.error(`SSL installation failed for ${domain}: ${errOutput}`);
+      const errStdout = (error.stdout || '').trim();
+      const errStderr = (error.stderr || '').trim();
+      const errMsg = error.message || String(error);
+
+      if (errStdout) logs.push(errStdout);
+      if (errStderr) logs.push(errStderr);
+
+      // Try reading the certbot log for more details
+      const certbotLog = await this.readCertbotLog();
+      if (certbotLog) {
+        // Extract the most relevant lines (challenge failures, errors)
+        const relevantLines = certbotLog.split('\n').filter(l =>
+          /error|fail|challenge|unauthorized|invalid|detail|hint|problem|refused|timeout|resolv/i.test(l)
+        ).slice(-15).join('\n');
+        if (relevantLines) {
+          logs.push('--- Certbot log details ---');
+          logs.push(relevantLines);
+        }
+      }
+
+      this.logger.error(`SSL installation failed for ${domain}: ${errMsg}`);
 
       // Provide helpful error messages
+      const allOutput = [errStdout, errStderr, errMsg, certbotLog].join(' ');
       let message = `SSL installation failed for ${domain}`;
-      if (errOutput.includes('DNS problem') || errOutput.includes('NXDOMAIN')) {
+      if (allOutput.includes('DNS problem') || allOutput.includes('NXDOMAIN')) {
         message += '. DNS is not pointing to this server. Ensure A records for the domain point to your server IP.';
-      } else if (errOutput.includes('too many certificates') || errOutput.includes('rate limit')) {
+      } else if (allOutput.includes('too many certificates') || allOutput.includes('rate limit')) {
         message += '. Let\'s Encrypt rate limit reached. Try again later or use a staging certificate.';
-      } else if (errOutput.includes('Connection refused') || errOutput.includes('Timeout')) {
-        message += '. Could not connect to Let\'s Encrypt. Ensure port 80 is open.';
+      } else if (allOutput.includes('Connection refused') || allOutput.includes('Timeout')) {
+        message += '. Could not connect to the server on port 80. Ensure port 80 is open in your firewall (ufw allow 80).';
+      } else if (allOutput.includes('unauthorized') || allOutput.includes('challenge')) {
+        message += '. ACME challenge failed. Ensure: (1) DNS A record points to this server, (2) Port 80 is open, (3) Nginx is running and serving the domain.';
+      } else if (allOutput.includes('Could not bind') || allOutput.includes('Address already in use')) {
+        message += '. Port 80 is in use by another process. Stop any conflicting services.';
+      } else if (allOutput.includes('sudo') || allOutput.includes('password')) {
+        message += '. Permission denied. Check sudoers configuration for the clearpanel user.';
       }
 
       return { success: false, message, logs };

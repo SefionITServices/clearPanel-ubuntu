@@ -49,18 +49,39 @@ export class DatabaseService {
    */
   async getStatus(): Promise<{ installed: boolean; running: boolean; version: string }> {
     try {
-      const { stdout: version } = await exec('sudo -n mysql --version 2>/dev/null || echo "not installed"', { timeout: 5000 });
-      const installed = !version.includes('not installed');
+      // First try without sudo (mysql --version doesn't need root)
+      let version = '';
+      let installed = false;
+      try {
+        const { stdout } = await exec('mysql --version 2>/dev/null', { timeout: 5000 });
+        version = stdout.trim();
+        installed = true;
+      } catch {
+        // Fallback: try with sudo
+        try {
+          const { stdout } = await exec('sudo -n mysql --version 2>/dev/null', { timeout: 5000 });
+          version = stdout.trim();
+          installed = version.length > 0 && !version.includes('not installed');
+        } catch {
+          installed = false;
+        }
+      }
 
       let running = false;
       if (installed) {
         try {
           await exec('sudo -n mysqladmin ping 2>/dev/null', { timeout: 5000 });
           running = true;
-        } catch { running = false; }
+        } catch {
+          // Also try systemctl
+          try {
+            const { stdout } = await exec('sudo -n systemctl is-active mariadb 2>/dev/null', { timeout: 5000 });
+            running = stdout.trim() === 'active';
+          } catch { running = false; }
+        }
       }
 
-      return { installed, running, version: installed ? version.trim() : '' };
+      return { installed, running, version: installed ? version : '' };
     } catch {
       return { installed: false, running: false, version: '' };
     }
@@ -69,15 +90,43 @@ export class DatabaseService {
   /**
    * Install MySQL/MariaDB
    */
-  async installMySQL(): Promise<{ success: boolean; message: string }> {
+  async installMySQL(): Promise<{ success: boolean; message: string; logs?: string[] }> {
+    const logs: string[] = [];
     try {
-      await exec('sudo -n apt-get update', { timeout: 60000 });
-      await exec('sudo -n apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
+      logs.push('Updating package list...');
+      await exec('sudo -n apt-get update -qq', { timeout: 60000 });
+
+      logs.push('Installing MariaDB server...');
+      await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server', { timeout: 300000 });
+
+      logs.push('Installing MariaDB client...');
+      await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-client', { timeout: 120000 });
+
+      logs.push('Enabling MariaDB service...');
       await exec('sudo -n systemctl enable mariadb', { timeout: 10000 });
-      await exec('sudo -n systemctl start mariadb', { timeout: 10000 });
-      return { success: true, message: 'MariaDB installed and started successfully' };
+
+      logs.push('Starting MariaDB service...');
+      await exec('sudo -n systemctl start mariadb', { timeout: 15000 });
+
+      // Verify it's running
+      try {
+        await exec('sudo -n mysqladmin ping', { timeout: 5000 });
+        logs.push('MariaDB is running and responding to connections');
+      } catch {
+        logs.push('Warning: MariaDB installed but may not be responding yet');
+      }
+
+      return { success: true, message: 'MariaDB installed and started successfully', logs };
     } catch (e: any) {
-      throw new Error(`Failed to install MariaDB: ${e.message}`);
+      const errMsg = e.stderr || e.message || String(e);
+      logs.push(`Error: ${errMsg}`);
+
+      let hint = '';
+      if (errMsg.includes('sudo') || errMsg.includes('password')) {
+        hint = ' Check that the clearpanel user has NOPASSWD sudo access for apt-get and systemctl commands.';
+      }
+
+      throw new Error(`Failed to install MariaDB: ${errMsg}.${hint}`);
     }
   }
 

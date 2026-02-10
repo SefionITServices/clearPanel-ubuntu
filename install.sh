@@ -226,26 +226,36 @@ chmod 440 /etc/sudoers.d/clearpanel-bind9
 # Allow clearpanel user to manage SSL certificates via certbot
 cat > /etc/sudoers.d/clearpanel-ssl << 'EOF'
 # Allow clearpanel user to install and manage SSL certificates
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot *
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot
+clearpanel ALL=(ALL) NOPASSWD: /snap/bin/certbot *
 clearpanel ALL=(ALL) NOPASSWD: /snap/bin/certbot
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get update*
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y certbot*
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tail -50 /var/log/letsencrypt/letsencrypt.log
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tail * /var/log/letsencrypt/letsencrypt.log
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-ssl
 
 # Allow clearpanel user to manage MySQL/MariaDB
 cat > /etc/sudoers.d/clearpanel-mysql << 'EOF'
 # Allow clearpanel user to manage MySQL/MariaDB databases and users
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql *
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql --version
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin ping
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin *
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqldump *
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqldump
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get update*
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-server*
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-client*
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/env DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get *
+clearpanel ALL=(ALL) NOPASSWD: SETENV: /usr/bin/apt-get *
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl enable mariadb
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl start mariadb
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart mariadb
 clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl status mariadb
+clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl is-active mariadb
 EOF
 chmod 440 /etc/sudoers.d/clearpanel-mysql
 
