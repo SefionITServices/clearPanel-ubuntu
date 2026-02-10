@@ -485,6 +485,127 @@ location /phpmyadmin {
     return { success: true, message: `phpMyAdmin reconfigured with PHP ${phpVer}-FPM`, phpVersion: phpVer };
   }
 
+  /**
+   * Diagnose phpMyAdmin — check every service/file it depends on
+   */
+  async diagnosePhpMyAdmin(): Promise<{
+    success: boolean;
+    checks: Array<{ name: string; status: 'ok' | 'error' | 'warn'; detail: string }>;
+  }> {
+    const checks: Array<{ name: string; status: 'ok' | 'error' | 'warn'; detail: string }> = [];
+
+    // 1. phpMyAdmin files exist?
+    const pmaIndex = await this.fileExists('/usr/share/phpmyadmin/index.php');
+    const pmaConfig = await this.fileExists('/etc/phpmyadmin/config.inc.php');
+    checks.push({
+      name: 'phpMyAdmin Files',
+      status: pmaIndex ? 'ok' : 'error',
+      detail: pmaIndex
+        ? `index.php found${pmaConfig ? ', config.inc.php found' : ', config.inc.php missing (optional)'}`
+        : 'phpMyAdmin is not installed (/usr/share/phpmyadmin/index.php missing)',
+    });
+
+    // 2. Nginx running?
+    const nginxRunning = await this.serviceRunning('nginx');
+    checks.push({
+      name: 'Nginx',
+      status: nginxRunning ? 'ok' : 'error',
+      detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running',
+    });
+
+    // 3. Nginx phpMyAdmin config?
+    const snippetExists = await this.fileExists('/etc/nginx/snippets/phpmyadmin.conf');
+    let snippetIncluded = false;
+    if (snippetExists) {
+      try {
+        const defConf = await this.sudo('cat /etc/nginx/sites-enabled/default 2>/dev/null || true');
+        snippetIncluded = defConf.includes('phpmyadmin.conf');
+      } catch {}
+    }
+    checks.push({
+      name: 'Nginx phpMyAdmin Config',
+      status: snippetExists && snippetIncluded ? 'ok' : snippetExists ? 'warn' : 'error',
+      detail: !snippetExists
+        ? 'snippets/phpmyadmin.conf does not exist'
+        : snippetIncluded
+          ? 'Snippet exists and is included in site config'
+          : 'Snippet exists but is NOT included in any site config',
+    });
+
+    // 4. PHP-FPM installed & running?
+    const phpVer = await this.detectPhpFpmVersion();
+    const fpmService = `php${phpVer}-fpm`;
+    const fpmRunning = await this.serviceRunning(fpmService);
+    checks.push({
+      name: `PHP-FPM (${phpVer})`,
+      status: fpmRunning ? 'ok' : 'error',
+      detail: fpmRunning
+        ? `${fpmService} is running`
+        : `${fpmService} is NOT running`,
+    });
+
+    // 5. PHP-FPM socket exists?
+    const socketPath = `/var/run/php/php${phpVer}-fpm.sock`;
+    const socketExists = await this.fileExists(socketPath);
+    checks.push({
+      name: 'PHP-FPM Socket',
+      status: socketExists ? 'ok' : 'error',
+      detail: socketExists
+        ? `Socket found: ${socketPath}`
+        : `Socket NOT found: ${socketPath}`,
+    });
+
+    // 6. MySQL / MariaDB running?
+    const mysqlRunning = await this.serviceRunning('mysql') || await this.serviceRunning('mariadb');
+    checks.push({
+      name: 'MySQL / MariaDB',
+      status: mysqlRunning ? 'ok' : 'error',
+      detail: mysqlRunning
+        ? 'Database server is running'
+        : 'MySQL/MariaDB is NOT running — phpMyAdmin needs a database server',
+    });
+
+    // 7. Test nginx config syntax
+    let nginxTestOk = false;
+    let nginxTestDetail = '';
+    try {
+      await this.sudo('nginx -t 2>&1');
+      nginxTestOk = true;
+      nginxTestDetail = 'nginx -t passed';
+    } catch (e: any) {
+      nginxTestDetail = `nginx -t FAILED: ${e.message?.substring(0, 200)}`;
+    }
+    checks.push({
+      name: 'Nginx Config Test',
+      status: nginxTestOk ? 'ok' : 'error',
+      detail: nginxTestDetail,
+    });
+
+    // 8. Try curl localhost/phpmyadmin
+    let httpStatus = '';
+    try {
+      httpStatus = await this.sudo(
+        `curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost/phpmyadmin/ 2>/dev/null`,
+      );
+    } catch { httpStatus = '000'; }
+    const httpOk = httpStatus.startsWith('2') || httpStatus.startsWith('3');
+    checks.push({
+      name: 'HTTP Response',
+      status: httpOk ? 'ok' : httpStatus === '502' ? 'error' : httpStatus === '000' ? 'warn' : 'error',
+      detail: httpOk
+        ? `HTTP ${httpStatus} — phpMyAdmin is reachable`
+        : httpStatus === '502'
+          ? 'HTTP 502 Bad Gateway — PHP-FPM socket/config mismatch'
+          : httpStatus === '404'
+            ? 'HTTP 404 — Nginx config not including phpMyAdmin location'
+            : httpStatus === '000'
+              ? 'Could not connect — Nginx may not be running'
+              : `HTTP ${httpStatus}`,
+    });
+
+    return { success: true, checks };
+  }
+
   private async uninstallPhpMyAdmin(): Promise<{ success: boolean; message: string }> {
     try {
       await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y phpmyadmin');

@@ -41,6 +41,8 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CategoryIcon from '@mui/icons-material/Category';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import BuildIcon from '@mui/icons-material/Build';
 
 // ─── types ────────────────────────────────────────────────────────────
 
@@ -106,6 +108,10 @@ export default function AppStorePage() {
     message: '',
     severity: 'success',
   });
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseChecks, setDiagnoseChecks] = useState<Array<{ name: string; status: string; detail: string }>>([]);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [fixing, setFixing] = useState(false);
 
   const fetchApps = async () => {
     try {
@@ -156,6 +162,41 @@ export default function AppStorePage() {
       setSnackbar({ open: true, message: 'Uninstall failed', severity: 'error' });
     } finally {
       setUninstalling(null);
+    }
+  };
+
+  const handleDiagnose = async () => {
+    setDiagnosing(true);
+    setDiagnoseOpen(true);
+    setDiagnoseChecks([]);
+    try {
+      const res = await fetch('/api/app-store/diagnose/phpmyadmin');
+      const data = await res.json();
+      if (data.success) setDiagnoseChecks(data.checks);
+    } catch {
+      setDiagnoseChecks([{ name: 'API Error', status: 'error', detail: 'Could not reach the diagnose endpoint' }]);
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
+  const handleFix = async () => {
+    setFixing(true);
+    try {
+      const res = await fetch('/api/app-store/reconfigure/phpmyadmin', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: data.message || 'phpMyAdmin reconfigured', severity: 'success' });
+        // Re-run diagnosis to show updated status
+        await handleDiagnose();
+        await fetchApps();
+      } else {
+        setSnackbar({ open: true, message: data.message || 'Fix failed', severity: 'error' });
+      }
+    } catch {
+      setSnackbar({ open: true, message: 'Fix failed', severity: 'error' });
+    } finally {
+      setFixing(false);
     }
   };
 
@@ -334,6 +375,7 @@ export default function AppStorePage() {
                     onInstall={handleInstall}
                     onUninstall={handleUninstall}
                     onDetail={setDetailApp}
+                    onDiagnose={app.id === 'phpmyadmin' ? handleDiagnose : undefined}
                   />
                 </Grid>
               ))}
@@ -358,6 +400,7 @@ export default function AppStorePage() {
                     onInstall={handleInstall}
                     onUninstall={handleUninstall}
                     onDetail={setDetailApp}
+                    onDiagnose={app.id === 'phpmyadmin' ? handleDiagnose : undefined}
                   />
                 </Grid>
               ))}
@@ -377,6 +420,26 @@ export default function AppStorePage() {
           </Box>
         )}
       </Box>
+
+      {/* Diagnose Dialog */}
+      <DiagnoseDialog
+        open={diagnoseOpen}
+        onClose={() => setDiagnoseOpen(false)}
+        checks={diagnoseChecks}
+        loading={diagnosing}
+        fixing={fixing}
+        onFix={handleFix}
+      />
+
+      {/* Diagnose Dialog */}
+      <DiagnoseDialog
+        open={diagnoseOpen}
+        onClose={() => setDiagnoseOpen(false)}
+        checks={diagnoseChecks}
+        loading={diagnosing}
+        fixing={fixing}
+        onFix={handleFix}
+      />
 
       {/* Detail Dialog */}
       <AppDetailDialog
@@ -416,6 +479,7 @@ function AppCard({
   onInstall,
   onUninstall,
   onDetail,
+  onDiagnose,
 }: {
   app: AppInfo;
   installing: boolean;
@@ -423,6 +487,7 @@ function AppCard({
   onInstall: (id: string) => void;
   onUninstall: (id: string) => void;
   onDetail: (app: AppInfo) => void;
+  onDiagnose?: () => void;
 }) {
   const { status } = app;
   const icon = ICON_MAP[app.icon] || <StorageIcon sx={{ fontSize: 32 }} />;
@@ -579,6 +644,13 @@ function AppCard({
               >
                 {uninstalling ? 'Removing...' : 'Uninstall'}
               </Button>
+              {onDiagnose && (
+                <Tooltip title="Diagnose">
+                  <IconButton size="small" onClick={onDiagnose} sx={{ border: '1px solid', borderColor: 'divider' }}>
+                    <MonitorHeartIcon sx={{ fontSize: 18, color: '#FBBC04' }} />
+                  </IconButton>
+                </Tooltip>
+              )}
             </>
           )}
         </Box>
@@ -739,6 +811,141 @@ function AppDetailDialog({
               {uninstalling ? 'Removing...' : 'Uninstall'}
             </Button>
           </Stack>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ─── Diagnose Dialog ──────────────────────────────────────────────────
+
+function DiagnoseDialog({
+  open,
+  onClose,
+  checks,
+  loading,
+  fixing,
+  onFix,
+}: {
+  open: boolean;
+  onClose: () => void;
+  checks: Array<{ name: string; status: string; detail: string }>;
+  loading: boolean;
+  fixing: boolean;
+  onFix: () => void;
+}) {
+  const statusIcon = (s: string) => {
+    if (s === 'ok')
+      return (
+        <CheckCircleIcon sx={{ fontSize: 20, color: '#34A853' }} />
+      );
+    if (s === 'warn')
+      return (
+        <InfoOutlinedIcon sx={{ fontSize: 20, color: '#FBBC04' }} />
+      );
+    return (
+      <Box
+        sx={{
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          bgcolor: '#FDDEDE',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: '#EA4335',
+        }}
+      >
+        ✗
+      </Box>
+    );
+  };
+
+  const hasErrors = checks.some((c) => c.status === 'error');
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1 }}>
+        <MonitorHeartIcon sx={{ color: '#FBBC04' }} />
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            phpMyAdmin Diagnostics
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Checking all required services
+          </Typography>
+        </Box>
+      </DialogTitle>
+      <DialogContent dividers>
+        {loading ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 2 }}>
+            <CircularProgress size={36} />
+            <Typography variant="body2" color="text.secondary">
+              Running diagnostics...
+            </Typography>
+          </Box>
+        ) : (
+          <Stack spacing={1}>
+            {checks.map((check, i) => (
+              <Box
+                key={i}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 1.5,
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor:
+                    check.status === 'ok'
+                      ? alpha('#34A853', 0.04)
+                      : check.status === 'warn'
+                        ? alpha('#FBBC04', 0.06)
+                        : alpha('#EA4335', 0.04),
+                  border: '1px solid',
+                  borderColor:
+                    check.status === 'ok'
+                      ? alpha('#34A853', 0.2)
+                      : check.status === 'warn'
+                        ? alpha('#FBBC04', 0.3)
+                        : alpha('#EA4335', 0.2),
+                }}
+              >
+                <Box sx={{ mt: 0.25 }}>{statusIcon(check.status)}</Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                    {check.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                    {check.detail}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, py: 2 }}>
+        <Button onClick={onClose} sx={{ textTransform: 'none' }}>
+          Close
+        </Button>
+        {hasErrors && (
+          <Button
+            variant="contained"
+            disabled={fixing}
+            onClick={onFix}
+            startIcon={fixing ? <CircularProgress size={14} color="inherit" /> : <BuildIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+              bgcolor: '#FBBC04',
+              color: '#000',
+              '&:hover': { bgcolor: '#F9AB00' },
+            }}
+          >
+            {fixing ? 'Fixing...' : 'Auto-Fix (Reconfigure)'}
+          </Button>
         )}
       </DialogActions>
     </Dialog>

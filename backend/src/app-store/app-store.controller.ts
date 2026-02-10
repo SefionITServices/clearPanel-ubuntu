@@ -85,4 +85,16 @@ export class AppStoreController {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+
+  /** Diagnose phpMyAdmin — check all dependent services */
+  @Get('diagnose/phpmyadmin')
+  async diagnosePhpMyAdmin(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const result = await this.appStore.diagnosePhpMyAdmin();
+      return res.json(result);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
 }
