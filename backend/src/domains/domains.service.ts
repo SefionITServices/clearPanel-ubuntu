@@ -332,6 +332,21 @@ export class DomainsService {
     return domain;
   }
 
+  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[] }): Promise<Domain | null> {
+    const domains = await this.readDomains();
+    const domain = domains.find((d) => d.id === id);
+    if (!domain) return null;
+    if (updates.folderPath !== undefined) {
+      domain.folderPath = updates.folderPath;
+      await fs.mkdir(updates.folderPath, { recursive: true });
+    }
+    if (updates.nameservers !== undefined) {
+      domain.nameservers = updates.nameservers.filter(Boolean);
+    }
+    await this.writeDomains(domains);
+    return domain;
+  }
+
   async deleteDomain(id: string): Promise<DomainDeletionResult | null> {
     const domains = await this.readDomains();
     const domainIndex = domains.findIndex((d) => d.id === id);

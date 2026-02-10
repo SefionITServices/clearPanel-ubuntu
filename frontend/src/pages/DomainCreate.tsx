@@ -23,6 +23,10 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
+  Tabs,
+  Tab,
+  Select,
+  MenuItem as MuiMenuItem,
 } from '@mui/material';
 import LanguageIcon from '@mui/icons-material/Language';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -30,7 +34,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import AddIcon from '@mui/icons-material/Add';
-import { useNavigate } from 'react-router-dom';
+import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
 // Backend defaults to ~/public_html/{domain} if no path provided.
@@ -43,7 +48,13 @@ interface DomainInfo {
 
 export default function DomainCreatePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [domainType, setDomainType] = useState<'addon' | 'subdomain'>(
+    searchParams.get('type') === 'subdomain' ? 'subdomain' : 'addon'
+  );
   const [domain, setDomain] = useState('');
+  const [subdomainPrefix, setSubdomainPrefix] = useState('');
+  const [parentDomain, setParentDomain] = useState('');
   const [shareRoot, setShareRoot] = useState(false);
   const [pathMode, setPathMode] = useState<'public_html' | 'root' | 'custom'>('public_html');
   const [customFolderPath, setCustomFolderPath] = useState('');
@@ -77,6 +88,7 @@ export default function DomainCreatePage() {
         if (!cancelled && Array.isArray(data) && data.length > 0) {
           const primary = data[0] as DomainInfo;
           setPrimaryDomain(primary);
+          setParentDomain(primary.name);
           if (shareRoot) {
             setSharedFolderPath(primary.folderPath);
           }
@@ -146,40 +158,45 @@ export default function DomainCreatePage() {
   };
 
   const handleSubmit = async (createAnother: boolean) => {
-    if (!domain) return;
+    // Compute the final domain name based on type
+    const finalDomainName = domainType === 'subdomain'
+      ? `${subdomainPrefix}.${parentDomain}`
+      : domain;
+
+    if (!finalDomainName || (domainType === 'subdomain' && (!subdomainPrefix || !parentDomain))) return;
     setSubmitting(true);
     try {
-      // Only send folderPath if shareRoot is true or user explicitly set a custom path
-      const payload: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[] } = { name: domain };
+      const payload: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[] } = { name: finalDomainName };
       const trimmedSharedPath = sharedFolderPath.trim();
       const trimmedCustomPath = customFolderPath.trim();
 
-      if (shareRoot) {
-        if (!trimmedSharedPath) {
-          alert('Enter the document root path you want to share, or disable "Share document root".');
-          return;
-        }
-        payload.folderPath = trimmedSharedPath;
-      } else {
-        if (pathMode === 'custom') {
-          if (trimmedCustomPath) {
-            payload.folderPath = trimmedCustomPath;
+      if (domainType === 'addon') {
+        if (shareRoot) {
+          if (!trimmedSharedPath) {
+            alert('Enter the document root path you want to share, or disable "Share document root".');
+            return;
           }
+          payload.folderPath = trimmedSharedPath;
         } else {
-          // Send pathMode so backend knows where to place the domain folder
-          // 'root' = ~/{domain}, 'public_html' = ~/public_html/{domain}
-          payload.pathMode = pathMode;
+          if (pathMode === 'custom') {
+            if (trimmedCustomPath) {
+              payload.folderPath = trimmedCustomPath;
+            }
+          } else {
+            payload.pathMode = pathMode;
+          }
+        }
+
+        const customNameservers = nameservers
+          .split(/\r?\n|,/)
+          .map((ns) => ns.trim())
+          .filter((ns) => ns.length > 0);
+
+        if (customNameservers.length > 0) {
+          payload.nameservers = customNameservers;
         }
       }
-
-      const customNameservers = nameservers
-        .split(/\r?\n|,/)
-        .map((ns) => ns.trim())
-        .filter((ns) => ns.length > 0);
-
-      if (customNameservers.length > 0) {
-        payload.nameservers = customNameservers;
-      }
+      // Subdomains: pathMode defaults to public_html subfolder
 
       const response = await fetch('/api/domains', {
         method: 'POST',
@@ -189,17 +206,14 @@ export default function DomainCreatePage() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Failed to create domain:', response.status, errorText);
-        alert(`Failed to create domain: ${errorText}`);
+        alert(`Failed to create ${domainType}: ${errorText}`);
         return;
       }
 
-      const result = await response.json();
-      console.log('Domain created:', result);
-
       if (createAnother) {
-        setCreatedDomain(domain);
+        setCreatedDomain(finalDomainName);
         setDomain('');
+        setSubdomainPrefix('');
         setCustomFolderPath('');
         setSharedFolderPath('');
         setShareRoot(false);
@@ -207,11 +221,10 @@ export default function DomainCreatePage() {
         setSubdomain('');
         setNameservers('');
       } else {
-        setCreatedDomain(domain);
+        setCreatedDomain(finalDomainName);
       }
     } catch (err) {
-      console.error('Error creating domain:', err);
-      alert('Error creating domain. Please check the console for details.');
+      alert('Error creating domain. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -225,16 +238,32 @@ export default function DomainCreatePage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <LanguageIcon sx={{ color: '#34A853', fontSize: 28 }} />
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>Create Domain</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                {domainType === 'subdomain' ? 'Create Subdomain' : 'Create Domain'}
+              </Typography>
               <Typography variant="body1" color="text.secondary">
-                Add a new domain to your server
+                {domainType === 'subdomain'
+                  ? 'Add a new subdomain under an existing domain'
+                  : 'Add a new addon domain to your server'}
               </Typography>
             </Box>
           </Box>
-          <Button variant="outlined" onClick={() => navigate('/domains')}>
+          <Button variant="outlined" onClick={() => navigate('/domains')} sx={{ textTransform: 'none' }}>
             Back to Domains
           </Button>
         </Box>
+
+        {/* Domain Type Toggle */}
+        <Paper sx={{ mb: 3 }}>
+          <Tabs
+            value={domainType}
+            onChange={(_, v) => { setDomainType(v); setDomain(''); setSubdomainPrefix(''); setCreatedDomain(null); }}
+            sx={{ borderBottom: 1, borderColor: 'divider' }}
+          >
+            <Tab value="addon" label="Addon Domain" icon={<AddIcon />} iconPosition="start" sx={{ textTransform: 'none' }} />
+            <Tab value="subdomain" label="Subdomain" icon={<SubdirectoryArrowRightIcon />} iconPosition="start" sx={{ textTransform: 'none' }} />
+          </Tabs>
+        </Paper>
 
         {/* DNS Instructions Panel - shown after domain creation */}
         {createdDomain && (
@@ -408,10 +437,75 @@ export default function DomainCreatePage() {
 
         <Paper sx={{ mb: 4, overflow: 'hidden' }}>
           <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8f9fa' }}>
-            <Typography variant="subtitle1" fontWeight={600}>Domain Configuration</Typography>
+            <Typography variant="subtitle1" fontWeight={600}>
+              {domainType === 'subdomain' ? 'Subdomain Configuration' : 'Domain Configuration'}
+            </Typography>
           </Box>
           <Box sx={{ p: 3 }}>
             <Stack spacing={3}>
+
+              {/* ---- SUBDOMAIN MODE ---- */}
+              {domainType === 'subdomain' && (
+                <>
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>Subdomain Name</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                      Enter the subdomain prefix (e.g. "blog", "shop", "api"):
+                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <TextField
+                        sx={{ flex: 1 }}
+                        placeholder="blog"
+                        value={subdomainPrefix}
+                        onChange={(e) => setSubdomainPrefix(e.target.value.trim().toLowerCase())}
+                        disabled={submitting}
+                      />
+                      <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>.</Typography>
+                      <TextField
+                        select
+                        value={parentDomain}
+                        onChange={(e) => setParentDomain(e.target.value)}
+                        disabled={submitting || !primaryDomain}
+                        sx={{ minWidth: 220 }}
+                      >
+                        {primaryDomain && (
+                          <MuiMenuItem value={primaryDomain.name}>{primaryDomain.name}</MuiMenuItem>
+                        )}
+                      </TextField>
+                    </Stack>
+                    {subdomainPrefix && parentDomain && (
+                      <Typography variant="caption" color="primary" sx={{ mt: 0.5, display: 'block' }}>
+                        Will create: <strong>{subdomainPrefix}.{parentDomain}</strong>
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Divider />
+
+                  <Stack direction="row" spacing={2}>
+                    <Button
+                      variant="contained"
+                      disabled={!subdomainPrefix || !parentDomain || submitting}
+                      onClick={() => handleSubmit(false)}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Create Subdomain
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={!subdomainPrefix || !parentDomain || submitting}
+                      onClick={() => handleSubmit(true)}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Create & Add Another
+                    </Button>
+                  </Stack>
+                </>
+              )}
+
+              {/* ---- ADDON DOMAIN MODE ---- */}
+              {domainType === 'addon' && (
+                <>
                 {/* Domain */}
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
@@ -604,6 +698,7 @@ export default function DomainCreatePage() {
                     variant="contained"
                     disabled={!domain || submitting}
                     onClick={() => handleSubmit(false)}
+                    sx={{ textTransform: 'none' }}
                   >
                     Submit
                   </Button>
@@ -611,6 +706,7 @@ export default function DomainCreatePage() {
                     variant="outlined"
                     disabled={!domain || submitting}
                     onClick={() => handleSubmit(true)}
+                    sx={{ textTransform: 'none' }}
                   >
                     Submit And Create Another
                   </Button>
@@ -619,6 +715,8 @@ export default function DomainCreatePage() {
                     Return To Domains
                   </Link>
                 </Stack>
+                </>
+              )}
               </Stack>
             </Box>
           </Paper>
