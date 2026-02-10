@@ -11,7 +11,10 @@ import {
   alpha,
   LinearProgress,
   Grid,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import FolderIcon from '@mui/icons-material/Folder';
 import StorageIcon from '@mui/icons-material/Storage';
@@ -106,6 +109,7 @@ export default function ToolsPage() {
   const { username } = useAuth();
   const [serverInfo, setServerInfo] = useState<{ primaryDomain?: string; serverIp?: string }>({});
   const [diskUsage, setDiskUsage] = useState('Loading...');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     fetch('/api/server/nameservers').then(r => r.json()).then(data => {
@@ -288,33 +292,79 @@ export default function ToolsPage() {
       <Box sx={{ display: 'flex', gap: 3, flexWrap: { xs: 'wrap', lg: 'nowrap' } }}>
         {/* Left: tools grid */}
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Typography variant="h4" sx={{ mb: 3, fontWeight: 700 }}>
-            Tools
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Typography variant="h4" sx={{ fontWeight: 700 }}>
+              Tools
+            </Typography>
+            <TextField
+              size="small"
+              placeholder="Search tools..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ fontSize: 20, color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ ml: 'auto', width: 260 }}
+            />
+          </Box>
           <Stack spacing={4}>
-            {toolSections.map((section) => (
-              <Box key={section.title}>
-                <Typography
-                  variant="h6"
-                  sx={{ mb: 2, fontWeight: 600, color: 'text.primary' }}
-                >
-                  {section.title}
-                </Typography>
-                <Grid container spacing={2}>
-                  {section.items.map((it) => (
-                    <Grid size={{ xs: 12, sm: 6, md: 3 }} key={it.label}>
-                      <ToolCard
-                        icon={it.icon}
-                        label={it.label}
-                        description={it.description}
-                        onClick={it.onClick}
-                        color={it.color}
-                      />
+            {toolSections
+              .map((section) => {
+                const filtered = section.items.filter(
+                  (it) =>
+                    !search ||
+                    it.label.toLowerCase().includes(search.toLowerCase()) ||
+                    it.description?.toLowerCase().includes(search.toLowerCase())
+                );
+                if (filtered.length === 0) return null;
+                return (
+                  <Box key={section.title}>
+                    <Typography
+                      variant="h6"
+                      sx={{ mb: 2, fontWeight: 600, color: 'text.primary' }}
+                    >
+                      {section.title}
+                    </Typography>
+                    <Grid container spacing={2}>
+                      {filtered.map((it) => (
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }} key={it.label}>
+                          <ToolCard
+                            icon={it.icon}
+                            label={it.label}
+                            description={it.description}
+                            onClick={it.onClick}
+                            color={it.color}
+                          />
+                        </Grid>
+                      ))}
                     </Grid>
-                  ))}
-                </Grid>
+                  </Box>
+                );
+              })
+              .filter(Boolean)}
+            {toolSections.every((s) =>
+              s.items.every(
+                (it) =>
+                  search &&
+                  !it.label.toLowerCase().includes(search.toLowerCase()) &&
+                  !it.description?.toLowerCase().includes(search.toLowerCase())
+              )
+            ) && (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                  No tools found
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Try a different search term
+                </Typography>
               </Box>
-            ))}
+            )}
           </Stack>
         </Box>
 
