@@ -15,6 +15,7 @@ import { SetupModule } from './setup/setup.module';
 import { SslModule } from './ssl/ssl.module';
 import { DatabaseModule } from './database/database.module';
 import { AppStoreModule } from './app-store/app-store.module';
+import { PhpModule } from './php/php.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AppStoreModule } from './app-store/app-store.module';
     SslModule,
     DatabaseModule,
     AppStoreModule,
+    PhpModule,
   ],
 })
 export class AppModule implements NestModule {

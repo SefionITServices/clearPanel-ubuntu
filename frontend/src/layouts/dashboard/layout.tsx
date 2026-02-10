@@ -36,6 +36,7 @@ import {
   Terminal as TerminalIcon,
   Storage as StorageIcon,
   Store as StoreIcon,
+  Code as CodeIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -61,6 +62,7 @@ const navSections = [
       { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
       { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
       { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
+      { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
     ],
   },
   {

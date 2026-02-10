@@ -35,6 +35,22 @@ export class WebServerService {
     }
   }
 
+  /**
+   * Detect the active versioned PHP-FPM socket.
+   * Checks from highest to lowest version; falls back to generic socket.
+   */
+  private async detectPhpFpmSocket(): Promise<string> {
+    const versions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+    for (const ver of versions) {
+      const sock = `/var/run/php/php${ver}-fpm.sock`;
+      try {
+        await fs.access(sock);
+        return sock;
+      } catch {}
+    }
+    return '/var/run/php/php-fpm.sock';
+  }
+
   async installNginx(): Promise<{ success: boolean; message: string }> {
     try {
       console.log('Installing nginx...');
@@ -117,6 +133,9 @@ export class WebServerService {
       return { success: false, message: 'Nginx not available. Install nginx first.' };
     }
 
+    // Detect the active PHP-FPM socket (versioned)
+    const phpSocket = await this.detectPhpFpmSocket();
+
     const configContent = `server {
     listen 80;
     listen [::]:80;
@@ -136,10 +155,10 @@ export class WebServerService {
     
     # PHP support (if PHP-FPM is installed)
     location ~ \\.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass unix:${phpSocket};
+        fastcgi_index index.php;
     }
     
     # Deny access to hidden files

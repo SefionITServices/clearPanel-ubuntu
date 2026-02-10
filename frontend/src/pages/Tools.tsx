@@ -264,6 +264,13 @@ export default function ToolsPage() {
           onClick: () => navigate('/app-store'),
           color: '#7B1FA2',
         },
+        {
+          label: 'PHP Manager',
+          icon: <DataObjectIcon sx={{ fontSize: 28 }} />,
+          description: 'PHP versions, extensions & config',
+          onClick: () => navigate('/php'),
+          color: '#777BB3',
+        },
       ],
     },
   ];
