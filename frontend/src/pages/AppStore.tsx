@@ -109,6 +109,8 @@ export default function AppStorePage() {
     severity: 'success',
   });
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseAppId, setDiagnoseAppId] = useState('');
+  const [diagnoseAppName, setDiagnoseAppName] = useState('');
   const [diagnoseChecks, setDiagnoseChecks] = useState<Array<{ name: string; status: string; detail: string }>>([]);
   const [diagnosing, setDiagnosing] = useState(false);
   const [fixing, setFixing] = useState(false);
@@ -165,12 +167,15 @@ export default function AppStorePage() {
     }
   };
 
-  const handleDiagnose = async () => {
+  const handleDiagnose = async (appId: string) => {
+    const app = apps.find(a => a.id === appId);
+    setDiagnoseAppId(appId);
+    setDiagnoseAppName(app?.name || appId);
     setDiagnosing(true);
     setDiagnoseOpen(true);
     setDiagnoseChecks([]);
     try {
-      const res = await fetch('/api/app-store/diagnose/phpmyadmin');
+      const res = await fetch(`/api/app-store/diagnose/${appId}`);
       const data = await res.json();
       if (data.success) setDiagnoseChecks(data.checks);
     } catch {
@@ -187,8 +192,7 @@ export default function AppStorePage() {
       const data = await res.json();
       if (data.success) {
         setSnackbar({ open: true, message: data.message || 'phpMyAdmin reconfigured', severity: 'success' });
-        // Re-run diagnosis to show updated status
-        await handleDiagnose();
+        await handleDiagnose('phpmyadmin');
         await fetchApps();
       } else {
         setSnackbar({ open: true, message: data.message || 'Fix failed', severity: 'error' });
@@ -375,7 +379,7 @@ export default function AppStorePage() {
                     onInstall={handleInstall}
                     onUninstall={handleUninstall}
                     onDetail={setDetailApp}
-                    onDiagnose={app.id === 'phpmyadmin' ? handleDiagnose : undefined}
+                    onDiagnose={app.status.installed ? () => handleDiagnose(app.id) : undefined}
                   />
                 </Grid>
               ))}
@@ -400,7 +404,6 @@ export default function AppStorePage() {
                     onInstall={handleInstall}
                     onUninstall={handleUninstall}
                     onDetail={setDetailApp}
-                    onDiagnose={app.id === 'phpmyadmin' ? handleDiagnose : undefined}
                   />
                 </Grid>
               ))}
@@ -429,16 +432,8 @@ export default function AppStorePage() {
         loading={diagnosing}
         fixing={fixing}
         onFix={handleFix}
-      />
-
-      {/* Diagnose Dialog */}
-      <DiagnoseDialog
-        open={diagnoseOpen}
-        onClose={() => setDiagnoseOpen(false)}
-        checks={diagnoseChecks}
-        loading={diagnosing}
-        fixing={fixing}
-        onFix={handleFix}
+        appName={diagnoseAppName}
+        appId={diagnoseAppId}
       />
 
       {/* Detail Dialog */}
@@ -826,6 +821,8 @@ function DiagnoseDialog({
   loading,
   fixing,
   onFix,
+  appName,
+  appId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -833,6 +830,8 @@ function DiagnoseDialog({
   loading: boolean;
   fixing: boolean;
   onFix: () => void;
+  appName: string;
+  appId: string;
 }) {
   const statusIcon = (s: string) => {
     if (s === 'ok')
@@ -871,7 +870,7 @@ function DiagnoseDialog({
         <MonitorHeartIcon sx={{ color: '#FBBC04' }} />
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-            phpMyAdmin Diagnostics
+            {appName} Diagnostics
           </Typography>
           <Typography variant="caption" color="text.secondary">
             Checking all required services
@@ -930,7 +929,7 @@ function DiagnoseDialog({
         <Button onClick={onClose} sx={{ textTransform: 'none' }}>
           Close
         </Button>
-        {hasErrors && (
+        {hasErrors && appId === 'phpmyadmin' && (
           <Button
             variant="contained"
             disabled={fixing}

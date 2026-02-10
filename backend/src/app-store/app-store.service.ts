@@ -32,6 +32,8 @@ export interface AppInfo extends AppDefinition {
   status: AppStatus;
 }
 
+export type DiagnoseCheck = { name: string; status: 'ok' | 'error' | 'warn'; detail: string };
+
 @Injectable()
 export class AppStoreService {
   private readonly logger = new Logger(AppStoreService.name);
@@ -485,127 +487,6 @@ location /phpmyadmin {
     return { success: true, message: `phpMyAdmin reconfigured with PHP ${phpVer}-FPM`, phpVersion: phpVer };
   }
 
-  /**
-   * Diagnose phpMyAdmin — check every service/file it depends on
-   */
-  async diagnosePhpMyAdmin(): Promise<{
-    success: boolean;
-    checks: Array<{ name: string; status: 'ok' | 'error' | 'warn'; detail: string }>;
-  }> {
-    const checks: Array<{ name: string; status: 'ok' | 'error' | 'warn'; detail: string }> = [];
-
-    // 1. phpMyAdmin files exist?
-    const pmaIndex = await this.fileExists('/usr/share/phpmyadmin/index.php');
-    const pmaConfig = await this.fileExists('/etc/phpmyadmin/config.inc.php');
-    checks.push({
-      name: 'phpMyAdmin Files',
-      status: pmaIndex ? 'ok' : 'error',
-      detail: pmaIndex
-        ? `index.php found${pmaConfig ? ', config.inc.php found' : ', config.inc.php missing (optional)'}`
-        : 'phpMyAdmin is not installed (/usr/share/phpmyadmin/index.php missing)',
-    });
-
-    // 2. Nginx running?
-    const nginxRunning = await this.serviceRunning('nginx');
-    checks.push({
-      name: 'Nginx',
-      status: nginxRunning ? 'ok' : 'error',
-      detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running',
-    });
-
-    // 3. Nginx phpMyAdmin config?
-    const snippetExists = await this.fileExists('/etc/nginx/snippets/phpmyadmin.conf');
-    let snippetIncluded = false;
-    if (snippetExists) {
-      try {
-        const defConf = await this.sudo('cat /etc/nginx/sites-enabled/default 2>/dev/null || true');
-        snippetIncluded = defConf.includes('phpmyadmin.conf');
-      } catch {}
-    }
-    checks.push({
-      name: 'Nginx phpMyAdmin Config',
-      status: snippetExists && snippetIncluded ? 'ok' : snippetExists ? 'warn' : 'error',
-      detail: !snippetExists
-        ? 'snippets/phpmyadmin.conf does not exist'
-        : snippetIncluded
-          ? 'Snippet exists and is included in site config'
-          : 'Snippet exists but is NOT included in any site config',
-    });
-
-    // 4. PHP-FPM installed & running?
-    const phpVer = await this.detectPhpFpmVersion();
-    const fpmService = `php${phpVer}-fpm`;
-    const fpmRunning = await this.serviceRunning(fpmService);
-    checks.push({
-      name: `PHP-FPM (${phpVer})`,
-      status: fpmRunning ? 'ok' : 'error',
-      detail: fpmRunning
-        ? `${fpmService} is running`
-        : `${fpmService} is NOT running`,
-    });
-
-    // 5. PHP-FPM socket exists?
-    const socketPath = `/var/run/php/php${phpVer}-fpm.sock`;
-    const socketExists = await this.fileExists(socketPath);
-    checks.push({
-      name: 'PHP-FPM Socket',
-      status: socketExists ? 'ok' : 'error',
-      detail: socketExists
-        ? `Socket found: ${socketPath}`
-        : `Socket NOT found: ${socketPath}`,
-    });
-
-    // 6. MySQL / MariaDB running?
-    const mysqlRunning = await this.serviceRunning('mysql') || await this.serviceRunning('mariadb');
-    checks.push({
-      name: 'MySQL / MariaDB',
-      status: mysqlRunning ? 'ok' : 'error',
-      detail: mysqlRunning
-        ? 'Database server is running'
-        : 'MySQL/MariaDB is NOT running — phpMyAdmin needs a database server',
-    });
-
-    // 7. Test nginx config syntax
-    let nginxTestOk = false;
-    let nginxTestDetail = '';
-    try {
-      await this.sudo('nginx -t 2>&1');
-      nginxTestOk = true;
-      nginxTestDetail = 'nginx -t passed';
-    } catch (e: any) {
-      nginxTestDetail = `nginx -t FAILED: ${e.message?.substring(0, 200)}`;
-    }
-    checks.push({
-      name: 'Nginx Config Test',
-      status: nginxTestOk ? 'ok' : 'error',
-      detail: nginxTestDetail,
-    });
-
-    // 8. Try curl localhost/phpmyadmin
-    let httpStatus = '';
-    try {
-      httpStatus = await this.sudo(
-        `curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost/phpmyadmin/ 2>/dev/null`,
-      );
-    } catch { httpStatus = '000'; }
-    const httpOk = httpStatus.startsWith('2') || httpStatus.startsWith('3');
-    checks.push({
-      name: 'HTTP Response',
-      status: httpOk ? 'ok' : httpStatus === '502' ? 'error' : httpStatus === '000' ? 'warn' : 'error',
-      detail: httpOk
-        ? `HTTP ${httpStatus} — phpMyAdmin is reachable`
-        : httpStatus === '502'
-          ? 'HTTP 502 Bad Gateway — PHP-FPM socket/config mismatch'
-          : httpStatus === '404'
-            ? 'HTTP 404 — Nginx config not including phpMyAdmin location'
-            : httpStatus === '000'
-              ? 'Could not connect — Nginx may not be running'
-              : `HTTP ${httpStatus}`,
-    });
-
-    return { success: true, checks };
-  }
-
   private async uninstallPhpMyAdmin(): Promise<{ success: boolean; message: string }> {
     try {
       await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y phpmyadmin');
@@ -756,5 +637,437 @@ location /phpmyadmin {
     } catch {
       return false;
     }
+  }
+
+  private async portListening(port: number): Promise<boolean> {
+    try {
+      const out = await this.sudo(`ss -tlnp 'sport = :${port}' 2>/dev/null | tail -n +2`);
+      return out.length > 0;
+    } catch { return false; }
+  }
+
+  private async serviceEnabled(svc: string): Promise<boolean> {
+    try {
+      const out = await this.sudo(`systemctl is-enabled ${svc} 2>/dev/null`);
+      return out === 'enabled';
+    } catch { return false; }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  GENERIC DIAGNOSE DISPATCHER
+  // ═══════════════════════════════════════════════════════════════════
+
+  async diagnoseApp(id: string): Promise<{ success: boolean; checks: DiagnoseCheck[] }> {
+    const map: Record<string, () => Promise<DiagnoseCheck[]>> = {
+      phpmyadmin: () => this.diagnosePhpMyAdminChecks(),
+      redis: () => this.diagnoseRedis(),
+      nodejs: () => this.diagnoseNodejs(),
+      composer: () => this.diagnoseComposer(),
+      memcached: () => this.diagnoseMemcached(),
+      fail2ban: () => this.diagnoseFail2ban(),
+      certbot: () => this.diagnoseCertbot(),
+      'wp-cli': () => this.diagnoseWpCli(),
+    };
+    const fn = map[id];
+    if (!fn) return { success: false, checks: [{ name: 'Error', status: 'error', detail: `Unknown app: ${id}` }] };
+    try {
+      const checks = await fn();
+      return { success: true, checks };
+    } catch (e: any) {
+      return { success: false, checks: [{ name: 'Error', status: 'error', detail: e.message }] };
+    }
+  }
+
+  // keep backward-compat wrapper
+  async diagnosePhpMyAdmin() {
+    return this.diagnoseApp('phpmyadmin');
+  }
+
+  // ─── per-app diagnose implementations ──────────────────────────────
+
+  private async diagnosePhpMyAdminChecks(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const pmaIndex = await this.fileExists('/usr/share/phpmyadmin/index.php');
+    const pmaConfig = await this.fileExists('/etc/phpmyadmin/config.inc.php');
+    checks.push({
+      name: 'phpMyAdmin Files',
+      status: pmaIndex ? 'ok' : 'error',
+      detail: pmaIndex
+        ? `index.php found${pmaConfig ? ', config.inc.php found' : ', config.inc.php missing (optional)'}`
+        : 'phpMyAdmin is not installed (/usr/share/phpmyadmin/index.php missing)',
+    });
+
+    const nginxRunning = await this.serviceRunning('nginx');
+    checks.push({ name: 'Nginx', status: nginxRunning ? 'ok' : 'error', detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running' });
+
+    const snippetExists = await this.fileExists('/etc/nginx/snippets/phpmyadmin.conf');
+    let snippetIncluded = false;
+    if (snippetExists) {
+      try {
+        const defConf = await this.sudo('cat /etc/nginx/sites-enabled/default 2>/dev/null || true');
+        snippetIncluded = defConf.includes('phpmyadmin.conf');
+      } catch {}
+    }
+    checks.push({
+      name: 'Nginx phpMyAdmin Config',
+      status: snippetExists && snippetIncluded ? 'ok' : snippetExists ? 'warn' : 'error',
+      detail: !snippetExists ? 'snippets/phpmyadmin.conf does not exist'
+        : snippetIncluded ? 'Snippet exists and is included in site config'
+        : 'Snippet exists but NOT included in any site config',
+    });
+
+    const phpVer = await this.detectPhpFpmVersion();
+    const fpmService = `php${phpVer}-fpm`;
+    const fpmRunning = await this.serviceRunning(fpmService);
+    checks.push({ name: `PHP-FPM (${phpVer})`, status: fpmRunning ? 'ok' : 'error', detail: fpmRunning ? `${fpmService} is running` : `${fpmService} is NOT running` });
+
+    const socketPath = `/var/run/php/php${phpVer}-fpm.sock`;
+    const socketExists = await this.fileExists(socketPath);
+    checks.push({ name: 'PHP-FPM Socket', status: socketExists ? 'ok' : 'error', detail: socketExists ? `Socket found: ${socketPath}` : `Socket NOT found: ${socketPath}` });
+
+    const mysqlRunning = await this.serviceRunning('mysql') || await this.serviceRunning('mariadb');
+    checks.push({ name: 'MySQL / MariaDB', status: mysqlRunning ? 'ok' : 'error', detail: mysqlRunning ? 'Database server is running' : 'MySQL/MariaDB is NOT running' });
+
+    let nginxTestOk = false;
+    let nginxTestDetail = '';
+    try { await this.sudo('nginx -t 2>&1'); nginxTestOk = true; nginxTestDetail = 'nginx -t passed'; } catch (e: any) { nginxTestDetail = `nginx -t FAILED: ${e.message?.substring(0, 200)}`; }
+    checks.push({ name: 'Nginx Config Test', status: nginxTestOk ? 'ok' : 'error', detail: nginxTestDetail });
+
+    let httpStatus = '';
+    try { httpStatus = await this.sudo(`curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost/phpmyadmin/ 2>/dev/null`); } catch { httpStatus = '000'; }
+    const httpOk = httpStatus.startsWith('2') || httpStatus.startsWith('3');
+    checks.push({
+      name: 'HTTP Response',
+      status: httpOk ? 'ok' : 'error',
+      detail: httpOk ? `HTTP ${httpStatus} — phpMyAdmin is reachable`
+        : httpStatus === '502' ? 'HTTP 502 Bad Gateway — PHP-FPM socket/config mismatch'
+        : httpStatus === '404' ? 'HTTP 404 — Nginx not including phpMyAdmin location'
+        : httpStatus === '000' ? 'Could not connect — Nginx may not be running'
+        : `HTTP ${httpStatus}`,
+    });
+
+    return checks;
+  }
+
+  private async diagnoseRedis(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('redis-server');
+    checks.push({ name: 'Redis Server Binary', status: installed ? 'ok' : 'error', detail: installed ? 'redis-server found in PATH' : 'redis-server not found — Redis is not installed' });
+
+    const running = await this.serviceRunning('redis-server');
+    checks.push({ name: 'Redis Service', status: running ? 'ok' : 'error', detail: running ? 'redis-server service is active' : 'redis-server service is NOT active' });
+
+    const enabled = await this.serviceEnabled('redis-server');
+    checks.push({ name: 'Auto-Start on Boot', status: enabled ? 'ok' : 'warn', detail: enabled ? 'redis-server is enabled on boot' : 'redis-server will NOT start on boot' });
+
+    const listening = await this.portListening(6379);
+    checks.push({ name: 'Port 6379', status: listening ? 'ok' : 'error', detail: listening ? 'Redis is listening on port 6379' : 'Nothing listening on port 6379' });
+
+    const configExists = await this.fileExists('/etc/redis/redis.conf');
+    checks.push({ name: 'Config File', status: configExists ? 'ok' : 'warn', detail: configExists ? '/etc/redis/redis.conf exists' : 'Config file not found at /etc/redis/redis.conf' });
+
+    // Ping test
+    let pingOk = false;
+    try {
+      const out = await this.sudo('redis-cli ping 2>/dev/null');
+      pingOk = out === 'PONG';
+    } catch {}
+    checks.push({ name: 'Redis PING', status: pingOk ? 'ok' : 'error', detail: pingOk ? 'PONG — Redis is responding' : 'Redis is not responding to PING' });
+
+    // Memory info
+    try {
+      const mem = await this.sudo(`redis-cli info memory 2>/dev/null | grep used_memory_human`);
+      const m = mem.match(/used_memory_human:(\S+)/);
+      if (m) checks.push({ name: 'Memory Usage', status: 'ok', detail: `Current memory usage: ${m[1]}` });
+    } catch {}
+
+    return checks;
+  }
+
+  private async diagnoseNodejs(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    let nodeVersion = '';
+    try { nodeVersion = (await exec('node --version')).stdout.trim(); } catch {}
+    checks.push({ name: 'Node.js Binary', status: nodeVersion ? 'ok' : 'error', detail: nodeVersion ? `node ${nodeVersion} found` : 'node command not found' });
+
+    let npmVersion = '';
+    try { npmVersion = (await exec('npm --version')).stdout.trim(); } catch {}
+    checks.push({ name: 'npm', status: npmVersion ? 'ok' : 'error', detail: npmVersion ? `npm v${npmVersion} found` : 'npm not found' });
+
+    // Check if npx is available
+    let npxOk = false;
+    try { await exec('which npx'); npxOk = true; } catch {}
+    checks.push({ name: 'npx', status: npxOk ? 'ok' : 'warn', detail: npxOk ? 'npx is available' : 'npx not found' });
+
+    // Check NODE_PATH or global modules location
+    let globalPath = '';
+    try { globalPath = (await exec('npm root -g 2>/dev/null')).stdout.trim(); } catch {}
+    if (globalPath) checks.push({ name: 'Global Modules', status: 'ok', detail: `Global path: ${globalPath}` });
+
+    // Check Node.js source (nodesource vs system)
+    let source = 'unknown';
+    try {
+      const out = await this.sudo(`dpkg -s nodejs 2>/dev/null | grep -i maintainer`);
+      if (out.includes('NodeSource')) source = 'NodeSource';
+      else if (out.includes('Ubuntu') || out.includes('Debian')) source = 'System package';
+    } catch {}
+    checks.push({ name: 'Installation Source', status: 'ok', detail: `Installed from: ${source}` });
+
+    return checks;
+  }
+
+  private async diagnoseComposer(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('composer');
+    let version = '';
+    if (installed) {
+      try {
+        const out = (await exec('composer --version 2>/dev/null')).stdout.trim();
+        const m = out.match(/Composer version (\S+)/);
+        if (m) version = m[1];
+      } catch {}
+    }
+    checks.push({ name: 'Composer Binary', status: installed ? 'ok' : 'error', detail: installed ? `composer v${version} found` : 'composer not found in PATH' });
+
+    // Check PHP CLI dependency
+    let phpCli = false;
+    try { await exec('php --version 2>/dev/null'); phpCli = true; } catch {}
+    checks.push({ name: 'PHP CLI', status: phpCli ? 'ok' : 'error', detail: phpCli ? 'PHP CLI is available (required by Composer)' : 'PHP CLI not found — Composer requires PHP' });
+
+    // Check common PHP extensions needed by Composer
+    const neededExts = ['json', 'mbstring', 'openssl', 'zip'];
+    for (const ext of neededExts) {
+      let enabled = false;
+      try {
+        const out = (await exec(`php -m 2>/dev/null`)).stdout;
+        enabled = out.toLowerCase().includes(ext);
+      } catch {}
+      checks.push({ name: `PHP ext: ${ext}`, status: enabled ? 'ok' : 'warn', detail: enabled ? `${ext} extension loaded` : `${ext} extension not loaded — some packages may fail` });
+    }
+
+    // Check if unzip is available
+    const unzipOk = await this.which('unzip');
+    checks.push({ name: 'unzip', status: unzipOk ? 'ok' : 'warn', detail: unzipOk ? 'unzip is available' : 'unzip not found — Composer may use slower PHP-based extraction' });
+
+    return checks;
+  }
+
+  private async diagnoseMemcached(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('memcached');
+    checks.push({ name: 'Memcached Binary', status: installed ? 'ok' : 'error', detail: installed ? 'memcached found in PATH' : 'memcached not found — not installed' });
+
+    const running = await this.serviceRunning('memcached');
+    checks.push({ name: 'Memcached Service', status: running ? 'ok' : 'error', detail: running ? 'memcached service is active' : 'memcached service is NOT active' });
+
+    const enabled = await this.serviceEnabled('memcached');
+    checks.push({ name: 'Auto-Start on Boot', status: enabled ? 'ok' : 'warn', detail: enabled ? 'memcached is enabled on boot' : 'memcached will NOT start on boot' });
+
+    const listening = await this.portListening(11211);
+    checks.push({ name: 'Port 11211', status: listening ? 'ok' : 'error', detail: listening ? 'Memcached is listening on port 11211' : 'Nothing listening on port 11211' });
+
+    const configExists = await this.fileExists('/etc/memcached.conf');
+    checks.push({ name: 'Config File', status: configExists ? 'ok' : 'warn', detail: configExists ? '/etc/memcached.conf exists' : 'Config file not found' });
+
+    // Check memory allocation from config
+    if (configExists) {
+      try {
+        const conf = await this.sudo('cat /etc/memcached.conf 2>/dev/null');
+        const memMatch = conf.match(/-m\s+(\d+)/);
+        if (memMatch) checks.push({ name: 'Memory Limit', status: 'ok', detail: `Allocated ${memMatch[1]} MB` });
+      } catch {}
+    }
+
+    // Connection test
+    let connOk = false;
+    try {
+      const out = await this.sudo(`bash -c 'echo stats | nc -q1 localhost 11211 2>/dev/null | head -1'`);
+      connOk = out.includes('STAT');
+    } catch {}
+    checks.push({ name: 'Connection Test', status: connOk ? 'ok' : 'error', detail: connOk ? 'Memcached is responding to stats command' : 'Cannot connect to Memcached' });
+
+    return checks;
+  }
+
+  private async diagnoseFail2ban(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('fail2ban-client');
+    checks.push({ name: 'Fail2Ban Binary', status: installed ? 'ok' : 'error', detail: installed ? 'fail2ban-client found' : 'fail2ban-client not found — not installed' });
+
+    const running = await this.serviceRunning('fail2ban');
+    checks.push({ name: 'Fail2Ban Service', status: running ? 'ok' : 'error', detail: running ? 'fail2ban is active' : 'fail2ban is NOT active' });
+
+    const enabled = await this.serviceEnabled('fail2ban');
+    checks.push({ name: 'Auto-Start on Boot', status: enabled ? 'ok' : 'warn', detail: enabled ? 'fail2ban is enabled on boot' : 'fail2ban will NOT start on boot' });
+
+    const configExists = await this.fileExists('/etc/fail2ban/jail.local');
+    const defaultConf = await this.fileExists('/etc/fail2ban/jail.conf');
+    checks.push({
+      name: 'Config Files',
+      status: defaultConf ? 'ok' : 'error',
+      detail: defaultConf
+        ? `jail.conf found${configExists ? ', jail.local found (custom overrides)' : ', no jail.local (using defaults)'}`
+        : 'No fail2ban config files found',
+    });
+
+    // Count active jails
+    if (running) {
+      try {
+        const out = await this.sudo('fail2ban-client status 2>/dev/null');
+        const m = out.match(/Number of jail:\s*(\d+)/);
+        const jails = m ? m[1] : '0';
+        const jailList = out.match(/Jail list:\s*(.*)/);
+        checks.push({
+          name: 'Active Jails',
+          status: parseInt(jails) > 0 ? 'ok' : 'warn',
+          detail: `${jails} jail(s) active${jailList ? `: ${jailList[1].trim()}` : ''}`,
+        });
+      } catch {}
+
+      // Total banned IPs
+      try {
+        const out = await this.sudo(`fail2ban-client status sshd 2>/dev/null`);
+        const banned = out.match(/Currently banned:\s*(\d+)/);
+        if (banned) checks.push({ name: 'SSH Jail Banned', status: 'ok', detail: `${banned[1]} IP(s) currently banned in sshd jail` });
+      } catch {}
+    }
+
+    // Log file
+    const logExists = await this.fileExists('/var/log/fail2ban.log');
+    checks.push({ name: 'Log File', status: logExists ? 'ok' : 'warn', detail: logExists ? '/var/log/fail2ban.log exists' : 'Log file not found' });
+
+    return checks;
+  }
+
+  private async diagnoseCertbot(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('certbot');
+    let version = '';
+    if (installed) {
+      try {
+        const out = (await exec('certbot --version 2>&1')).stdout.trim();
+        const m = out.match(/certbot (\S+)/);
+        if (m) version = m[1];
+      } catch {}
+    }
+    checks.push({ name: 'Certbot Binary', status: installed ? 'ok' : 'error', detail: installed ? `certbot v${version}` : 'certbot not found — not installed' });
+
+    // Nginx plugin
+    let nginxPlugin = false;
+    try {
+      const out = (await exec('certbot plugins 2>/dev/null')).stdout;
+      nginxPlugin = out.includes('nginx');
+    } catch {}
+    checks.push({ name: 'Nginx Plugin', status: nginxPlugin ? 'ok' : 'warn', detail: nginxPlugin ? 'python3-certbot-nginx plugin available' : 'Nginx plugin not found — install python3-certbot-nginx' });
+
+    // Auto-renewal timer
+    let timerActive = false;
+    try {
+      const out = await this.sudo('systemctl is-active certbot.timer 2>/dev/null');
+      timerActive = out === 'active';
+    } catch {}
+    // Also check snap timer and cron as alternatives
+    let cronRenewal = false;
+    if (!timerActive) {
+      try {
+        const out = await this.sudo('cat /etc/cron.d/certbot 2>/dev/null || crontab -l 2>/dev/null');
+        cronRenewal = out.includes('certbot');
+      } catch {}
+      if (!cronRenewal) {
+        try {
+          const out = await this.sudo('systemctl is-active snap.certbot.renew.timer 2>/dev/null');
+          timerActive = out === 'active';
+        } catch {}
+      }
+    }
+    checks.push({
+      name: 'Auto-Renewal',
+      status: timerActive || cronRenewal ? 'ok' : 'warn',
+      detail: timerActive ? 'Renewal timer is active'
+        : cronRenewal ? 'Cron-based renewal configured'
+        : 'No auto-renewal detected — certificates may expire',
+    });
+
+    // List certificates
+    try {
+      const out = await this.sudo('certbot certificates 2>/dev/null');
+      const certs = out.match(/Certificate Name: (.+)/g);
+      const count = certs ? certs.length : 0;
+      const expiring = out.match(/INVALID: EXPIRED|WILL EXPIRE SOON/gi);
+      checks.push({
+        name: 'Certificates',
+        status: count > 0 ? (expiring ? 'warn' : 'ok') : 'ok',
+        detail: count > 0
+          ? `${count} certificate(s) managed${expiring ? ' — some expiring/expired!' : ''}`
+          : 'No certificates managed yet',
+      });
+    } catch {}
+
+    // Port 80 accessible (needed for HTTP-01 challenge)
+    const port80 = await this.portListening(80);
+    checks.push({ name: 'Port 80 (HTTP)', status: port80 ? 'ok' : 'warn', detail: port80 ? 'Port 80 is listening (needed for HTTP-01 challenges)' : 'Port 80 not listening — HTTP-01 challenges will fail' });
+
+    return checks;
+  }
+
+  private async diagnoseWpCli(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.which('wp');
+    let version = '';
+    if (installed) {
+      try {
+        const out = (await exec('wp --version 2>/dev/null')).stdout.trim();
+        const m = out.match(/WP-CLI (\S+)/);
+        if (m) version = m[1];
+      } catch {}
+    }
+    checks.push({ name: 'WP-CLI Binary', status: installed ? 'ok' : 'error', detail: installed ? `WP-CLI v${version}` : 'wp command not found — not installed' });
+
+    // PHP CLI required
+    let phpCli = false;
+    let phpVer = '';
+    try {
+      const out = (await exec('php --version 2>/dev/null')).stdout;
+      phpCli = true;
+      const m = out.match(/PHP (\d+\.\d+\.\d+)/);
+      if (m) phpVer = m[1];
+    } catch {}
+    checks.push({ name: 'PHP CLI', status: phpCli ? 'ok' : 'error', detail: phpCli ? `PHP ${phpVer} available (required by WP-CLI)` : 'PHP CLI not found — WP-CLI requires PHP' });
+
+    // MySQL/MariaDB (WordPress dependency)
+    const mysqlRunning = await this.serviceRunning('mysql') || await this.serviceRunning('mariadb');
+    checks.push({ name: 'MySQL / MariaDB', status: mysqlRunning ? 'ok' : 'warn', detail: mysqlRunning ? 'Database server is running' : 'Database not running — WordPress sites won\'t be accessible' });
+
+    // Check for WordPress installations
+    if (installed) {
+      try {
+        const out = await this.sudo(`find /var/www -maxdepth 3 -name 'wp-config.php' 2>/dev/null`);
+        const sites = out.split('\n').filter(Boolean);
+        checks.push({
+          name: 'WordPress Sites',
+          status: sites.length > 0 ? 'ok' : 'ok',
+          detail: sites.length > 0
+            ? `${sites.length} WordPress installation(s) found`
+            : 'No WordPress installations found in /var/www',
+        });
+      } catch {}
+
+      // Check for updates available
+      try {
+        const out = (await exec('wp cli check-update 2>/dev/null')).stdout.trim();
+        const hasUpdate = out.includes('Success') === false && out.length > 0 && !out.includes('WP-CLI is at the latest');
+        checks.push({ name: 'WP-CLI Updates', status: hasUpdate ? 'warn' : 'ok', detail: hasUpdate ? 'A WP-CLI update is available' : 'WP-CLI is up to date' });
+      } catch {}
+    }
+
+    return checks;
   }
 }

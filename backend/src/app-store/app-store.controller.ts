@@ -86,12 +86,12 @@ export class AppStoreController {
     }
   }
 
-  /** Diagnose phpMyAdmin — check all dependent services */
-  @Get('diagnose/phpmyadmin')
-  async diagnosePhpMyAdmin(@Req() req: Request, @Res() res: Response) {
+  /** Diagnose any app — check all dependent services */
+  @Get('diagnose/:id')
+  async diagnoseApp(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
-      const result = await this.appStore.diagnosePhpMyAdmin();
+      const result = await this.appStore.diagnoseApp(id);
       return res.json(result);
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });
