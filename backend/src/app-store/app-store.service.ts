@@ -349,17 +349,28 @@ export class AppStoreService {
   private async installPhpMyAdmin(): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       // Install PHP + phpMyAdmin non-interactively
+      // Pre-seed debconf so phpmyadmin doesn't try to configure a DB interactively
       const cmds = [
         'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        `bash -c 'echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections'`,
+        `bash -c 'echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect" | debconf-set-selections'`,
         'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq phpmyadmin php-mbstring php-zip php-gd php-json php-curl php-fpm',
       ];
       let logs = '';
       for (const cmd of cmds) {
-        logs += await this.sudo(cmd, 120_000) + '\n';
+        try { logs += await this.sudo(cmd, 180_000) + '\n'; } catch (e: any) { logs += `WARN: ${e.message}\n`; }
       }
 
+      // Ensure PHP-FPM is running
+      const phpVer = await this.detectPhpFpmVersion();
+      try { await this.sudo(`systemctl enable php${phpVer}-fpm`); } catch {}
+      try { await this.sudo(`systemctl restart php${phpVer}-fpm`); } catch {}
+
+      // Create phpMyAdmin symlink if missing (some distros don't create it)
+      try { await this.sudo('ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin'); } catch {}
+
       // Configure nginx to serve phpMyAdmin
-      await this.configurePhpMyAdminNginx();
+      await this.configurePhpMyAdminNginx(phpVer);
 
       return { success: true, message: 'phpMyAdmin installed successfully', logs };
     } catch (e: any) {
@@ -368,30 +379,50 @@ export class AppStoreService {
     }
   }
 
-  private async configurePhpMyAdminNginx(): Promise<void> {
-    // Detect PHP-FPM version
-    let phpVer = '8.1';
+  /**
+   * Detect the installed PHP-FPM version by checking which socket exists
+   */
+  private async detectPhpFpmVersion(): Promise<string> {
+    // Method 1: find an actual .sock file
     try {
-      const versions = await this.sudo(`ls /var/run/php/ | grep fpm.sock | head -1`);
-      const m = versions.match(/php(\d+\.\d+)/);
-      if (m) phpVer = m[1];
+      const sock = await this.sudo(`find /var/run/php/ -name 'php*-fpm.sock' -print -quit 2>/dev/null`);
+      const m = sock.match(/php(\d+\.\d+)/);
+      if (m) return m[1];
     } catch {}
+    // Method 2: check installed php-fpm packages
+    try {
+      const out = await this.sudo(`dpkg -l 'php*-fpm' 2>/dev/null | grep '^ii' | awk '{print $2}' | head -1`);
+      const m = out.match(/php(\d+\.\d+)/);
+      if (m) return m[1];
+    } catch {}
+    // Method 3: php -v
+    try {
+      const out = await this.sudo('php -v 2>/dev/null | head -1');
+      const m = out.match(/PHP (\d+\.\d+)/);
+      if (m) return m[1];
+    } catch {}
+    return '8.1'; // safe default for Ubuntu 22.04+
+  }
 
-    const nginxSnippet = `
-# phpMyAdmin configuration
+  private async configurePhpMyAdminNginx(phpVer?: string): Promise<void> {
+    if (!phpVer) phpVer = await this.detectPhpFpmVersion();
+
+    // Using root + try_files approach which works more reliably than alias for PHP
+    const nginxSnippet = `# phpMyAdmin configuration – managed by clearPanel
 location /phpmyadmin {
-    alias /usr/share/phpmyadmin;
+    root /usr/share/;
     index index.php index.html index.htm;
 
-    location ~ \\.php$ {
+    location ~ ^/phpmyadmin/(.+\\.php)$ {
+        root /usr/share/;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME /usr/share/phpmyadmin/$1;
         fastcgi_pass unix:/var/run/php/php${phpVer}-fpm.sock;
         fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $request_filename;
-        include fastcgi_params;
     }
 
-    location ~* ^/phpmyadmin/(.+\\.(jpg|jpeg|gif|css|png|js|ico|html|xml|txt))$ {
-        alias /usr/share/phpmyadmin/$1;
+    location ~* ^/phpmyadmin/(.+\\.(jpg|jpeg|gif|css|png|js|ico|html|xml|txt|svg|woff|woff2|ttf))$ {
+        root /usr/share/;
     }
 }
 `;
@@ -433,8 +464,25 @@ location /phpmyadmin {
     } catch {}
 
     // Test and reload
-    await this.sudo('nginx -t');
+    try {
+      await this.sudo('nginx -t');
+    } catch (e: any) {
+      this.logger.error(`nginx -t failed: ${e.message}`);
+      throw new Error(`Nginx config test failed: ${e.message}`);
+    }
     await this.sudo('systemctl reload nginx');
+  }
+
+  /**
+   * Re-run the phpMyAdmin nginx configuration (useful to fix 502 without reinstalling)
+   */
+  async reconfigurePhpMyAdmin(): Promise<{ success: boolean; message: string; phpVersion: string }> {
+    const phpVer = await this.detectPhpFpmVersion();
+    // Ensure PHP-FPM is running
+    try { await this.sudo(`systemctl enable php${phpVer}-fpm`); } catch {}
+    try { await this.sudo(`systemctl restart php${phpVer}-fpm`); } catch {}
+    await this.configurePhpMyAdminNginx(phpVer);
+    return { success: true, message: `phpMyAdmin reconfigured with PHP ${phpVer}-FPM`, phpVersion: phpVer };
   }
 
   private async uninstallPhpMyAdmin(): Promise<{ success: boolean; message: string }> {

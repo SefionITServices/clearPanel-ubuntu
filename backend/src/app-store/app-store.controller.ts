@@ -73,4 +73,16 @@ export class AppStoreController {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+
+  /** Reconfigure phpMyAdmin nginx (fix 502 without reinstalling) */
+  @Post('reconfigure/phpmyadmin')
+  async reconfigurePhpMyAdmin(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const result = await this.appStore.reconfigurePhpMyAdmin();
+      return res.json(result);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
 }
