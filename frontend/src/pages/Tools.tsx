@@ -18,6 +18,7 @@ import StorageIcon from '@mui/icons-material/Storage';
 import BackupIcon from '@mui/icons-material/Backup';
 import ImageIcon from '@mui/icons-material/Image';
 import PrivacyTipIcon from '@mui/icons-material/PrivacyTip';
+import StoreIcon from '@mui/icons-material/Store';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -255,6 +256,13 @@ export default function ToolsPage() {
           icon: <DataObjectIcon sx={{ fontSize: 28 }} />,
           description: 'View running processes',
           color: '#EA4335',
+        },
+        {
+          label: 'App Store',
+          icon: <StoreIcon sx={{ fontSize: 28 }} />,
+          description: 'Install server tools & apps',
+          onClick: () => navigate('/app-store'),
+          color: '#7B1FA2',
         },
       ],
     },

@@ -14,6 +14,7 @@ import { ServerModule } from './server/server.module';
 import { SetupModule } from './setup/setup.module';
 import { SslModule } from './ssl/ssl.module';
 import { DatabaseModule } from './database/database.module';
+import { AppStoreModule } from './app-store/app-store.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { DatabaseModule } from './database/database.module';
     SetupModule,
     SslModule,
     DatabaseModule,
+    AppStoreModule,
   ],
 })
 export class AppModule implements NestModule {

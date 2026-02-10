@@ -17,6 +17,7 @@ import DomainsListView from './pages/DomainsListView';
 import NameserverSetupPage from './pages/NameserverSetup';
 import SslPage from './pages/Ssl';
 import DatabasesPage from './pages/Databases';
+import AppStorePage from './pages/AppStore';
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { authenticated, loading } = useAuth();

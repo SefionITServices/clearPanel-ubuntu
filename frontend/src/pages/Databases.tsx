@@ -50,6 +50,7 @@ import {
   ExpandMore,
   ExpandLess,
   TableChart,
+  OpenInNew,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 
@@ -498,9 +499,19 @@ export default function DatabasesPage() {
               </Typography>
             </Box>
           </Box>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
-            Refresh
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="contained"
+              startIcon={<OpenInNew />}
+              onClick={() => window.open('/phpmyadmin', '_blank')}
+              sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#F89C0E', '&:hover': { bgcolor: '#e08c00' } }}
+            >
+              phpMyAdmin
+            </Button>
+            <Button variant="outlined" startIcon={<Refresh />} onClick={() => { loadDatabases(); loadUsers(); }}>
+              Refresh
+            </Button>
+          </Stack>
         </Box>
 
         {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}

@@ -35,6 +35,7 @@ import {
   Dns as DnsIcon,
   Terminal as TerminalIcon,
   Storage as StorageIcon,
+  Store as StoreIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -49,6 +50,7 @@ const navSections = [
     items: [
       { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
+      { title: 'App Store', path: '/app-store', icon: <StoreIcon /> },
     ],
   },
   {
