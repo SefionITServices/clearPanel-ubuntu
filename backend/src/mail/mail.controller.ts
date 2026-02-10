@@ -13,6 +13,7 @@ import {
 import { Throttle, ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
 import { MailService, DomainSettingsUpdate } from './mail.service';
 import { MailStatusService } from './mail-status.service';
+import { MailSsoService } from './mail-sso.service';
 
 @UseGuards(ThrottlerGuard)
 @Controller('mail')
@@ -20,6 +21,7 @@ export class MailController {
   constructor(
     private readonly mailService: MailService,
     private readonly mailStatusService: MailStatusService,
+    private readonly mailSsoService: MailSsoService,
   ) { }
 
   @SkipThrottle()
@@ -219,5 +221,310 @@ export class MailController {
   @Post('domains/:id/dkim/rotate')
   rotateDkim(@Param('id') id: string, @Body() body: { selector?: string }) {
     return this.mailService.rotateDkim(id, body?.selector);
+  }
+
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  @SkipThrottle()
+  @Get('security/status')
+  getSecurityStatus() {
+    return this.mailService.getSecurityStatus();
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/tls')
+  setupMailTls(
+    @Body() body: { hostname: string; email: string; reuseExisting?: boolean },
+  ) {
+    if (!body.hostname) {
+      throw new BadRequestException('hostname is required');
+    }
+    if (!body.email) {
+      throw new BadRequestException('email is required');
+    }
+    return this.mailService.setupMailTls(body.hostname, body.email, body.reuseExisting);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/postscreen')
+  setupPostscreen(@Body() body: { dryRun?: boolean }) {
+    return this.mailService.setupPostscreen(body?.dryRun);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('security/dmarc')
+  setupDmarc(
+    @Body() body: { domain: string; reportEmail?: string },
+  ) {
+    if (!body.domain) {
+      throw new BadRequestException('domain is required');
+    }
+    return this.mailService.setupDmarc(body.domain, body.reportEmail);
+  }
+
+  // ---- Phase 5: DNS Auto-Publish & Metrics ----
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('domains/:id/dns/publish')
+  publishDns(@Param('id') id: string) {
+    return this.mailService.publishDns(id);
+  }
+
+  @SkipThrottle()
+  @Get('metrics')
+  getMailMetrics() {
+    return this.mailService.getMailMetrics();
+  }
+
+  // ---- Queue Management ----
+
+  @SkipThrottle()
+  @Get('queue')
+  getQueue() {
+    return this.mailStatusService.getStatus().then(s => s.queue);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('queue/flush')
+  flushQueue() {
+    return this.mailService.flushQueue();
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Delete('queue/:queueId')
+  deleteQueueMessage(@Param('queueId') queueId: string) {
+    return this.mailService.deleteQueueMessage(queueId);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Delete('queue')
+  deleteAllQueueMessages() {
+    return this.mailService.deleteAllQueueMessages();
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('queue/:queueId/retry')
+  retryQueueMessage(@Param('queueId') queueId: string) {
+    return this.mailService.retryQueueMessage(queueId);
+  }
+
+  // ---- Mail Logs ----
+
+  @SkipThrottle()
+  @Get('logs')
+  getMailLogs(
+    @Query('lines') lines?: string,
+    @Query('search') search?: string,
+  ) {
+    let parsedLines: number | undefined;
+    if (lines !== undefined) {
+      const n = Number.parseInt(lines, 10);
+      if (!Number.isNaN(n) && n > 0) parsedLines = Math.min(n, 1000);
+    }
+    return this.mailService.getMailLogs(parsedLines, search);
+  }
+
+  // ---- DNS Propagation Check ----
+
+  @SkipThrottle()
+  @Get('domains/:id/dns/check')
+  checkDnsPropagation(@Param('id') id: string) {
+    return this.mailService.checkDnsPropagation(id);
+  }
+
+  // ---- Mailbox Backup / Restore ----
+
+  @SkipThrottle()
+  @Get('backups')
+  listBackups(@Query('domain') domain?: string) {
+    return this.mailService.listBackups(domain);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/backup')
+  backupMailbox(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailService.backupMailbox(id, mailboxId);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/restore')
+  restoreMailbox(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Body() body: { backupFile: string },
+  ) {
+    if (!body?.backupFile) {
+      throw new BadRequestException('backupFile is required');
+    }
+    return this.mailService.restoreMailbox(id, mailboxId, body.backupFile);
+  }
+
+  // ---- Per-User Rate Limiting ----
+
+  @SkipThrottle()
+  @Get('domains/:id/rate-limits')
+  getRateLimits(@Param('id') id: string) {
+    return this.mailService.getRateLimits(id);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/rate-limits')
+  setupRateLimit(
+    @Param('id') id: string,
+    @Body() body: { email: string; limitPerHour: number },
+  ) {
+    if (!body?.email) {
+      throw new BadRequestException('email is required (use * for domain-wide)');
+    }
+    if (!body?.limitPerHour || body.limitPerHour < 1) {
+      throw new BadRequestException('limitPerHour must be a positive integer');
+    }
+    return this.mailService.setupRateLimit(id, body.email, body.limitPerHour);
+  }
+
+  // ---- Sieve Filters (ManageSieve) ----
+
+  @SkipThrottle()
+  @Get('domains/:id/mailboxes/:mailboxId/sieve')
+  listSieveFilters(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailService.listSieveFilters(id, mailboxId);
+  }
+
+  @SkipThrottle()
+  @Get('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  getSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+  ) {
+    return this.mailService.getSieveFilter(id, mailboxId, filterName);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  putSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+    @Body() body: { script: string },
+  ) {
+    if (!body?.script) {
+      throw new BadRequestException('script is required');
+    }
+    return this.mailService.putSieveFilter(id, mailboxId, filterName, body.script);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Delete('domains/:id/mailboxes/:mailboxId/sieve/:filterName')
+  deleteSieveFilter(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+    @Param('filterName') filterName: string,
+  ) {
+    return this.mailService.deleteSieveFilter(id, mailboxId, filterName);
+  }
+
+  // ---- Catch-All Mailbox ----
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/catch-all')
+  setupCatchAll(
+    @Param('id') id: string,
+    @Body() body: { action: 'enable' | 'disable'; targetEmail?: string },
+  ) {
+    if (!body?.action || !['enable', 'disable'].includes(body.action)) {
+      throw new BadRequestException('action must be "enable" or "disable"');
+    }
+    if (body.action === 'enable' && !body.targetEmail) {
+      throw new BadRequestException('targetEmail is required to enable catch-all');
+    }
+    return this.mailService.setupCatchAll(id, body.action, body.targetEmail);
+  }
+
+  // ---- Quota Warnings ----
+
+  @SkipThrottle()
+  @Get('quota-warning')
+  getQuotaWarningConfig() {
+    return this.mailService.getQuotaWarningConfig();
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('quota-warning')
+  setupQuotaWarning(
+    @Body() body: { threshold: number; adminEmail?: string },
+  ) {
+    if (!body?.threshold || body.threshold < 1 || body.threshold > 100) {
+      throw new BadRequestException('threshold must be between 1 and 100');
+    }
+    return this.mailService.setupQuotaWarning(body.threshold, body.adminEmail);
+  }
+
+  // ---- SMTP Relay ----
+
+  @SkipThrottle()
+  @Get('smtp-relay')
+  getSmtpRelay() {
+    return this.mailService.getSmtpRelay();
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('smtp-relay')
+  setupSmtpRelay(
+    @Body() body: { host: string; port: number; username?: string; password?: string },
+  ) {
+    if (!body?.host) {
+      throw new BadRequestException('host is required');
+    }
+    if (!body?.port || body.port < 1 || body.port > 65535) {
+      throw new BadRequestException('port must be between 1 and 65535');
+    }
+    return this.mailService.setupSmtpRelay(body.host, body.port, body.username, body.password);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Delete('smtp-relay')
+  removeSmtpRelay() {
+    return this.mailService.removeSmtpRelay();
+  }
+
+  // ---- DMARC Reports ----
+
+  @SkipThrottle()
+  @Get('domains/:id/dmarc-reports')
+  getDmarcReports(@Param('id') id: string) {
+    return this.mailService.getDmarcReports(id);
+  }
+
+  @SkipThrottle()
+  @Get('domains/:id/dmarc-reports/summary')
+  getDmarcSummary(@Param('id') id: string) {
+    return this.mailService.getDmarcSummary(id);
+  }
+
+  // ---- Webmail SSO ----
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/sso')
+  generateSsoUrl(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailSsoService.generateSsoUrl(id, mailboxId);
+  }
+
+  @SkipThrottle()
+  @Get('sso/verify')
+  verifySsoToken(@Query('token') token: string) {
+    if (!token) {
+      throw new BadRequestException('token query parameter is required');
+    }
+    return this.mailSsoService.verifyToken(token);
   }
 }

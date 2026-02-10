@@ -4,7 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getDataFilePath } from '../common/paths';
 
-export type MailAutomationScope = 'stack' | 'domain' | 'mailbox' | 'alias' | 'dkim';
+export type MailAutomationScope = 'stack' | 'domain' | 'mailbox' | 'alias' | 'dkim' | 'tls' | 'security';
 
 export interface MailAutomationHistoryRecord {
   id: string;
@@ -54,6 +54,35 @@ export class MailHistoryService {
       filtered = filtered.slice(0, options.limit);
     }
     return filtered;
+  }
+
+  /**
+   * Convenience method: convert automation logs to history records and persist.
+   */
+  async log(params: {
+    scope: MailAutomationScope;
+    action: string;
+    target?: string;
+    domainId?: string;
+    domain?: string;
+    logs: { task: string; success: boolean; message: string; detail?: string }[];
+  }): Promise<void> {
+    if (!params.logs.length) return;
+
+    const base = Date.now();
+    const records: Omit<MailAutomationHistoryRecord, 'id'>[] = params.logs.map((log, index) => ({
+      domainId: params.domainId,
+      domain: params.domain,
+      scope: params.scope,
+      target: params.target,
+      task: log.task,
+      success: log.success,
+      message: log.message,
+      detail: log.detail,
+      executedAt: new Date(base - index).toISOString(),
+    }));
+
+    await this.append(records);
   }
 
   private async readAll(): Promise<MailAutomationHistoryRecord[]> {

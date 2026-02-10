@@ -231,6 +231,65 @@ else
     echo -e "${YELLOW}⚠ BIND9 service may need manual configuration${NC}"
 fi
 
+# ── Pre-install Mail Stack ─────────────────────────────────────────
+echo -e "${YELLOW}📧 Installing mail stack (Postfix, Dovecot, Rspamd, ClamAV, OpenDKIM)...${NC}"
+MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" && \
+    echo -e "${GREEN}✓ Mail stack installed${NC}" || \
+    echo -e "${RED}⚠ Mail stack installation had issues — can retry from the panel${NC}"
+
+# ── Pre-install Roundcube Webmail ─────────────────────────────────
+echo -e "${YELLOW}📬 Installing Roundcube webmail packages...${NC}"
+export DEBIAN_FRONTEND=noninteractive
+# Pre-seed debconf for non-interactive install
+debconf-set-selections <<RCEOF
+roundcube-core roundcube/dbconfig-install boolean true
+roundcube-core roundcube/database-type select sqlite
+roundcube-core roundcube/reconfigure-webserver multiselect
+RCEOF
+apt-get install -y -qq \
+    roundcube roundcube-plugins roundcube-plugins-extra \
+    php-fpm php-mbstring php-xml php-intl php-zip \
+    php-gd php-curl php-imagick php-ldap 2>/dev/null || true
+
+# Configure Roundcube for localhost IMAP (works for any domain)
+ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
+if [[ -f "$ROUNDCUBE_CONF" ]]; then
+    sed -i "s|\$config\['default_host'\].*|\$config['default_host'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+    sed -i "s|\$config\['smtp_server'\].*|\$config['smtp_server'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+    sed -i "s|\$config\['smtp_port'\].*|\$config['smtp_port'] = 587;|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+    # Enable useful plugins
+    if ! grep -q "'managesieve'" "$ROUNDCUBE_CONF"; then
+        sed -i "s|\$config\['plugins'\] = array(|\$config['plugins'] = array(\n  'managesieve',\n  'archive',\n  'zipdownload',\n  'newmail_notifier',|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+    fi
+fi
+chown -R www-data:www-data /var/lib/roundcube 2>/dev/null || true
+chown -R www-data:www-data /var/log/roundcube 2>/dev/null || true
+echo -e "${GREEN}✓ Roundcube packages installed (nginx vhost created when domain is set up)${NC}"
+
+# ── Install Roundcube SSO Plugin ──────────────────────────────────
+echo -e "${YELLOW}🔐 Installing Roundcube SSO plugin...${NC}"
+MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-roundcube-sso.sh" "http://localhost:3334" && \
+    echo -e "${GREEN}✓ Roundcube SSO plugin installed${NC}" || \
+    echo -e "${YELLOW}⚠ SSO plugin setup skipped — can configure later from the panel${NC}"
+
+# ── Pre-install TLS, Postscreen, DMARC ───────────────────────────
+echo -e "${YELLOW}🛡️  Configuring mail security (Postscreen, DMARC)...${NC}"
+MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-postscreen.sh" 2>/dev/null && \
+    echo -e "${GREEN}✓ Postscreen configured${NC}" || \
+    echo -e "${YELLOW}⚠ Postscreen setup skipped${NC}"
+MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-dmarc.sh" 2>/dev/null && \
+    echo -e "${GREEN}✓ DMARC configured${NC}" || \
+    echo -e "${YELLOW}⚠ DMARC setup skipped${NC}"
+
+# Open mail ports in UFW
+echo -e "${YELLOW}🔓 Opening mail firewall ports...${NC}"
+ufw allow 25/tcp    # SMTP
+ufw allow 587/tcp   # Submission
+ufw allow 993/tcp   # IMAPS
+ufw allow 143/tcp   # IMAP
+ufw allow 4190/tcp  # ManageSieve
+echo -e "${GREEN}✓ Mail ports opened (25, 587, 993, 143, 4190)${NC}"
+
 # Start clearPanel service
 echo -e "${YELLOW}🚀 Starting clearPanel service...${NC}"
 systemctl start clearpanel
@@ -244,6 +303,8 @@ if systemctl is-active --quiet clearpanel; then
     echo ""
     echo -e "${GREEN}clearPanel is now running${NC}"
     echo -e "${GREEN}BIND9 DNS server is installed and ready${NC}"
+    echo -e "${GREEN}Mail stack (Postfix, Dovecot, Rspamd, ClamAV) is installed${NC}"
+    echo -e "${GREEN}Roundcube webmail is installed with SSO plugin${NC}"
     echo ""
     echo -e "${YELLOW}⚠️  NEXT STEPS:${NC}"
     echo "1. Open the panel in your browser to complete the Setup Wizard"
@@ -251,6 +312,9 @@ if systemctl is-active --quiet clearpanel; then
     echo ""
     echo "2. (Optional) Setup SSL with Let's Encrypt after wizard:"
     echo "   sudo certbot --nginx -d your-domain.com"
+    echo ""
+    echo "3. Add a mail domain in the panel to start sending/receiving email"
+    echo "   Roundcube vhost will be created when you set up webmail for a domain"
     echo ""
     SERVER_IP=$(hostname -I | awk '{print $1}')
     echo -e "${GREEN}Access your panel at: http://$SERVER_IP${NC}"

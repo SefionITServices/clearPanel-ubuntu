@@ -5,7 +5,10 @@ import { randomUUID } from 'crypto';
 import { MailAlias, MailDomain, Mailbox } from './mail.model';
 import { MailAutomationService, AutomationLog, DkimResult } from './mail-automation.service';
 import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } from './mail-history.service';
+import { MailStatusService, MailMetrics } from './mail-status.service';
 import { ServerSettingsService } from '../server/server-settings.service';
+import { DnsService } from '../dns/dns.service';
+import { DnsServerService } from '../dns-server/dns-server.service';
 import { getDataFilePath } from '../common/paths';
 
 const DEFAULT_SPAM_THRESHOLD = 6.0;
@@ -47,6 +50,9 @@ export class MailService {
     private readonly automation: MailAutomationService,
     private readonly serverSettings: ServerSettingsService,
     private readonly history: MailHistoryService,
+    private readonly statusService: MailStatusService,
+    private readonly dnsService: DnsService,
+    private readonly dnsServerService: DnsServerService,
   ) {}
 
   async listDomains(): Promise<MailDomain[]> {
@@ -838,5 +844,516 @@ export class MailService {
       throw new Error('Alias local part is required');
     }
     return trimmed;
+  }
+
+  // ---- TLS & Security Hardening (Phase 4) ----
+
+  async setupMailTls(
+    hostname: string,
+    email: string,
+    reuseExisting?: boolean,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupMailTls(hostname, email, reuseExisting);
+    await this.history.log({
+      scope: 'tls' as MailAutomationScope,
+      action: 'setup-tls',
+      target: hostname,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async setupPostscreen(dryRun?: boolean): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupPostscreen(dryRun);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-postscreen',
+      target: 'postfix',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async setupDmarc(
+    domain: string,
+    reportEmail?: string,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.setupDmarc(domain, reportEmail);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-dmarc',
+      target: domain,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async getSecurityStatus(): Promise<{
+    tls: { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string };
+    postscreen: { enabled: boolean; configuredAt?: string };
+    dmarc: { domains: string[]; configuredAt?: string };
+  }> {
+    const stateRoot =
+      process.env.MAIL_MODE === 'production'
+        ? '/etc/clearpanel/mail'
+        : path.join(process.cwd(), '..', 'backend', 'mail-state');
+
+    const result = {
+      tls: { configured: false } as { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string },
+      postscreen: { enabled: false } as { enabled: boolean; configuredAt?: string },
+      dmarc: { domains: [] as string[], configuredAt: undefined as string | undefined },
+    };
+
+    try {
+      const tlsRaw = await fs.readFile(path.join(stateRoot, 'tls.json'), 'utf-8');
+      const tls = JSON.parse(tlsRaw);
+      result.tls = { configured: true, hostname: tls.hostname, certDir: tls.certDir, configuredAt: tls.configuredAt };
+    } catch { /* not configured */ }
+
+    try {
+      const psRaw = await fs.readFile(path.join(stateRoot, 'postscreen.json'), 'utf-8');
+      const ps = JSON.parse(psRaw);
+      result.postscreen = { enabled: ps.enabled === true, configuredAt: ps.configuredAt };
+    } catch { /* not configured */ }
+
+    try {
+      const dmarcDir = path.join(stateRoot, 'dmarc');
+      const files = await fs.readdir(dmarcDir);
+      const domains: string[] = [];
+      let latestDate: string | undefined;
+      for (const f of files) {
+        if (f.endsWith('.json')) {
+          try {
+            const raw = await fs.readFile(path.join(dmarcDir, f), 'utf-8');
+            const d = JSON.parse(raw);
+            domains.push(d.domain);
+            if (!latestDate || d.configuredAt > latestDate) latestDate = d.configuredAt;
+          } catch { /* skip */ }
+        }
+      }
+      result.dmarc = { domains, configuredAt: latestDate };
+    } catch { /* not configured */ }
+
+    return result;
+  }
+
+  // ---- DNS Auto-Publish (Phase 5) ----
+
+  async publishDns(domainId: string): Promise<{
+    published: { type: string; name: string; value: string; status: 'created' | 'exists' | 'error'; error?: string }[];
+    zoneReload?: { success: boolean; message: string };
+  }> {
+    const suggestions = await this.getDnsSuggestions(domainId);
+    const domainName = suggestions.domain;
+
+    // Ensure a DNS zone exists for this domain
+    const zone = await this.dnsService.getZone(domainName);
+    if (!zone) {
+      await this.dnsService.ensureDefaultZone(domainName, {
+        serverIp: suggestions.serverIp,
+      });
+    }
+
+    const published: { type: string; name: string; value: string; status: 'created' | 'exists' | 'error'; error?: string }[] = [];
+
+    // Fetch the zone again to check for existing records
+    const currentZone = await this.dnsService.getZone(domainName);
+    const existingRecords = currentZone?.records ?? [];
+
+    for (const rec of suggestions.records) {
+      // Check if a record already exists (same type + name)
+      const existing = existingRecords.find(
+        (r) => r.type === rec.type && r.name === rec.name,
+      );
+
+      if (existing) {
+        // If the value matches, skip; otherwise update in-place
+        if (existing.value === rec.value) {
+          published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'exists' });
+          continue;
+        }
+        // Update the existing record
+        try {
+          await this.dnsService.updateRecord(domainName, existing.id, {
+            value: rec.value,
+            ttl: rec.ttl,
+            priority: rec.priority,
+          });
+          published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'created' });
+        } catch (error) {
+          published.push({
+            type: rec.type, name: rec.name, value: rec.value,
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Update failed',
+          });
+        }
+        continue;
+      }
+
+      // Create new record
+      try {
+        await this.dnsService.addRecord(domainName, {
+          type: rec.type as 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS',
+          name: rec.name,
+          value: rec.value,
+          ttl: rec.ttl,
+          priority: rec.priority,
+        });
+        published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'created' });
+      } catch (error) {
+        published.push({
+          type: rec.type, name: rec.name, value: rec.value,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Creation failed',
+        });
+      }
+    }
+
+    // Sync BIND zone file if the DNS server is running
+    let zoneReload: { success: boolean; message: string } | undefined;
+    try {
+      const serverStatus = await this.dnsServerService.getStatus();
+      if (serverStatus.installed && serverStatus.running) {
+        // Regenerate the zone file from the updated JSON records
+        const updatedZone = await this.dnsService.getZone(domainName);
+        if (updatedZone) {
+          zoneReload = await this.dnsServerService.createZone(
+            domainName,
+            suggestions.serverIp,
+          );
+        }
+      }
+    } catch (error) {
+      zoneReload = {
+        success: false,
+        message: error instanceof Error ? error.message : 'Zone reload failed',
+      };
+    }
+
+    // Log the publish action
+    await this.history.log({
+      scope: 'domain' as MailAutomationScope,
+      action: 'publish-dns',
+      target: domainName,
+      logs: [{
+        task: 'Publish DNS records',
+        success: published.every((r) => r.status !== 'error'),
+        message: `Published ${published.filter((r) => r.status === 'created').length} records, ${published.filter((r) => r.status === 'exists').length} unchanged`,
+      }],
+    });
+
+    return { published, zoneReload };
+  }
+
+  // ---- Mail Metrics (Phase 5) ----
+
+  async getMailMetrics(): Promise<MailMetrics> {
+    return this.statusService.getMetrics();
+  }
+
+  // ---- Queue Management ----
+
+  async flushQueue(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.flushQueue();
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'flush-queue',
+      target: 'postfix',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async deleteQueueMessage(queueId: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.deleteQueueMessage(queueId);
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'delete-queue-message',
+      target: queueId,
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async deleteAllQueueMessages(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.deleteAllQueueMessages();
+    await this.history.log({
+      scope: 'stack' as MailAutomationScope,
+      action: 'purge-queue',
+      target: 'all',
+      logs,
+    });
+    return { automationLogs: logs };
+  }
+
+  async retryQueueMessage(queueId: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.retryQueueMessage(queueId);
+    return { automationLogs: logs };
+  }
+
+  // ---- Mail Logs ----
+
+  async getMailLogs(lines?: number, search?: string): Promise<{ lines: string[]; total: number }> {
+    return this.automation.getMailLogs(lines, search);
+  }
+
+  // ---- DNS Propagation Check ----
+
+  async checkDnsPropagation(domainId: string): Promise<{
+    domain: string;
+    results: { record: { type: string; name: string; expected: string }; actual: string[]; match: boolean }[];
+    allPropagated: boolean;
+  }> {
+    const suggestions = await this.getDnsSuggestions(domainId);
+    const records = suggestions.records.map(r => ({
+      type: r.type,
+      name: r.name,
+      value: r.value,
+    }));
+
+    const results = await this.automation.checkDnsPropagation(suggestions.domain, records);
+    const allPropagated = results.every(r => r.match);
+
+    return {
+      domain: suggestions.domain,
+      results,
+      allPropagated,
+    };
+  }
+
+  // ---- Mailbox Backup / Restore ----
+
+  async backupMailbox(domainId: string, mailboxId: string): Promise<{ path: string; sizeBytes: number; automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const result = await this.automation.backupMailbox(domain.domain, mailbox.email);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'backup',
+      target: mailbox.email,
+      logs: result.logs,
+    });
+
+    return { path: result.path, sizeBytes: result.sizeBytes, automationLogs: result.logs };
+  }
+
+  async restoreMailbox(domainId: string, mailboxId: string, backupFile: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.restoreMailbox(domain.domain, mailbox.email, backupFile);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'restore',
+      target: mailbox.email,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async listBackups(domain?: string): Promise<{ file: string; domain: string; email: string; timestamp: string; sizeBytes: number }[]> {
+    return this.automation.listBackups(domain);
+  }
+
+  // ---- Per-User Rate Limiting ----
+
+  async setupRateLimit(
+    domainId: string,
+    email: string,
+    limitPerHour: number,
+  ): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const logs = await this.automation.setupRateLimit(domain.domain, email, limitPerHour);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-rate-limit',
+      target: email === '*' ? `@${domain.domain}` : email,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getRateLimits(domainId: string): Promise<{ email: string; limit: number; updatedAt?: string }[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getRateLimits(domain.domain);
+  }
+
+  // ---- Sieve Filters (ManageSieve) ----
+
+  async listSieveFilters(domainId: string, mailboxId: string): Promise<{ name: string; active: boolean }[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    return this.automation.listSieveFilters(domain.domain, mailbox.email);
+  }
+
+  async getSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<{ name: string; script: string }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const script = await this.automation.getSieveFilter(domain.domain, mailbox.email, filterName);
+    return { name: filterName, script };
+  }
+
+  async putSieveFilter(domainId: string, mailboxId: string, filterName: string, scriptContent: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.putSieveFilter(domain.domain, mailbox.email, filterName, scriptContent);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'sieve-put',
+      target: `${mailbox.email}/${filterName}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async deleteSieveFilter(domainId: string, mailboxId: string, filterName: string): Promise<{ automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.id === mailboxId);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const logs = await this.automation.deleteSieveFilter(domain.domain, mailbox.email, filterName);
+    await this.history.log({
+      scope: 'mailbox' as MailAutomationScope,
+      action: 'sieve-delete',
+      target: `${mailbox.email}/${filterName}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  // ---- Catch-All Mailbox ----
+
+  async setupCatchAll(domainId: string, action: 'enable' | 'disable', targetEmail?: string): Promise<{ domain: MailDomain; automationLogs: AutomationLog[] }> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    if (action === 'enable' && !targetEmail) {
+      throw new BadRequestException('targetEmail is required to enable catch-all');
+    }
+
+    const logs = await this.automation.setupCatchAll(domain.domain, action, targetEmail);
+    domain.catchAllAddress = action === 'enable' ? targetEmail : undefined;
+    domain.updatedAt = new Date().toISOString();
+    await this.writeDomains(domains);
+
+    await this.history.log({
+      scope: 'domain' as MailAutomationScope,
+      action: `catch-all-${action}`,
+      target: domain.domain,
+      logs,
+    });
+
+    return { domain, automationLogs: logs };
+  }
+
+  // ---- Quota Warnings ----
+
+  async setupQuotaWarning(threshold: number, adminEmail?: string): Promise<{ automationLogs: AutomationLog[] }> {
+    if (threshold < 1 || threshold > 100) {
+      throw new BadRequestException('threshold must be between 1 and 100');
+    }
+
+    const logs = await this.automation.setupQuotaWarning(threshold, adminEmail);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-quota-warning',
+      target: `${threshold}%`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getQuotaWarningConfig(): Promise<{ threshold: number; adminEmail?: string; updatedAt?: string } | null> {
+    return this.automation.getQuotaWarningConfig();
+  }
+
+  // ---- SMTP Relay ----
+
+  async setupSmtpRelay(host: string, port: number, username?: string, password?: string): Promise<{ automationLogs: AutomationLog[] }> {
+    if (!host) throw new BadRequestException('host is required');
+    if (!port || port < 1 || port > 65535) throw new BadRequestException('port must be 1-65535');
+
+    const logs = await this.automation.setupSmtpRelay(host, port, username, password);
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'setup-smtp-relay',
+      target: `[${host}]:${port}`,
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  async getSmtpRelay(): Promise<{ configured: boolean; host?: string; port?: number; authenticated?: boolean }> {
+    return this.automation.getSmtpRelay();
+  }
+
+  async removeSmtpRelay(): Promise<{ automationLogs: AutomationLog[] }> {
+    const logs = await this.automation.removeSmtpRelay();
+    await this.history.log({
+      scope: 'security' as MailAutomationScope,
+      action: 'remove-smtp-relay',
+      target: 'relayhost',
+      logs,
+    });
+
+    return { automationLogs: logs };
+  }
+
+  // ---- DMARC Report Parsing ----
+
+  async getDmarcReports(domainId: string): Promise<unknown[]> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getDmarcReports(domain.domain);
+  }
+
+  async getDmarcSummary(domainId: string): Promise<unknown> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    return this.automation.getDmarcSummary(domain.domain);
   }
 }

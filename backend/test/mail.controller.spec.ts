@@ -57,9 +57,49 @@ class FakeMailAutomationService {
 
   hashPassword = jest.fn(async (password: string): Promise<string> => `HASHED:${password}`);
 
-  configureDomainPolicy = jest.fn(async (domain: string): Promise<AutomationLog[]> => [
+  configureDomainPolicy = jest.fn(async (domain: string, _settings?: any): Promise<AutomationLog[]> => [
     makeLog('Configure domain policy', `Policy applied for ${domain}`),
   ]);
+
+  // --- Methods added in improvements round 1 ---
+
+  setupMailTls = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Setup mail TLS', 'TLS configured')]);
+  setupPostscreen = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Setup postscreen', 'Postscreen enabled')]);
+  setupDmarc = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Setup DMARC', 'DMARC configured')]);
+
+  flushQueue = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Flush queue', 'Queue flushed')]);
+  deleteQueueMessage = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Delete queue msg', 'Deleted')]);
+  deleteAllQueueMessages = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Delete all queue', 'All deleted')]);
+  retryQueueMessage = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Retry queue msg', 'Retried')]);
+  getMailLogs = jest.fn(async (): Promise<{ lines: string[]; total: number }> => ({ lines: ['test log line'], total: 1 }));
+  checkDnsPropagation = jest.fn(async () => []);
+  backupMailbox = jest.fn(async () => ({ logs: [makeLog('Backup', 'Backed up')], path: '/backups/test.tar.gz', sizeBytes: 1024 }));
+  restoreMailbox = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Restore', 'Restored')]);
+  listBackups = jest.fn(async () => []);
+  setupRateLimit = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Setup rate limit', 'Rate limit set')]);
+  getRateLimits = jest.fn(async () => []);
+
+  // --- Methods added in improvements round 2 ---
+
+  listSieveFilters = jest.fn(async () => [{ name: 'default', active: true }]);
+  getSieveFilter = jest.fn(async () => 'require "fileinto"; fileinto "INBOX";');
+  putSieveFilter = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Upload Sieve filter', 'Filter saved')]);
+  deleteSieveFilter = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Delete Sieve filter', 'Filter deleted')]);
+
+  setupCatchAll = jest.fn(async (_domain?: string, _action?: string, _target?: string): Promise<AutomationLog[]> => [makeLog('Setup catch-all', 'Catch-all configured')]);
+
+  setupQuotaWarning = jest.fn(async (_threshold?: number, _adminEmail?: string): Promise<AutomationLog[]> => [makeLog('Setup quota warning', 'Warning configured')]);
+  getQuotaWarningConfig = jest.fn(async () => ({ threshold: 80, adminEmail: 'admin@example.test', updatedAt: '2025-01-01T00:00:00Z' }));
+
+  setupSmtpRelay = jest.fn(async (_host?: string, _port?: number, _username?: string, _password?: string): Promise<AutomationLog[]> => [makeLog('Setup SMTP relay', 'Relay configured')]);
+  getSmtpRelay = jest.fn(async () => ({ configured: false }));
+  removeSmtpRelay = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Remove SMTP relay', 'Relay removed')]);
+
+  getDmarcReports = jest.fn(async () => []);
+  getDmarcSummary = jest.fn(async () => ({
+    reportCount: 0, totalMessages: 0, passCount: 0, failCount: 0, passRate: 0, organizations: [], topSenders: [],
+  }));
+  ingestDmarcReport = jest.fn(async (): Promise<AutomationLog[]> => [makeLog('Ingest DMARC report', 'Report ingested')]);
 }
 
 const stubStatusSnapshot: MailHealthSnapshot = {
@@ -126,6 +166,7 @@ describe('MailController integration', () => {
     originalCwd = process.cwd();
     tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mail-api-'));
     process.chdir(tempDir);
+    process.env.DATA_DIR = tempDir;
     mailDataPath = path.join(tempDir, 'mail-domains.json');
     historyPath = path.join(tempDir, 'mail-automation-history.json');
 
@@ -149,7 +190,7 @@ describe('MailController integration', () => {
     const fakeDnsServerService = new FakeDnsServerService();
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 100 }), MailModule],
+      imports: [ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 100 }] }), MailModule],
     })
       .overrideProvider(MailAutomationService)
       .useValue(fakeAutomation)
@@ -173,6 +214,7 @@ describe('MailController integration', () => {
       await app.close();
     }
     process.chdir(originalCwd);
+    delete process.env.DATA_DIR;
     if (tempDir) {
       await fsp.rm(tempDir, { recursive: true, force: true });
     }
@@ -300,5 +342,278 @@ describe('MailController integration', () => {
     expect(response.body.queue).toEqual(stubStatusSnapshot.queue);
     expect(response.body.services).toEqual(stubStatusSnapshot.services);
     expect(fakeStatus.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- Sieve Filters Tests ----
+
+  it('lists sieve filters for a mailbox', async () => {
+    // Find mailbox id from the domain
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    const response = await request(httpServer)
+      .get(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sieve`)
+      .expect(200);
+
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(fakeAutomation.listSieveFilters).toHaveBeenCalled();
+  });
+
+  it('creates/updates a sieve filter', async () => {
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    const response = await request(httpServer)
+      .post(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sieve/my-filter`)
+      .send({ script: 'require "fileinto"; fileinto "Test";' })
+      .expect(201);
+
+    expect(response.body.automationLogs).toBeDefined();
+    expect(fakeAutomation.putSieveFilter).toHaveBeenCalled();
+  });
+
+  it('rejects sieve filter upload without script', async () => {
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    await request(httpServer)
+      .post(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sieve/my-filter`)
+      .send({})
+      .expect(400);
+  });
+
+  // ---- Catch-All Tests ----
+
+  it('enables catch-all for a domain', async () => {
+    const response = await request(httpServer)
+      .post(`/mail/domains/${domainId}/catch-all`)
+      .send({ action: 'enable', targetEmail: 'admin@example.test' })
+      .expect(201);
+
+    expect(response.body.domain.catchAllAddress).toBe('admin@example.test');
+    expect(fakeAutomation.setupCatchAll).toHaveBeenCalledWith('example.test', 'enable', 'admin@example.test');
+  });
+
+  it('disables catch-all for a domain', async () => {
+    const response = await request(httpServer)
+      .post(`/mail/domains/${domainId}/catch-all`)
+      .send({ action: 'disable' })
+      .expect(201);
+
+    expect(response.body.domain.catchAllAddress).toBeUndefined();
+    expect(fakeAutomation.setupCatchAll).toHaveBeenCalledWith('example.test', 'disable', undefined);
+  });
+
+  it('rejects catch-all enable without targetEmail', async () => {
+    await request(httpServer)
+      .post(`/mail/domains/${domainId}/catch-all`)
+      .send({ action: 'enable' })
+      .expect(400);
+  });
+
+  // ---- Quota Warning Tests ----
+
+  it('configures quota warnings', async () => {
+    const response = await request(httpServer)
+      .post('/mail/quota-warning')
+      .send({ threshold: 80, adminEmail: 'admin@example.test' })
+      .expect(201);
+
+    expect(response.body.automationLogs).toBeDefined();
+    expect(fakeAutomation.setupQuotaWarning).toHaveBeenCalledWith(80, 'admin@example.test');
+  });
+
+  it('rejects invalid quota threshold', async () => {
+    await request(httpServer)
+      .post('/mail/quota-warning')
+      .send({ threshold: 150 })
+      .expect(400);
+  });
+
+  it('retrieves quota warning config', async () => {
+    const response = await request(httpServer)
+      .get('/mail/quota-warning')
+      .expect(200);
+
+    expect(response.body).toBeDefined();
+    expect(fakeAutomation.getQuotaWarningConfig).toHaveBeenCalled();
+  });
+
+  // ---- SMTP Relay Tests ----
+
+  it('retrieves SMTP relay config', async () => {
+    const response = await request(httpServer)
+      .get('/mail/smtp-relay')
+      .expect(200);
+
+    expect(response.body.configured).toBe(false);
+    expect(fakeAutomation.getSmtpRelay).toHaveBeenCalled();
+  });
+
+  it('configures SMTP relay', async () => {
+    const response = await request(httpServer)
+      .post('/mail/smtp-relay')
+      .send({ host: 'smtp.relay.test', port: 587, username: 'user', password: 'pass' })
+      .expect(201);
+
+    expect(response.body.automationLogs).toBeDefined();
+    expect(fakeAutomation.setupSmtpRelay).toHaveBeenCalledWith('smtp.relay.test', 587, 'user', 'pass');
+  });
+
+  it('rejects SMTP relay without host', async () => {
+    await request(httpServer)
+      .post('/mail/smtp-relay')
+      .send({ port: 587 })
+      .expect(400);
+  });
+
+  it('removes SMTP relay', async () => {
+    const response = await request(httpServer)
+      .delete('/mail/smtp-relay')
+      .expect(200);
+
+    expect(response.body.automationLogs).toBeDefined();
+    expect(fakeAutomation.removeSmtpRelay).toHaveBeenCalled();
+  });
+
+  // ---- DMARC Reports Tests ----
+
+  it('retrieves DMARC reports for a domain', async () => {
+    const response = await request(httpServer)
+      .get(`/mail/domains/${domainId}/dmarc-reports`)
+      .expect(200);
+
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(fakeAutomation.getDmarcReports).toHaveBeenCalled();
+  });
+
+  it('retrieves DMARC summary for a domain', async () => {
+    const response = await request(httpServer)
+      .get(`/mail/domains/${domainId}/dmarc-reports/summary`)
+      .expect(200);
+
+    expect(response.body.reportCount).toBeDefined();
+    expect(fakeAutomation.getDmarcSummary).toHaveBeenCalled();
+  });
+
+  // ---- Rate Limiting Tests ----
+
+  it('configures rate limit for a domain', async () => {
+    const response = await request(httpServer)
+      .post(`/mail/domains/${domainId}/rate-limits`)
+      .send({ email: '*', limitPerHour: 100 })
+      .expect(201);
+
+    expect(response.body.automationLogs).toBeDefined();
+    expect(fakeAutomation.setupRateLimit).toHaveBeenCalled();
+  });
+
+  it('rejects rate limit without email', async () => {
+    await request(httpServer)
+      .post(`/mail/domains/${domainId}/rate-limits`)
+      .send({ limitPerHour: 100 })
+      .expect(400);
+  });
+
+  it('retrieves rate limits for a domain', async () => {
+    const response = await request(httpServer)
+      .get(`/mail/domains/${domainId}/rate-limits`)
+      .expect(200);
+
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(fakeAutomation.getRateLimits).toHaveBeenCalled();
+  });
+
+  // ---- Queue Management Tests ----
+
+  it('flushes the mail queue', async () => {
+    const response = await request(httpServer)
+      .post('/mail/queue/flush')
+      .expect(201);
+
+    expect(response.body.automationLogs).toBeDefined();
+  });
+
+  // ---- Mail Logs Tests ----
+
+  it('retrieves mail logs', async () => {
+    const response = await request(httpServer)
+      .get('/mail/logs?lines=50')
+      .expect(200);
+
+    expect(response.body).toBeDefined();
+  });
+
+  // ---- Webmail SSO Tests ----
+
+  it('generates an SSO token for a mailbox', async () => {
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    const response = await request(httpServer)
+      .post(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sso`)
+      .expect(201);
+
+    expect(response.body.url).toBeDefined();
+    expect(response.body.token).toBeDefined();
+    expect(response.body.url).toContain('_sso_token=');
+  });
+
+  it('verifies a valid SSO token', async () => {
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    // Generate the token
+    const genResp = await request(httpServer)
+      .post(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sso`)
+      .expect(201);
+
+    const { token } = genResp.body;
+
+    // Verify the token
+    const verifyResp = await request(httpServer)
+      .get(`/mail/sso/verify?token=${encodeURIComponent(token)}`)
+      .expect(200);
+
+    expect(verifyResp.body.email).toBeDefined();
+  });
+
+  it('rejects a replayed SSO token (nonce consumed)', async () => {
+    const domainResp = await request(httpServer).get('/mail/domains').expect(200);
+    const mailboxId = domainResp.body[0].mailboxes[0].id;
+
+    const genResp = await request(httpServer)
+      .post(`/mail/domains/${domainId}/mailboxes/${mailboxId}/sso`)
+      .expect(201);
+
+    const { token } = genResp.body;
+
+    // First verification succeeds
+    await request(httpServer)
+      .get(`/mail/sso/verify?token=${encodeURIComponent(token)}`)
+      .expect(200);
+
+    // Second attempt fails (replay)
+    await request(httpServer)
+      .get(`/mail/sso/verify?token=${encodeURIComponent(token)}`)
+      .expect(400);
+  });
+
+  it('rejects an SSO token with invalid signature', async () => {
+    await request(httpServer)
+      .get('/mail/sso/verify?token=fakePayload.fakeSignature')
+      .expect(400);
+  });
+
+  it('rejects SSO verify without token', async () => {
+    await request(httpServer)
+      .get('/mail/sso/verify')
+      .expect(400);
+  });
+
+  it('returns 400 for SSO on nonexistent domain', async () => {
+    await request(httpServer)
+      .post('/mail/domains/nonexistent-id/mailboxes/nonexistent-mbx/sso')
+      .expect(400);
   });
 });

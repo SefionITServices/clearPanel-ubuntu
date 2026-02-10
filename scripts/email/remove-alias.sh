@@ -16,6 +16,22 @@ source "$SCRIPT_DIR/common.sh"
 
 ensure_state_root
 
+# Normalize source to full address
+if [[ "$SOURCE" != *"@"* ]]; then
+  SOURCE_FULL="${SOURCE}@${DOMAIN}"
+else
+  SOURCE_FULL="$SOURCE"
+fi
+
+if [[ "$MAIL_MODE" == "production" ]]; then
+  # --- Remove from Postfix virtual alias map ---
+  sed -i "/^${SOURCE_FULL}\s/d" "$POSTFIX_VALIAS" 2>/dev/null || true
+  postmap_rebuild "$POSTFIX_VALIAS"
+  postfix_reload
+  printf 'Removed alias %s from Postfix virtual alias map\n' "$SOURCE_FULL"
+fi
+
+# --- Clean up state ---
 rm -f "$ALIASES_DIR/$DOMAIN/${SOURCE}.txt" || true
 
-printf 'Alias %s@%s removed from simulated state\n' "$SOURCE" "$DOMAIN"
+printf 'Alias %s removed\n' "$SOURCE_FULL"

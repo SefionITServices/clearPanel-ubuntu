@@ -148,6 +148,30 @@ export class AppStoreService {
       tags: ['postgresql', 'database', 'admin', 'web'],
       website: 'https://www.pgadmin.org',
     },
+    {
+      id: 'roundcube',
+      name: 'Roundcube',
+      description: 'Modern webmail client for IMAP servers',
+      longDescription:
+        'Roundcube is a free and open-source browser-based IMAP email client with a desktop-like UI. It provides full email functionality including address book, folder management, message search, and sieve filter support.',
+      icon: 'MailOutline',
+      color: '#37BEFF',
+      category: 'utility',
+      tags: ['email', 'webmail', 'imap', 'mail', 'roundcube'],
+      website: 'https://roundcube.net',
+    },
+    {
+      id: 'mailman',
+      name: 'Mailman 3',
+      description: 'GNU mailing list manager with web UI',
+      longDescription:
+        'Mailman 3 (GNU Mailman) is the most widely used open-source mailing list management software. It supports discussion lists, announcement lists, and digest delivery with a modern web interface (Postorius) and archive viewer (HyperKitty).',
+      icon: 'Forum',
+      color: '#3F51B5',
+      category: 'utility',
+      tags: ['email', 'mailing-list', 'list-manager', 'mail', 'discussion'],
+      website: 'https://list.org',
+    },
   ];
 
   // ─── helpers ────────────────────────────────────────────────────────
@@ -347,6 +371,8 @@ export class AppStoreService {
       certbot: () => this.certbotStatus(),
       'wp-cli': () => this.wpCliStatus(),
       pgadmin: () => this.pgAdminStatus(),
+      roundcube: () => this.roundcubeStatus(),
+      mailman: () => this.mailmanStatus(),
     };
   }
 
@@ -377,6 +403,8 @@ export class AppStoreService {
       certbot: () => this.installCertbot(),
       'wp-cli': () => this.installWpCli(),
       pgadmin: () => this.installPgAdmin(),
+      roundcube: () => this.installRoundcube(),
+      mailman: () => this.installMailman(),
     };
   }
 
@@ -391,6 +419,8 @@ export class AppStoreService {
       certbot: () => this.uninstallGenericApt('certbot', 'Certbot'),
       'wp-cli': () => this.uninstallWpCli(),
       pgadmin: () => this.uninstallPgAdmin(),
+      roundcube: () => this.uninstallRoundcube(),
+      mailman: () => this.uninstallMailman(),
     };
   }
 
@@ -804,6 +834,8 @@ location /pgadmin {
       certbot: () => this.diagnoseCertbot(),
       'wp-cli': () => this.diagnoseWpCli(),
       pgadmin: () => this.diagnosePgAdmin(),
+      roundcube: () => this.diagnoseRoundcube(),
+      mailman: () => this.diagnoseMailman(),
     };
     const fn = map[id];
     if (!fn) return { success: false, checks: [{ name: 'Error', status: 'error', detail: `Unknown app: ${id}` }] };
@@ -1251,6 +1283,232 @@ location /pgadmin {
         : httpStatus === '502' ? 'HTTP 502 — pgAdmin service may not be running'
         : httpStatus === '404' ? 'HTTP 404 — Nginx not proxying to pgAdmin'
         : `HTTP ${httpStatus} — pgAdmin may not be configured yet`,
+    });
+
+    return checks;
+  }
+
+  // ─── Roundcube ──────────────────────────────────────────────────────
+
+  private async roundcubeStatus(): Promise<AppStatus> {
+    const installed = await this.fileExists('/usr/share/roundcube/index.php');
+    const running = installed && (await this.serviceRunning('nginx') || await this.serviceRunning('apache2'));
+    let version = '';
+    if (installed) {
+      version = await this.pkgVersion('roundcube-core');
+    }
+    return { id: 'roundcube', installed, running, version, url: '/mail (webmail domain)' };
+  }
+
+  private async installRoundcube(): Promise<{ success: boolean; message: string; logs?: string }> {
+    try {
+      const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
+      const script = path.join(scriptsDir, 'install-roundcube.sh');
+
+      // Detect a sensible default webmail domain
+      let webmailDomain = 'webmail.localhost';
+      try {
+        const settings = await fs.readFile(
+          path.join(process.cwd(), 'server-settings.json'), 'utf-8',
+        );
+        const parsed = JSON.parse(settings);
+        if (parsed.primaryDomain) {
+          webmailDomain = `webmail.${parsed.primaryDomain}`;
+        }
+      } catch { /* use default */ }
+
+      const { stdout, stderr } = await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 300_000 });
+      const logs = [stdout?.trim(), stderr?.trim()].filter(Boolean).join('\n');
+      return {
+        success: true,
+        message: `Roundcube installed. Access via: http://${webmailDomain}`,
+        logs,
+      };
+    } catch (e: any) {
+      this.logger.error(`Roundcube install failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async uninstallRoundcube(): Promise<{ success: boolean; message: string }> {
+    try {
+      const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
+      const script = path.join(scriptsDir, 'uninstall-roundcube.sh');
+
+      let webmailDomain = 'webmail.localhost';
+      try {
+        const settings = await fs.readFile(
+          path.join(process.cwd(), 'server-settings.json'), 'utf-8',
+        );
+        const parsed = JSON.parse(settings);
+        if (parsed.primaryDomain) {
+          webmailDomain = `webmail.${parsed.primaryDomain}`;
+        }
+      } catch { /* use default */ }
+
+      await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 120_000 });
+      return { success: true, message: 'Roundcube uninstalled' };
+    } catch (e: any) {
+      this.logger.error(`Roundcube uninstall failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async diagnoseRoundcube(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.fileExists('/usr/share/roundcube/index.php');
+    checks.push({
+      name: 'Roundcube Package',
+      status: installed ? 'ok' : 'error',
+      detail: installed ? 'Roundcube is installed' : 'Roundcube is not installed',
+    });
+
+    const nginxRunning = await this.serviceRunning('nginx');
+    checks.push({
+      name: 'Nginx',
+      status: nginxRunning ? 'ok' : 'error',
+      detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running',
+    });
+
+    // Check if any Roundcube vhost exists
+    let vhostFound = false;
+    try {
+      const out = await this.sudo(`grep -rl 'roundcube' /etc/nginx/sites-enabled/ 2>/dev/null | head -1`);
+      vhostFound = out.length > 0;
+    } catch {}
+    checks.push({
+      name: 'Nginx Vhost',
+      status: vhostFound ? 'ok' : 'warn',
+      detail: vhostFound ? 'Roundcube nginx vhost found' : 'No Roundcube nginx vhost configured',
+    });
+
+    // Check Dovecot (IMAP)
+    const dovecotRunning = await this.serviceRunning('dovecot');
+    checks.push({
+      name: 'Dovecot (IMAP)',
+      status: dovecotRunning ? 'ok' : 'error',
+      detail: dovecotRunning ? 'Dovecot is running' : 'Dovecot is NOT running — Roundcube needs IMAP',
+    });
+
+    // Check Postfix (SMTP)
+    const postfixRunning = await this.serviceRunning('postfix');
+    checks.push({
+      name: 'Postfix (SMTP)',
+      status: postfixRunning ? 'ok' : 'warn',
+      detail: postfixRunning ? 'Postfix is running' : 'Postfix is NOT running — sending mail will fail',
+    });
+
+    return checks;
+  }
+
+  // ─── Mailman 3 (mailing lists) ──────────────────────────────────────
+
+  private async mailmanStatus(): Promise<AppStatus> {
+    let installed = false;
+    let running = false;
+    let version = '';
+
+    // Check if mailman3 is installed
+    try {
+      const v = await this.pkgVersion('mailman3');
+      if (v) { installed = true; version = v; }
+    } catch {}
+
+    // Also check pip-based install
+    if (!installed) {
+      try {
+        const out = (await exec('mailman --version 2>/dev/null')).stdout.trim();
+        const m = out.match(/GNU Mailman (\S+)/);
+        if (m) { installed = true; version = m[1]; }
+      } catch {}
+    }
+
+    if (installed) {
+      running = await this.serviceRunning('mailman3');
+      if (!running) running = await this.serviceRunning('mailman3-web');
+    }
+
+    return { id: 'mailman', installed, running, version, port: 8001, url: '/mailman3' };
+  }
+
+  private async installMailman(): Promise<{ success: boolean; message: string; logs?: string }> {
+    try {
+      const cmds = [
+        'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mailman3-full',
+      ];
+      let logs = '';
+      for (const cmd of cmds) {
+        try { logs += await this.sudo(cmd, 300_000) + '\n'; } catch (e: any) { logs += `WARN: ${e.message}\n`; }
+      }
+
+      // Enable and start services
+      try { await this.sudo('systemctl enable mailman3'); } catch {}
+      try { await this.sudo('systemctl start mailman3'); } catch {}
+      try { await this.sudo('systemctl enable mailman3-web'); } catch {}
+      try { await this.sudo('systemctl start mailman3-web'); } catch {}
+
+      return { success: true, message: 'Mailman 3 installed successfully. Access the web UI at /mailman3.', logs };
+    } catch (e: any) {
+      this.logger.error(`Mailman install failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async uninstallMailman(): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.sudo('systemctl stop mailman3 2>/dev/null || true');
+      await this.sudo('systemctl stop mailman3-web 2>/dev/null || true');
+      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get remove -y mailman3-full 2>/dev/null || true');
+      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true');
+      return { success: true, message: 'Mailman 3 uninstalled' };
+    } catch (e: any) {
+      this.logger.error(`Mailman uninstall failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async diagnoseMailman(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    let installed = false;
+    try {
+      const v = await this.pkgVersion('mailman3');
+      installed = !!v;
+    } catch {}
+    if (!installed) {
+      try {
+        const { stdout } = await exec('mailman --version 2>/dev/null');
+        installed = stdout.includes('GNU Mailman');
+      } catch {}
+    }
+    checks.push({
+      name: 'Mailman 3 Package',
+      status: installed ? 'ok' : 'error',
+      detail: installed ? 'Mailman 3 is installed' : 'Mailman 3 is not installed',
+    });
+
+    const coreRunning = await this.serviceRunning('mailman3');
+    checks.push({
+      name: 'Mailman Core Service',
+      status: coreRunning ? 'ok' : 'error',
+      detail: coreRunning ? 'mailman3 service is running' : 'mailman3 service is NOT running',
+    });
+
+    const webRunning = await this.serviceRunning('mailman3-web');
+    checks.push({
+      name: 'Mailman Web Service',
+      status: webRunning ? 'ok' : 'warn',
+      detail: webRunning ? 'mailman3-web service is running' : 'mailman3-web service is NOT running',
+    });
+
+    // Check Postfix integration
+    const postfixRunning = await this.serviceRunning('postfix');
+    checks.push({
+      name: 'Postfix (MTA)',
+      status: postfixRunning ? 'ok' : 'error',
+      detail: postfixRunning ? 'Postfix is running' : 'Postfix is NOT running — Mailman requires an MTA',
     });
 
     return checks;

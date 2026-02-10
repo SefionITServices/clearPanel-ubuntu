@@ -17,9 +17,26 @@ source "$SCRIPT_DIR/common.sh"
 
 ensure_state_root
 
+# Normalize source to full address if needed
+if [[ "$SOURCE" != *"@"* ]]; then
+  SOURCE_FULL="${SOURCE}@${DOMAIN}"
+else
+  SOURCE_FULL="$SOURCE"
+fi
+
+# --- State tracking (both modes) ---
 ALIAS_DIR="$ALIASES_DIR/$DOMAIN"
 mkdir -p "$ALIAS_DIR"
-
 printf '%s\n' "$DESTINATION" >"$ALIAS_DIR/${SOURCE}.txt"
 
-printf 'Alias %s@%s → %s stored in simulated state\n' "$SOURCE" "$DOMAIN" "$DESTINATION"
+if [[ "$MAIL_MODE" == "production" ]]; then
+  # --- Add to Postfix virtual alias map ---
+  # Remove existing entry for this source, then append
+  sed -i "/^${SOURCE_FULL}\s/d" "$POSTFIX_VALIAS" 2>/dev/null || true
+  printf '%s\t%s\n' "$SOURCE_FULL" "$DESTINATION" >>"$POSTFIX_VALIAS"
+  postmap_rebuild "$POSTFIX_VALIAS"
+  postfix_reload
+  printf 'Alias %s → %s added to Postfix virtual alias map\n' "$SOURCE_FULL" "$DESTINATION"
+else
+  printf 'Alias %s@%s → %s stored in simulated state\n' "$SOURCE" "$DOMAIN" "$DESTINATION"
+fi
