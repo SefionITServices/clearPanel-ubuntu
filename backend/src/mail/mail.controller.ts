@@ -259,4 +259,18 @@ export class MailController {
     }
     return this.mailService.setupDmarc(body.domain, body.reportEmail);
   }
+
+  // ---- Phase 5: DNS Auto-Publish & Metrics ----
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('domains/:id/dns/publish')
+  publishDns(@Param('id') id: string) {
+    return this.mailService.publishDns(id);
+  }
+
+  @SkipThrottle()
+  @Get('metrics')
+  getMailMetrics() {
+    return this.mailService.getMailMetrics();
+  }
 }

@@ -133,6 +133,54 @@ export interface AutomationResult {
   automationLogs: AutomationLog[];
 }
 
+export interface DnsPublishRecord {
+  type: string;
+  name: string;
+  value: string;
+  status: 'created' | 'exists' | 'error';
+  error?: string;
+}
+
+export interface DnsPublishResult {
+  published: DnsPublishRecord[];
+  zoneReload?: { success: boolean; message: string };
+}
+
+export interface RspamdStats {
+  scanned?: number;
+  learned?: number;
+  spamCount?: number;
+  hamCount?: number;
+  greylistedCount?: number;
+  rejectCount?: number;
+}
+
+export interface MailboxDiskUsageEntry {
+  email: string;
+  bytes: number;
+}
+
+export interface DomainDiskUsage {
+  domain: string;
+  totalBytes: number;
+  mailboxes: MailboxDiskUsageEntry[];
+}
+
+export interface DeliveryStats {
+  sent: number;
+  received: number;
+  bounced: number;
+  deferred: number;
+  rejected: number;
+}
+
+export interface MailMetricsResponse {
+  rspamd?: RspamdStats;
+  diskUsage?: DomainDiskUsage[];
+  delivery?: DeliveryStats;
+  dovecotConnections?: number;
+}
+
 const API_BASE = '/api/mail';
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
@@ -283,5 +331,17 @@ export const mailAPI = {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  // ---- Phase 5: DNS Auto-Publish & Metrics ----
+
+  async publishDns(domainId: string): Promise<DnsPublishResult> {
+    return fetchJSON<DnsPublishResult>(`${API_BASE}/domains/${domainId}/dns/publish`, {
+      method: 'POST',
+    });
+  },
+
+  async getMailMetrics(): Promise<MailMetricsResponse> {
+    return fetchJSON<MailMetricsResponse>(`${API_BASE}/metrics`);
   },
 };

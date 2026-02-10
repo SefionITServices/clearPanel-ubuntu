@@ -41,6 +41,8 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import LockIcon from '@mui/icons-material/Lock';
 import SecurityIcon from '@mui/icons-material/Security';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import PublishIcon from '@mui/icons-material/Publish';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import {
   AutomationLog,
@@ -54,6 +56,8 @@ import {
   DnsRecord,
   MailStatusResponse,
   SecurityStatus,
+  DnsPublishResult,
+  MailMetricsResponse,
   mailAPI,
 } from '../api/mail';
 
@@ -225,6 +229,15 @@ export default function MailDomainsPage() {
   const [postscreenBusy, setPostscreenBusy] = useState(false);
   const [dmarcForm, setDmarcForm] = useState({ domain: '', reportEmail: '' });
   const [dmarcBusy, setDmarcBusy] = useState(false);
+
+  // DNS publish
+  const [publishBusy, setPublishBusy] = useState<Record<string, boolean>>({});
+  const [publishResults, setPublishResults] = useState<Record<string, DnsPublishResult>>({});
+
+  // Mail metrics
+  const [metricsExpanded, setMetricsExpanded] = useState(false);
+  const [metrics, setMetrics] = useState<MailMetricsResponse | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
 
   const hasAnyDomains = domains.length > 0;
   const defaultMailboxFormState = { localPart: '', password: '', quotaMb: '' } as const;
@@ -949,6 +962,41 @@ export default function MailDomainsPage() {
     }
   };
 
+  // --- DNS Publish Handler ---
+  const handlePublishDns = async (domainId: string, domainName: string) => {
+    setPublishBusy((prev) => ({ ...prev, [domainId]: true }));
+    try {
+      const result = await mailAPI.publishDns(domainId);
+      setPublishResults((prev) => ({ ...prev, [domainId]: result }));
+      const created = result.published.filter((r) => r.status === 'created').length;
+      const existing = result.published.filter((r) => r.status === 'exists').length;
+      const errors = result.published.filter((r) => r.status === 'error').length;
+      const msg = `DNS for ${domainName}: ${created} published, ${existing} unchanged${errors ? `, ${errors} errors` : ''}`;
+      setFeedback({ type: errors ? 'error' : 'success', message: msg });
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'DNS publish failed' });
+    } finally {
+      setPublishBusy((prev) => {
+        const clone = { ...prev };
+        delete clone[domainId];
+        return clone;
+      });
+    }
+  };
+
+  // --- Load Metrics ---
+  const handleLoadMetrics = async () => {
+    setMetricsLoading(true);
+    try {
+      const data = await mailAPI.getMailMetrics();
+      setMetrics(data);
+    } catch {
+      // non-critical
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
   const activeMailboxDomain = mailboxDialog ? findDomainById(mailboxDialog.domainId) : undefined;
   const activeMailbox =
     mailboxDialog && activeMailboxDomain
@@ -1169,6 +1217,125 @@ export default function MailDomainsPage() {
             </Stack>
           </Paper>
 
+          {/* Mail Metrics Panel */}
+          <Paper sx={{ p: 2, border: (theme) => `1px solid ${theme.palette.divider}` }}>
+            <Stack spacing={2}>
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                onClick={() => {
+                  const next = !metricsExpanded;
+                  setMetricsExpanded(next);
+                  if (next && !metrics) void handleLoadMetrics();
+                }}
+              >
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <BarChartIcon color="primary" />
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Mail Metrics
+                  </Typography>
+                </Stack>
+                <IconButton size="small">
+                  {metricsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+              </Box>
+
+              <Collapse in={metricsExpanded}>
+                {metricsLoading && (
+                  <Box sx={{ textAlign: 'center', py: 2 }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                )}
+                {!metricsLoading && metrics && (
+                  <Stack spacing={2} sx={{ pt: 1 }}>
+                    {/* Rspamd Stats */}
+                    {metrics.rspamd && (
+                      <Paper variant="outlined" sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                          Rspamd Statistics
+                        </Typography>
+                        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                          <Chip size="small" label={`Scanned: ${metrics.rspamd.scanned ?? 0}`} />
+                          <Chip size="small" color="success" label={`Ham: ${metrics.rspamd.hamCount ?? 0}`} />
+                          <Chip size="small" color="warning" label={`Spam: ${metrics.rspamd.spamCount ?? 0}`} />
+                          <Chip size="small" color="error" label={`Rejected: ${metrics.rspamd.rejectCount ?? 0}`} />
+                          <Chip size="small" label={`Greylisted: ${metrics.rspamd.greylistedCount ?? 0}`} />
+                        </Stack>
+                      </Paper>
+                    )}
+
+                    {/* Delivery Stats */}
+                    {metrics.delivery && (
+                      <Paper variant="outlined" sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                          Delivery (last 24h from logs)
+                        </Typography>
+                        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+                          <Chip size="small" color="primary" label={`Sent: ${metrics.delivery.sent}`} />
+                          <Chip size="small" color="success" label={`Received: ${metrics.delivery.received}`} />
+                          <Chip size="small" color="warning" label={`Bounced: ${metrics.delivery.bounced}`} />
+                          <Chip size="small" label={`Deferred: ${metrics.delivery.deferred}`} />
+                          <Chip size="small" color="error" label={`Rejected: ${metrics.delivery.rejected}`} />
+                        </Stack>
+                      </Paper>
+                    )}
+
+                    {/* Dovecot Connections */}
+                    {metrics.dovecotConnections !== undefined && (
+                      <Chip size="small" variant="outlined" label={`Active IMAP connections: ${metrics.dovecotConnections}`} />
+                    )}
+
+                    {/* Disk Usage */}
+                    {metrics.diskUsage && metrics.diskUsage.length > 0 && (
+                      <Paper variant="outlined" sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                          Mailbox Disk Usage
+                        </Typography>
+                        <TableContainer>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Domain</TableCell>
+                                <TableCell>Mailbox</TableCell>
+                                <TableCell align="right">Size</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {metrics.diskUsage.flatMap((du) =>
+                                du.mailboxes.map((mb) => (
+                                  <TableRow key={mb.email}>
+                                    <TableCell>{du.domain}</TableCell>
+                                    <TableCell>{mb.email}</TableCell>
+                                    <TableCell align="right">
+                                      {mb.bytes < 1024 * 1024
+                                        ? `${(mb.bytes / 1024).toFixed(1)} KB`
+                                        : `${(mb.bytes / (1024 * 1024)).toFixed(1)} MB`}
+                                    </TableCell>
+                                  </TableRow>
+                                )),
+                              )}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Paper>
+                    )}
+
+                    {!metrics.rspamd && !metrics.delivery && !metrics.diskUsage && (
+                      <Typography variant="body2" color="text.secondary">
+                        No metrics available. Mail services may not be running in production mode.
+                      </Typography>
+                    )}
+
+                    <Box>
+                      <Button size="small" variant="text" onClick={() => void handleLoadMetrics()} disabled={metricsLoading}>
+                        Refresh metrics
+                      </Button>
+                    </Box>
+                  </Stack>
+                )}
+              </Collapse>
+            </Stack>
+          </Paper>
+
           {feedback && (
             <Alert
               severity={feedback.type}
@@ -1361,6 +1528,17 @@ export default function MailDomainsPage() {
                           sx={{ alignSelf: 'flex-start' }}
                         >
                           {dkimBusy[domain.id] ? 'Rotating…' : 'Rotate DKIM key'}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="primary"
+                          onClick={() => { void handlePublishDns(domain.id, domain.domain); }}
+                          startIcon={<PublishIcon fontSize="small" />}
+                          disabled={Boolean(publishBusy[domain.id])}
+                          sx={{ alignSelf: 'flex-start' }}
+                        >
+                          {publishBusy[domain.id] ? 'Publishing…' : 'Publish to DNS'}
                         </Button>
                       </Stack>
                       <Collapse in={dnsExpanded[domain.id] ?? false} timeout="auto" unmountOnExit>

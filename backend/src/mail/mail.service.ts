@@ -5,7 +5,10 @@ import { randomUUID } from 'crypto';
 import { MailAlias, MailDomain, Mailbox } from './mail.model';
 import { MailAutomationService, AutomationLog, DkimResult } from './mail-automation.service';
 import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } from './mail-history.service';
+import { MailStatusService, MailMetrics } from './mail-status.service';
 import { ServerSettingsService } from '../server/server-settings.service';
+import { DnsService } from '../dns/dns.service';
+import { DnsServerService } from '../dns-server/dns-server.service';
 import { getDataFilePath } from '../common/paths';
 
 const DEFAULT_SPAM_THRESHOLD = 6.0;
@@ -47,6 +50,9 @@ export class MailService {
     private readonly automation: MailAutomationService,
     private readonly serverSettings: ServerSettingsService,
     private readonly history: MailHistoryService,
+    private readonly statusService: MailStatusService,
+    private readonly dnsService: DnsService,
+    private readonly dnsServerService: DnsServerService,
   ) {}
 
   async listDomains(): Promise<MailDomain[]> {
@@ -929,5 +935,119 @@ export class MailService {
     } catch { /* not configured */ }
 
     return result;
+  }
+
+  // ---- DNS Auto-Publish (Phase 5) ----
+
+  async publishDns(domainId: string): Promise<{
+    published: { type: string; name: string; value: string; status: 'created' | 'exists' | 'error'; error?: string }[];
+    zoneReload?: { success: boolean; message: string };
+  }> {
+    const suggestions = await this.getDnsSuggestions(domainId);
+    const domainName = suggestions.domain;
+
+    // Ensure a DNS zone exists for this domain
+    const zone = await this.dnsService.getZone(domainName);
+    if (!zone) {
+      await this.dnsService.ensureDefaultZone(domainName, {
+        serverIp: suggestions.serverIp,
+      });
+    }
+
+    const published: { type: string; name: string; value: string; status: 'created' | 'exists' | 'error'; error?: string }[] = [];
+
+    // Fetch the zone again to check for existing records
+    const currentZone = await this.dnsService.getZone(domainName);
+    const existingRecords = currentZone?.records ?? [];
+
+    for (const rec of suggestions.records) {
+      // Check if a record already exists (same type + name)
+      const existing = existingRecords.find(
+        (r) => r.type === rec.type && r.name === rec.name,
+      );
+
+      if (existing) {
+        // If the value matches, skip; otherwise update in-place
+        if (existing.value === rec.value) {
+          published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'exists' });
+          continue;
+        }
+        // Update the existing record
+        try {
+          await this.dnsService.updateRecord(domainName, existing.id, {
+            value: rec.value,
+            ttl: rec.ttl,
+            priority: rec.priority,
+          });
+          published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'created' });
+        } catch (error) {
+          published.push({
+            type: rec.type, name: rec.name, value: rec.value,
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Update failed',
+          });
+        }
+        continue;
+      }
+
+      // Create new record
+      try {
+        await this.dnsService.addRecord(domainName, {
+          type: rec.type as 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS',
+          name: rec.name,
+          value: rec.value,
+          ttl: rec.ttl,
+          priority: rec.priority,
+        });
+        published.push({ type: rec.type, name: rec.name, value: rec.value, status: 'created' });
+      } catch (error) {
+        published.push({
+          type: rec.type, name: rec.name, value: rec.value,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Creation failed',
+        });
+      }
+    }
+
+    // Sync BIND zone file if the DNS server is running
+    let zoneReload: { success: boolean; message: string } | undefined;
+    try {
+      const serverStatus = await this.dnsServerService.getStatus();
+      if (serverStatus.installed && serverStatus.running) {
+        // Regenerate the zone file from the updated JSON records
+        const updatedZone = await this.dnsService.getZone(domainName);
+        if (updatedZone) {
+          zoneReload = await this.dnsServerService.createZone(
+            domainName,
+            suggestions.serverIp,
+          );
+        }
+      }
+    } catch (error) {
+      zoneReload = {
+        success: false,
+        message: error instanceof Error ? error.message : 'Zone reload failed',
+      };
+    }
+
+    // Log the publish action
+    await this.history.log({
+      scope: 'domain' as MailAutomationScope,
+      action: 'publish-dns',
+      target: domainName,
+      logs: [{
+        task: 'Publish DNS records',
+        success: published.every((r) => r.status !== 'error'),
+        message: `Published ${published.filter((r) => r.status === 'created').length} records, ${published.filter((r) => r.status === 'exists').length} unchanged`,
+      }],
+    });
+
+    return { published, zoneReload };
+  }
+
+  // ---- Mail Metrics (Phase 5) ----
+
+  async getMailMetrics(): Promise<MailMetrics> {
+    return this.statusService.getMetrics();
   }
 }

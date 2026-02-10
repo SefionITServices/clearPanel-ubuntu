@@ -148,6 +148,18 @@ export class AppStoreService {
       tags: ['postgresql', 'database', 'admin', 'web'],
       website: 'https://www.pgadmin.org',
     },
+    {
+      id: 'roundcube',
+      name: 'Roundcube',
+      description: 'Modern webmail client for IMAP servers',
+      longDescription:
+        'Roundcube is a free and open-source browser-based IMAP email client with a desktop-like UI. It provides full email functionality including address book, folder management, message search, and sieve filter support.',
+      icon: 'MailOutline',
+      color: '#37BEFF',
+      category: 'utility',
+      tags: ['email', 'webmail', 'imap', 'mail', 'roundcube'],
+      website: 'https://roundcube.net',
+    },
   ];
 
   // ─── helpers ────────────────────────────────────────────────────────
@@ -347,6 +359,7 @@ export class AppStoreService {
       certbot: () => this.certbotStatus(),
       'wp-cli': () => this.wpCliStatus(),
       pgadmin: () => this.pgAdminStatus(),
+      roundcube: () => this.roundcubeStatus(),
     };
   }
 
@@ -377,6 +390,7 @@ export class AppStoreService {
       certbot: () => this.installCertbot(),
       'wp-cli': () => this.installWpCli(),
       pgadmin: () => this.installPgAdmin(),
+      roundcube: () => this.installRoundcube(),
     };
   }
 
@@ -391,6 +405,7 @@ export class AppStoreService {
       certbot: () => this.uninstallGenericApt('certbot', 'Certbot'),
       'wp-cli': () => this.uninstallWpCli(),
       pgadmin: () => this.uninstallPgAdmin(),
+      roundcube: () => this.uninstallRoundcube(),
     };
   }
 
@@ -804,6 +819,7 @@ location /pgadmin {
       certbot: () => this.diagnoseCertbot(),
       'wp-cli': () => this.diagnoseWpCli(),
       pgadmin: () => this.diagnosePgAdmin(),
+      roundcube: () => this.diagnoseRoundcube(),
     };
     const fn = map[id];
     if (!fn) return { success: false, checks: [{ name: 'Error', status: 'error', detail: `Unknown app: ${id}` }] };
@@ -1251,6 +1267,120 @@ location /pgadmin {
         : httpStatus === '502' ? 'HTTP 502 — pgAdmin service may not be running'
         : httpStatus === '404' ? 'HTTP 404 — Nginx not proxying to pgAdmin'
         : `HTTP ${httpStatus} — pgAdmin may not be configured yet`,
+    });
+
+    return checks;
+  }
+
+  // ─── Roundcube ──────────────────────────────────────────────────────
+
+  private async roundcubeStatus(): Promise<AppStatus> {
+    const installed = await this.fileExists('/usr/share/roundcube/index.php');
+    const running = installed && (await this.serviceRunning('nginx') || await this.serviceRunning('apache2'));
+    let version = '';
+    if (installed) {
+      version = await this.pkgVersion('roundcube-core');
+    }
+    return { id: 'roundcube', installed, running, version, url: '/mail (webmail domain)' };
+  }
+
+  private async installRoundcube(): Promise<{ success: boolean; message: string; logs?: string }> {
+    try {
+      const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
+      const script = path.join(scriptsDir, 'install-roundcube.sh');
+
+      // Detect a sensible default webmail domain
+      let webmailDomain = 'webmail.localhost';
+      try {
+        const settings = await fs.readFile(
+          path.join(process.cwd(), 'server-settings.json'), 'utf-8',
+        );
+        const parsed = JSON.parse(settings);
+        if (parsed.primaryDomain) {
+          webmailDomain = `webmail.${parsed.primaryDomain}`;
+        }
+      } catch { /* use default */ }
+
+      const { stdout, stderr } = await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 300_000 });
+      const logs = [stdout?.trim(), stderr?.trim()].filter(Boolean).join('\n');
+      return {
+        success: true,
+        message: `Roundcube installed. Access via: http://${webmailDomain}`,
+        logs,
+      };
+    } catch (e: any) {
+      this.logger.error(`Roundcube install failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async uninstallRoundcube(): Promise<{ success: boolean; message: string }> {
+    try {
+      const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
+      const script = path.join(scriptsDir, 'uninstall-roundcube.sh');
+
+      let webmailDomain = 'webmail.localhost';
+      try {
+        const settings = await fs.readFile(
+          path.join(process.cwd(), 'server-settings.json'), 'utf-8',
+        );
+        const parsed = JSON.parse(settings);
+        if (parsed.primaryDomain) {
+          webmailDomain = `webmail.${parsed.primaryDomain}`;
+        }
+      } catch { /* use default */ }
+
+      await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 120_000 });
+      return { success: true, message: 'Roundcube uninstalled' };
+    } catch (e: any) {
+      this.logger.error(`Roundcube uninstall failed: ${e.message}`);
+      return { success: false, message: e.message };
+    }
+  }
+
+  private async diagnoseRoundcube(): Promise<DiagnoseCheck[]> {
+    const checks: DiagnoseCheck[] = [];
+
+    const installed = await this.fileExists('/usr/share/roundcube/index.php');
+    checks.push({
+      name: 'Roundcube Package',
+      status: installed ? 'ok' : 'error',
+      detail: installed ? 'Roundcube is installed' : 'Roundcube is not installed',
+    });
+
+    const nginxRunning = await this.serviceRunning('nginx');
+    checks.push({
+      name: 'Nginx',
+      status: nginxRunning ? 'ok' : 'error',
+      detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running',
+    });
+
+    // Check if any Roundcube vhost exists
+    let vhostFound = false;
+    try {
+      const out = await this.sudo(`grep -rl 'roundcube' /etc/nginx/sites-enabled/ 2>/dev/null | head -1`);
+      vhostFound = out.length > 0;
+    } catch {}
+    checks.push({
+      name: 'Nginx Vhost',
+      status: vhostFound ? 'ok' : 'warn',
+      detail: vhostFound ? 'Roundcube nginx vhost found' : 'No Roundcube nginx vhost configured',
+    });
+
+    // Check Dovecot (IMAP)
+    const dovecotRunning = await this.serviceRunning('dovecot');
+    checks.push({
+      name: 'Dovecot (IMAP)',
+      status: dovecotRunning ? 'ok' : 'error',
+      detail: dovecotRunning ? 'Dovecot is running' : 'Dovecot is NOT running — Roundcube needs IMAP',
+    });
+
+    // Check Postfix (SMTP)
+    const postfixRunning = await this.serviceRunning('postfix');
+    checks.push({
+      name: 'Postfix (SMTP)',
+      status: postfixRunning ? 'ok' : 'warn',
+      detail: postfixRunning ? 'Postfix is running' : 'Postfix is NOT running — sending mail will fail',
     });
 
     return checks;
