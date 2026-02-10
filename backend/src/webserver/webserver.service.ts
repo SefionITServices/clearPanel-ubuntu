@@ -79,7 +79,7 @@ export class WebServerService {
           try {
             await fs.symlink(configPath, symlinkPath);
           } catch {
-            await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+            await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
           }
         }
       } catch {
@@ -87,13 +87,13 @@ export class WebServerService {
         try {
           await fs.symlink(configPath, symlinkPath);
         } catch {
-          await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+          await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
         }
       }
 
       // Validate and reload nginx so the vhost takes effect.
-      await execAsync('sudo -n nginx -t');
-      await execAsync('sudo -n systemctl reload nginx');
+      await execAsync('sudo nginx -t');
+      await execAsync('sudo systemctl reload nginx');
 
       return {
         success: true,
@@ -159,7 +159,7 @@ export class WebServerService {
         // Fallback: write via temp file + sudo tee
         const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
         await fs.writeFile(tmpFile, configContent, { encoding: 'utf8' });
-        await execAsync(`sudo -n tee ${configPath} < ${tmpFile} > /dev/null`);
+        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`);
         await fs.unlink(tmpFile).catch(() => {});
       }
 
@@ -168,12 +168,12 @@ export class WebServerService {
         try { await fs.unlink(symlinkPath); } catch {}
         await fs.symlink(configPath, symlinkPath);
       } catch {
-        await execAsync(`sudo -n ln -sf ${configPath} ${symlinkPath}`);
+        await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
       }
 
       // Test nginx config
       try {
-        await execAsync('sudo -n nginx -t');
+        await execAsync('sudo nginx -t');
       } catch {
         // If test fails, remove bad config and report
         try { await fs.unlink(symlinkPath); } catch {}
@@ -185,7 +185,7 @@ export class WebServerService {
       }
 
       // Reload nginx
-      await execAsync('sudo -n systemctl reload nginx');
+      await execAsync('sudo systemctl reload nginx');
       
       return {
         success: true,
@@ -228,17 +228,17 @@ export class WebServerService {
       } catch {
         const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
         await fs.writeFile(tmpFile, config, { encoding: 'utf8' });
-        await execAsync(`sudo -n tee ${configPath} < ${tmpFile} > /dev/null`);
+        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`);
         await fs.unlink(tmpFile).catch(() => {});
       }
       // Test nginx config
       try {
-        await execAsync('sudo -n nginx -t');
+        await execAsync('sudo nginx -t');
       } catch (e) {
         return { success: false, message: `Nginx config test failed. Please fix the syntax. Error: ${e instanceof Error ? e.message : String(e)}` };
       }
       // Reload nginx
-      await execAsync('sudo -n systemctl reload nginx');
+      await execAsync('sudo systemctl reload nginx');
       return { success: true, message: `Virtual host config updated and nginx reloaded for ${domain}` };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

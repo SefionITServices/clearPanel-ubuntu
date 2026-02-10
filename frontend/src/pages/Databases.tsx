@@ -68,7 +68,9 @@ async function fetchJSON<T = any>(url: string, opts?: RequestInit): Promise<T> {
 
 const dbAPI = {
   status: () => fetchJSON(`${API}/status`),
+  engines: () => fetchJSON(`${API}/engines`),
   install: () => fetchJSON(`${API}/install`, { method: 'POST' }),
+  installEngine: (engine: string) => fetchJSON(`${API}/install/${engine}`, { method: 'POST' }),
   listDatabases: () => fetchJSON(`${API}/list`),
   createDatabase: (name: string) => fetchJSON(`${API}/create`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -124,6 +126,7 @@ function generatePassword(length = 16): string {
 interface DbInfo { name: string; size: number; tables: number }
 interface DbUser { user: string; host: string; databases: string[] }
 interface TableInfo { name: string; rows: number; size: number; engine: string }
+interface EngineInfo { engine: string; label: string; installed: boolean; running: boolean; version: string }
 
 // ============================================================
 // COMPONENT
@@ -138,6 +141,8 @@ export default function DatabasesPage() {
   // Status
   const [dbStatus, setDbStatus] = useState<{ installed: boolean; running: boolean; version: string } | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [engines, setEngines] = useState<EngineInfo[]>([]);
+  const [installingEngine, setInstallingEngine] = useState<string | null>(null);
 
   // Databases
   const [databases, setDatabases] = useState<DbInfo[]>([]);
@@ -176,8 +181,12 @@ export default function DatabasesPage() {
 
   const loadStatus = useCallback(async () => {
     try {
-      const data = await dbAPI.status();
-      setDbStatus({ installed: data.installed, running: data.running, version: data.version });
+      const [statusData, enginesData] = await Promise.all([
+        dbAPI.status(),
+        dbAPI.engines(),
+      ]);
+      setDbStatus({ installed: statusData.installed, running: statusData.running, version: statusData.version });
+      setEngines(enginesData.engines || []);
     } catch (e: any) { setError(e.message); }
   }, []);
 
@@ -231,6 +240,17 @@ export default function DatabasesPage() {
       await loadStatus();
     } catch (e: any) { setError(e.message); }
     setInstalling(false);
+  };
+
+  const handleInstallEngine = async (engine: string) => {
+    setInstallingEngine(engine);
+    setError(null);
+    try {
+      const data = await dbAPI.installEngine(engine);
+      setSuccess(data.message || `${engine} installed successfully`);
+      await loadStatus();
+    } catch (e: any) { setError(e.message); }
+    setInstallingEngine(null);
   };
 
   const handleCreateDb = async () => {
@@ -331,6 +351,30 @@ export default function DatabasesPage() {
   }
 
   if (!dbStatus?.installed || !dbStatus?.running) {
+    const engineCards = [
+      {
+        engine: 'mariadb',
+        label: 'MariaDB',
+        description: 'Community-developed fork of MySQL. Drop-in replacement with enhanced performance and features.',
+        color: '#003545',
+        features: ['MySQL compatible', 'Better performance', 'Open source', 'Active community'],
+      },
+      {
+        engine: 'mysql',
+        label: 'MySQL',
+        description: 'The world\'s most popular open-source relational database. Widely supported and documented.',
+        color: '#00758F',
+        features: ['Industry standard', 'Wide support', 'Mature ecosystem', 'Oracle backed'],
+      },
+      {
+        engine: 'postgresql',
+        label: 'PostgreSQL',
+        description: 'Advanced open-source relational database with powerful features and extensibility.',
+        color: '#336791',
+        features: ['ACID compliant', 'JSON support', 'Extensions', 'Advanced queries'],
+      },
+    ];
+
     return (
       <DashboardLayout>
         <Box>
@@ -338,32 +382,101 @@ export default function DatabasesPage() {
             <Storage sx={{ color: '#4285F4', fontSize: 28 }} />
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 700 }}>Database Management</Typography>
-              <Typography variant="body1" color="text.secondary">MySQL/MariaDB databases, users, and privileges</Typography>
+              <Typography variant="body1" color="text.secondary">Install and manage open-source database engines</Typography>
             </Box>
           </Box>
           {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-          <Paper sx={{ p: 6, textAlign: 'center' }}>
-            <Box sx={{ width: 80, height: 80, borderRadius: 3, bgcolor: '#E8F0FE', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
-              <Storage sx={{ fontSize: 40, color: '#4285F4' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 600 }} gutterBottom>
-              {!dbStatus?.installed ? 'MySQL/MariaDB is not installed' : 'MySQL/MariaDB is not running'}
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 420, mx: 'auto' }}>
-              {!dbStatus?.installed
-                ? 'Install MariaDB to start managing databases, users, and privileges.'
-                : 'The database server needs to be started.'}
-            </Typography>
-            <Button
-              variant="contained"
-              size="large"
-              onClick={handleInstall}
-              disabled={installing}
-              startIcon={installing ? <CircularProgress size={20} color="inherit" /> : <Storage />}
-            >
-              {installing ? 'Installing...' : !dbStatus?.installed ? 'Install MariaDB' : 'Start MariaDB'}
-            </Button>
-          </Paper>
+          {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+            {engineCards.map((card) => {
+              const eng = engines.find(e => e.engine === card.engine);
+              const isInstalled = eng?.installed || false;
+              const isRunning = eng?.running || false;
+              const isInstalling = installingEngine === card.engine;
+
+              return (
+                <Paper key={card.engine} sx={{ flex: 1, overflow: 'hidden', border: isInstalled ? '2px solid #34A853' : '1px solid #e0e0e0', transition: 'all 0.2s' }}>
+                  <Box sx={{ p: 3, bgcolor: card.color, color: '#fff' }}>
+                    <Typography variant="h5" sx={{ fontWeight: 700 }}>{card.label}</Typography>
+                    {isInstalled && (
+                      <Chip
+                        label={isRunning ? 'Running' : 'Installed'}
+                        size="small"
+                        sx={{
+                          mt: 1,
+                          bgcolor: isRunning ? '#34A853' : '#F4B400',
+                          color: '#fff',
+                          fontWeight: 600,
+                        }}
+                      />
+                    )}
+                  </Box>
+                  <Box sx={{ p: 3 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 48 }}>
+                      {card.description}
+                    </Typography>
+
+                    <Stack spacing={0.5} sx={{ mb: 3 }}>
+                      {card.features.map((f) => (
+                        <Typography key={f} variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box component="span" sx={{ color: '#34A853', fontWeight: 700 }}>✓</Box> {f}
+                        </Typography>
+                      ))}
+                    </Stack>
+
+                    {isInstalled ? (
+                      <Stack spacing={1}>
+                        <Chip
+                          label={eng?.version ? eng.version.split('\n')[0].substring(0, 60) : 'Installed'}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                        />
+                        {(card.engine === 'mariadb' || card.engine === 'mysql') && isRunning && (
+                          <Typography variant="caption" color="success.main">
+                            ✅ Active — manage databases below
+                          </Typography>
+                        )}
+                        {card.engine === 'postgresql' && isRunning && (
+                          <Typography variant="caption" color="success.main">
+                            ✅ Active — PostgreSQL management coming soon
+                          </Typography>
+                        )}
+                      </Stack>
+                    ) : (
+                      <Button
+                        variant="contained"
+                        fullWidth
+                        onClick={() => handleInstallEngine(card.engine)}
+                        disabled={!!installingEngine}
+                        startIcon={isInstalling ? <CircularProgress size={18} color="inherit" /> : <Download />}
+                        sx={{
+                          textTransform: 'none',
+                          bgcolor: card.color,
+                          '&:hover': { bgcolor: card.color, opacity: 0.9 },
+                        }}
+                      >
+                        {isInstalling ? `Installing ${card.label}...` : `Install ${card.label}`}
+                      </Button>
+                    )}
+                  </Box>
+                </Paper>
+              );
+            })}
+          </Stack>
+
+          {/* If a MySQL-compatible engine is installed and running, show link to management */}
+          {dbStatus?.installed && dbStatus?.running && (
+            <Paper sx={{ mt: 3, p: 3, textAlign: 'center' }}>
+              <Typography variant="body1" sx={{ mb: 1 }}>
+                A database engine is installed and running. Scroll down or refresh to access database management.
+              </Typography>
+              <Button variant="contained" onClick={loadAll} sx={{ textTransform: 'none' }}>
+                Go to Database Management
+              </Button>
+            </Paper>
+          )}
         </Box>
       </DashboardLayout>
     );

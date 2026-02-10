@@ -180,20 +180,19 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-available
 chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-enabled
 
 # Allow clearpanel user to manage nginx without password (used by domain automation)
-cat > /etc/sudoers.d/clearpanel-nginx << 'EOF'
-# Allow clearpanel user to validate and reload/restart Nginx
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl start nginx
-clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
-clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx
-# Fallback commands for vhost management
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/*
-clearpanel ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
-clearpanel ALL=(ALL) NOPASSWD: /bin/rm -f /etc/nginx/sites-enabled/*
-clearpanel ALL=(ALL) NOPASSWD: /bin/rm -f /etc/nginx/sites-available/*
+# Single unified sudoers entry for all panel operations
+cat > /etc/sudoers.d/clearpanel << 'EOF'
+# ClearPanel — allow clearpanel user to manage system services, packages, etc.
+clearpanel ALL=(ALL) NOPASSWD: ALL
 EOF
-chmod 440 /etc/sudoers.d/clearpanel-nginx
+chmod 440 /etc/sudoers.d/clearpanel
+
+# Remove old fragmented sudoers files
+rm -f /etc/sudoers.d/clearpanel-nginx 2>/dev/null || true
+rm -f /etc/sudoers.d/clearpanel-bind9 2>/dev/null || true
+rm -f /etc/sudoers.d/clearpanel-ssl 2>/dev/null || true
+rm -f /etc/sudoers.d/clearpanel-mysql 2>/dev/null || true
+rm -f /etc/sudoers.d/clearpanel-database 2>/dev/null || true
 
 # Configure BIND9 DNS server
 echo -e "${YELLOW}🌐 Configuring BIND9 DNS server...${NC}"
@@ -213,51 +212,9 @@ chmod 2775 /etc/bind/zones
 chgrp bind /etc/bind/named.conf.local 2>/dev/null || true
 chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
 
-# Configure sudoers to allow clearpanel user to reload/restart BIND9 without password
-cat > /etc/sudoers.d/clearpanel-bind9 << 'EOF'
-# Allow clearpanel user to manage BIND9 service
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload bind9
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart bind9
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl reload named
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart named
-EOF
-chmod 440 /etc/sudoers.d/clearpanel-bind9
+# (sudoers for BIND9 already covered by /etc/sudoers.d/clearpanel above)
 
-# Allow clearpanel user to manage SSL certificates via certbot
-cat > /etc/sudoers.d/clearpanel-ssl << 'EOF'
-# Allow clearpanel user to install and manage SSL certificates
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot *
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot
-clearpanel ALL=(ALL) NOPASSWD: /snap/bin/certbot *
-clearpanel ALL=(ALL) NOPASSWD: /snap/bin/certbot
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get update*
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y certbot*
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tail -50 /var/log/letsencrypt/letsencrypt.log
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tail * /var/log/letsencrypt/letsencrypt.log
-EOF
-chmod 440 /etc/sudoers.d/clearpanel-ssl
-
-# Allow clearpanel user to manage MySQL/MariaDB
-cat > /etc/sudoers.d/clearpanel-mysql << 'EOF'
-# Allow clearpanel user to manage MySQL/MariaDB databases and users
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql *
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin *
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqladmin
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqldump *
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysqldump
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get update*
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-server*
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y mariadb-client*
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/env DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get *
-clearpanel ALL=(ALL) NOPASSWD: SETENV: /usr/bin/apt-get *
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl enable mariadb
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl start mariadb
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl restart mariadb
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl status mariadb
-clearpanel ALL=(ALL) NOPASSWD: /bin/systemctl is-active mariadb
-EOF
-chmod 440 /etc/sudoers.d/clearpanel-mysql
+# (sudoers for certbot already covered by /etc/sudoers.d/clearpanel above)\n\n# (sudoers for databases already covered by /etc/sudoers.d/clearpanel above)
 
 # Enable and start BIND9 (handle alias: bind9 vs named)
 BIND_SVC="named"

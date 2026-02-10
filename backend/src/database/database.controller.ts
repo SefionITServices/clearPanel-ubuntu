@@ -29,11 +29,41 @@ export class DatabaseController {
     }
   }
 
+  @Get('engines')
+  async engines(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const engines = await this.db.getAllEngineStatus();
+      return res.json({ success: true, engines });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
   @Post('install')
   async install(@Req() req: Request, @Res() res: Response) {
     if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.installMySQL();
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('install/:engine')
+  async installEngine(
+    @Param('engine') engine: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!valid.includes(engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.installEngine(engine as any);
       return res.json(data);
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });

@@ -1,8 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { exec as execCb } from 'child_process';
 import { promisify } from 'util';
 
 const exec = promisify(execCb);
+
+type DbEngine = 'mariadb' | 'mysql' | 'postgresql';
+
+interface EngineStatus {
+  engine: DbEngine;
+  label: string;
+  installed: boolean;
+  running: boolean;
+  version: string;
+}
 
 interface DatabaseInfo {
   name: string;
@@ -24,10 +34,10 @@ interface UserPrivilege {
 
 @Injectable()
 export class DatabaseService {
+  private readonly logger = new Logger(DatabaseService.name);
   private prefix = '';
 
   private getPrefix(): string {
-    // Use the system username as prefix for databases and users
     if (this.prefix) return this.prefix;
     const username = process.env.PANEL_USERNAME || process.env.USER || 'cp';
     this.prefix = username.replace(/[^a-zA-Z0-9]/g, '').substring(0, 16);
@@ -35,99 +45,206 @@ export class DatabaseService {
   }
 
   /**
-   * Run a MySQL command via sudo mysql
+   * Run a shell command, trying sudo if direct execution fails
    */
-  private async mysqlExec(sql: string): Promise<string> {
-    // Use sudo mysql which uses unix socket auth (no password needed for root)
-    const escaped = sql.replace(/"/g, '\\"');
-    const { stdout } = await exec(`sudo -n mysql -N -B -e "${escaped}"`, { timeout: 30000 });
+  private async run(cmd: string, timeout = 30000): Promise<string> {
+    try {
+      const { stdout } = await exec(cmd, { timeout });
+      return stdout.trim();
+    } catch {
+      // Retry with sudo
+      const { stdout } = await exec(`sudo ${cmd}`, { timeout });
+      return stdout.trim();
+    }
+  }
+
+  /**
+   * Run a command that requires root — use sudo directly
+   */
+  private async sudo(cmd: string, timeout = 30000): Promise<string> {
+    const { stdout } = await exec(`sudo ${cmd}`, { timeout });
     return stdout.trim();
   }
 
   /**
-   * Check if MySQL/MariaDB is installed and running
+   * Run a MySQL/MariaDB command
+   */
+  private async mysqlExec(sql: string): Promise<string> {
+    const escaped = sql.replace(/"/g, '\\"');
+    return this.sudo(`mysql -N -B -e "${escaped}"`, 30000);
+  }
+
+  /**
+   * Run a PostgreSQL command as postgres user
+   */
+  private async pgExec(sql: string): Promise<string> {
+    const escaped = sql.replace(/"/g, '\\"').replace(/'/g, "\\'");
+    return this.sudo(`-u postgres psql -t -A -c "${sql}"`, 30000);
+  }
+
+  // ========================
+  // STATUS — all engines
+  // ========================
+
+  async getAllEngineStatus(): Promise<EngineStatus[]> {
+    const [mariadb, mysql, postgresql] = await Promise.all([
+      this.checkEngine('mariadb'),
+      this.checkEngine('mysql'),
+      this.checkEngine('postgresql'),
+    ]);
+    return [mariadb, mysql, postgresql];
+  }
+
+  private async checkEngine(engine: DbEngine): Promise<EngineStatus> {
+    const labels: Record<DbEngine, string> = { mariadb: 'MariaDB', mysql: 'MySQL', postgresql: 'PostgreSQL' };
+    const status: EngineStatus = { engine, label: labels[engine], installed: false, running: false, version: '' };
+
+    try {
+      if (engine === 'mariadb') {
+        // Check mariadb specifically
+        try {
+          const v = await exec('mariadb --version 2>/dev/null', { timeout: 5000 });
+          status.version = v.stdout.trim();
+          status.installed = true;
+        } catch {
+          // Also check mysql --version which might be mariadb
+          try {
+            const v = await exec('mysql --version 2>/dev/null', { timeout: 5000 });
+            if (v.stdout.toLowerCase().includes('mariadb')) {
+              status.version = v.stdout.trim();
+              status.installed = true;
+            }
+          } catch {}
+        }
+        if (status.installed) {
+          try {
+            const { stdout } = await exec('sudo systemctl is-active mariadb 2>/dev/null', { timeout: 5000 });
+            status.running = stdout.trim() === 'active';
+          } catch { status.running = false; }
+        }
+      } else if (engine === 'mysql') {
+        try {
+          const v = await exec('mysql --version 2>/dev/null', { timeout: 5000 });
+          // Only count as MySQL if it's NOT MariaDB
+          if (!v.stdout.toLowerCase().includes('mariadb')) {
+            status.version = v.stdout.trim();
+            status.installed = true;
+          }
+        } catch {}
+        if (status.installed) {
+          try {
+            const { stdout } = await exec('sudo systemctl is-active mysql 2>/dev/null', { timeout: 5000 });
+            status.running = stdout.trim() === 'active';
+          } catch {
+            try {
+              const { stdout } = await exec('sudo systemctl is-active mysqld 2>/dev/null', { timeout: 5000 });
+              status.running = stdout.trim() === 'active';
+            } catch { status.running = false; }
+          }
+        }
+      } else if (engine === 'postgresql') {
+        try {
+          const v = await exec('psql --version 2>/dev/null', { timeout: 5000 });
+          status.version = v.stdout.trim();
+          status.installed = true;
+        } catch {}
+        if (status.installed) {
+          try {
+            const { stdout } = await exec('sudo systemctl is-active postgresql 2>/dev/null', { timeout: 5000 });
+            status.running = stdout.trim() === 'active';
+          } catch { status.running = false; }
+        }
+      }
+    } catch {}
+
+    return status;
+  }
+
+  /**
+   * Backward-compatible getStatus (checks if MariaDB or MySQL is available)
    */
   async getStatus(): Promise<{ installed: boolean; running: boolean; version: string }> {
+    const engines = await this.getAllEngineStatus();
+    const active = engines.find(e => e.installed && (e.engine === 'mariadb' || e.engine === 'mysql'));
+    if (active) return { installed: true, running: active.running, version: active.version };
+    return { installed: false, running: false, version: '' };
+  }
+
+  // ========================
+  // INSTALL
+  // ========================
+
+  async installEngine(engine: DbEngine): Promise<{ success: boolean; message: string; logs: string[] }> {
+    const logs: string[] = [];
+
     try {
-      // First try without sudo (mysql --version doesn't need root)
-      let version = '';
-      let installed = false;
-      try {
-        const { stdout } = await exec('mysql --version 2>/dev/null', { timeout: 5000 });
-        version = stdout.trim();
-        installed = true;
-      } catch {
-        // Fallback: try with sudo
+      logs.push('Updating package list...');
+      await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq', { timeout: 60000 });
+
+      if (engine === 'mariadb') {
+        logs.push('Installing MariaDB server and client...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
+
+        logs.push('Enabling MariaDB service...');
+        await exec('sudo systemctl enable mariadb', { timeout: 10000 });
+        await exec('sudo systemctl start mariadb', { timeout: 15000 });
+
+        // Verify
         try {
-          const { stdout } = await exec('sudo -n mysql --version 2>/dev/null', { timeout: 5000 });
-          version = stdout.trim();
-          installed = version.length > 0 && !version.includes('not installed');
+          await exec('sudo mysqladmin ping 2>/dev/null', { timeout: 5000 });
+          logs.push('MariaDB is running and responding');
         } catch {
-          installed = false;
+          logs.push('Warning: MariaDB installed but may need a moment to start');
         }
+        return { success: true, message: 'MariaDB installed and started successfully', logs };
+
+      } else if (engine === 'mysql') {
+        logs.push('Installing MySQL server and client...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client', { timeout: 300000 });
+
+        logs.push('Enabling MySQL service...');
+        await exec('sudo systemctl enable mysql', { timeout: 10000 });
+        await exec('sudo systemctl start mysql', { timeout: 15000 });
+
+        try {
+          await exec('sudo mysqladmin ping 2>/dev/null', { timeout: 5000 });
+          logs.push('MySQL is running and responding');
+        } catch {
+          logs.push('Warning: MySQL installed but may need a moment to start');
+        }
+        return { success: true, message: 'MySQL installed and started successfully', logs };
+
+      } else if (engine === 'postgresql') {
+        logs.push('Installing PostgreSQL server and client...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib', { timeout: 300000 });
+
+        logs.push('Enabling PostgreSQL service...');
+        await exec('sudo systemctl enable postgresql', { timeout: 10000 });
+        await exec('sudo systemctl start postgresql', { timeout: 15000 });
+
+        try {
+          await exec('sudo -u postgres psql -c "SELECT 1" 2>/dev/null', { timeout: 5000 });
+          logs.push('PostgreSQL is running and responding');
+        } catch {
+          logs.push('Warning: PostgreSQL installed but may need a moment to start');
+        }
+        return { success: true, message: 'PostgreSQL installed and started successfully', logs };
       }
 
-      let running = false;
-      if (installed) {
-        try {
-          await exec('sudo -n mysqladmin ping 2>/dev/null', { timeout: 5000 });
-          running = true;
-        } catch {
-          // Also try systemctl
-          try {
-            const { stdout } = await exec('sudo -n systemctl is-active mariadb 2>/dev/null', { timeout: 5000 });
-            running = stdout.trim() === 'active';
-          } catch { running = false; }
-        }
-      }
-
-      return { installed, running, version: installed ? version : '' };
-    } catch {
-      return { installed: false, running: false, version: '' };
+      return { success: false, message: `Unknown engine: ${engine}`, logs };
+    } catch (e: any) {
+      const errMsg = e.stderr || e.message || String(e);
+      logs.push(`Error: ${errMsg}`);
+      this.logger.error(`Failed to install ${engine}: ${errMsg}`);
+      throw new Error(`Failed to install ${engine}: ${errMsg}`);
     }
   }
 
   /**
-   * Install MySQL/MariaDB
+   * Backward-compatible install (MariaDB)
    */
   async installMySQL(): Promise<{ success: boolean; message: string; logs?: string[] }> {
-    const logs: string[] = [];
-    try {
-      logs.push('Updating package list...');
-      await exec('sudo -n apt-get update -qq', { timeout: 60000 });
-
-      logs.push('Installing MariaDB server...');
-      await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server', { timeout: 300000 });
-
-      logs.push('Installing MariaDB client...');
-      await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-client', { timeout: 120000 });
-
-      logs.push('Enabling MariaDB service...');
-      await exec('sudo -n systemctl enable mariadb', { timeout: 10000 });
-
-      logs.push('Starting MariaDB service...');
-      await exec('sudo -n systemctl start mariadb', { timeout: 15000 });
-
-      // Verify it's running
-      try {
-        await exec('sudo -n mysqladmin ping', { timeout: 5000 });
-        logs.push('MariaDB is running and responding to connections');
-      } catch {
-        logs.push('Warning: MariaDB installed but may not be responding yet');
-      }
-
-      return { success: true, message: 'MariaDB installed and started successfully', logs };
-    } catch (e: any) {
-      const errMsg = e.stderr || e.message || String(e);
-      logs.push(`Error: ${errMsg}`);
-
-      let hint = '';
-      if (errMsg.includes('sudo') || errMsg.includes('password')) {
-        hint = ' Check that the clearpanel user has NOPASSWD sudo access for apt-get and systemctl commands.';
-      }
-
-      throw new Error(`Failed to install MariaDB: ${errMsg}.${hint}`);
-    }
+    return this.installEngine('mariadb');
   }
 
   /**
