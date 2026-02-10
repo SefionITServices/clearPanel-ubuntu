@@ -203,6 +203,49 @@ export class WebServerService {
     }
   }
 
+  async getVhostConfig(domain: string): Promise<{ success: boolean; config?: string; path?: string; enabled?: boolean; message?: string }> {
+    const configPath = `/etc/nginx/sites-available/${domain}`;
+    const symlinkPath = `/etc/nginx/sites-enabled/${domain}`;
+    try {
+      const config = await fs.readFile(configPath, 'utf-8');
+      const enabled = await fs.access(symlinkPath).then(() => true).catch(() => false);
+      return { success: true, config, path: configPath, enabled };
+    } catch {
+      return { success: false, message: `No virtual host config found for ${domain}` };
+    }
+  }
+
+  async saveVhostConfig(domain: string, config: string): Promise<{ success: boolean; message: string }> {
+    const available = await this.ensureNginxAvailable();
+    if (!available) {
+      return { success: false, message: 'Nginx not available. Install nginx first.' };
+    }
+    const configPath = `/etc/nginx/sites-available/${domain}`;
+    try {
+      // Write config
+      try {
+        await fs.writeFile(configPath, config, { encoding: 'utf8', mode: 0o644 });
+      } catch {
+        const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
+        await fs.writeFile(tmpFile, config, { encoding: 'utf8' });
+        await execAsync(`sudo -n tee ${configPath} < ${tmpFile} > /dev/null`);
+        await fs.unlink(tmpFile).catch(() => {});
+      }
+      // Test nginx config
+      try {
+        await execAsync('sudo -n nginx -t');
+      } catch (e) {
+        return { success: false, message: `Nginx config test failed. Please fix the syntax. Error: ${e instanceof Error ? e.message : String(e)}` };
+      }
+      // Reload nginx
+      await execAsync('sudo -n systemctl reload nginx');
+      return { success: true, message: `Virtual host config updated and nginx reloaded for ${domain}` };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { success: false, message: `Failed to save vhost config: ${msg}` };
+    }
+  }
+
   async removeVirtualHost(domain: string): Promise<{ success: boolean; message: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {

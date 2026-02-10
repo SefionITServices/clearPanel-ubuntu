@@ -72,6 +72,12 @@ export default function DomainsListView() {
   const [editFolderPath, setEditFolderPath] = React.useState('');
   const [editNameservers, setEditNameservers] = React.useState('');
   const [editSaving, setEditSaving] = React.useState(false);
+  const [editTab, setEditTab] = React.useState(0);
+  const [vhostConfig, setVhostConfig] = React.useState('');
+  const [vhostLoading, setVhostLoading] = React.useState(false);
+  const [vhostSaving, setVhostSaving] = React.useState(false);
+  const [vhostPath, setVhostPath] = React.useState('');
+  const [vhostEnabled, setVhostEnabled] = React.useState(false);
 
   const loadDomains = async () => {
     setLoading(true);
@@ -134,8 +140,55 @@ export default function DomainsListView() {
     setEditNameservers(
       Array.isArray(domain.nameservers) ? domain.nameservers.filter(Boolean).join('\n') : ''
     );
+    setEditTab(0);
+    setVhostConfig('');
+    setVhostPath('');
+    setVhostEnabled(false);
     setEditOpen(true);
     handleMenuClose();
+  };
+
+  const loadVhostConfig = async (domain: any) => {
+    setVhostLoading(true);
+    try {
+      const res = await fetch(`/api/domains/${domain.id}/vhost`);
+      const data = await res.json();
+      if (data.success) {
+        setVhostConfig(data.config || '');
+        setVhostPath(data.path || '');
+        setVhostEnabled(data.enabled || false);
+      } else {
+        setVhostConfig(`# No virtual host config found for ${domain.name}\n# Save to create one`);
+        setVhostPath(`/etc/nginx/sites-available/${domain.name}`);
+        setVhostEnabled(false);
+      }
+    } catch {
+      setVhostConfig('# Failed to load virtual host config');
+    } finally {
+      setVhostLoading(false);
+    }
+  };
+
+  const handleVhostSave = async () => {
+    if (!editDomain) return;
+    setVhostSaving(true);
+    try {
+      const res = await fetch(`/api/domains/${editDomain.id}/vhost`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: vhostConfig }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSnack({ open: true, message: data.message || 'Virtual host updated', severity: 'success' });
+      } else {
+        setSnack({ open: true, message: data.message || 'Failed to update vhost', severity: 'error' });
+      }
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Error saving vhost', severity: 'error' });
+    } finally {
+      setVhostSaving(false);
+    }
   };
 
   const handleEditSave = async () => {
@@ -146,7 +199,7 @@ export default function DomainsListView() {
         .split(/\r?\n|,/)
         .map(s => s.trim())
         .filter(Boolean);
-      const response = await fetch(`/api/domains/${editDomain.id}`, {
+      const response = await fetch(`/api/domains/${editDomain.id}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -523,45 +576,107 @@ export default function DomainsListView() {
         </Menu>
 
         {/* Edit Domain Dialog */}
-        <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ fontWeight: 600 }}>
+        <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ fontWeight: 600, pb: 0 }}>
             Edit Domain: {editDomain?.name}
           </DialogTitle>
-          <DialogContent>
-            <Stack spacing={3} sx={{ mt: 1 }}>
-              <TextField
-                label="Domain Name"
-                value={editDomain?.name || ''}
-                disabled
-                fullWidth
-                helperText="Domain name cannot be changed after creation"
-              />
-              <TextField
-                label="Document Root"
-                value={editFolderPath}
-                onChange={(e) => setEditFolderPath(e.target.value)}
-                fullWidth
-                placeholder="/home/user/public_html/example.com"
-                helperText="Full path to the document root directory"
-              />
-              <TextField
-                label="Nameservers"
-                value={editNameservers}
-                onChange={(e) => setEditNameservers(e.target.value)}
-                fullWidth
-                multiline
-                minRows={3}
-                placeholder={'ns1.example.com\nns2.example.com'}
-                helperText="One nameserver per line. Leave blank to use VPS defaults."
-              />
-            </Stack>
+          <Tabs
+            value={editTab}
+            onChange={(_, v) => {
+              setEditTab(v);
+              if (v === 1 && !vhostConfig && editDomain) loadVhostConfig(editDomain);
+            }}
+            sx={{ px: 3, borderBottom: '1px solid', borderColor: 'divider' }}
+          >
+            <Tab label="Settings" sx={{ textTransform: 'none', fontWeight: 500 }} />
+            <Tab label="Virtual Host" sx={{ textTransform: 'none', fontWeight: 500 }} />
+          </Tabs>
+          <DialogContent sx={{ minHeight: 300 }}>
+            {editTab === 0 && (
+              <Stack spacing={3} sx={{ mt: 1 }}>
+                <TextField
+                  label="Domain Name"
+                  value={editDomain?.name || ''}
+                  disabled
+                  fullWidth
+                  helperText="Domain name cannot be changed after creation"
+                />
+                <TextField
+                  label="Document Root"
+                  value={editFolderPath}
+                  onChange={(e) => setEditFolderPath(e.target.value)}
+                  fullWidth
+                  placeholder="/home/user/public_html/example.com"
+                  helperText="Full path to the document root directory. Changing this will also update the nginx virtual host."
+                />
+                <TextField
+                  label="Nameservers"
+                  value={editNameservers}
+                  onChange={(e) => setEditNameservers(e.target.value)}
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  placeholder={'ns1.example.com\nns2.example.com'}
+                  helperText="One nameserver per line. Leave blank to use VPS defaults."
+                />
+              </Stack>
+            )}
+            {editTab === 1 && (
+              <Stack spacing={2} sx={{ mt: 1 }}>
+                {vhostLoading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress />
+                  </Box>
+                ) : (
+                  <>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <Chip
+                        label={vhostEnabled ? 'Enabled' : 'Disabled'}
+                        color={vhostEnabled ? 'success' : 'default'}
+                        size="small"
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                        {vhostPath}
+                      </Typography>
+                    </Stack>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={14}
+                      maxRows={24}
+                      value={vhostConfig}
+                      onChange={(e) => setVhostConfig(e.target.value)}
+                      InputProps={{
+                        sx: {
+                          fontFamily: 'monospace',
+                          fontSize: '0.85rem',
+                          lineHeight: 1.6,
+                          bgcolor: '#1e1e1e',
+                          color: '#d4d4d4',
+                          '& textarea': { color: '#d4d4d4' },
+                        },
+                      }}
+                      helperText="Edit the nginx virtual host configuration directly. Be careful — invalid syntax will prevent saving."
+                    />
+                  </>
+                )}
+              </Stack>
+            )}
           </DialogContent>
           <DialogActions sx={{ p: 2 }}>
             <Button onClick={() => setEditOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
-            <Button variant="contained" onClick={handleEditSave} disabled={editSaving} sx={{ textTransform: 'none' }}>
-              {editSaving ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-              Save Changes
-            </Button>
+            {editTab === 0 && (
+              <Button variant="contained" onClick={handleEditSave} disabled={editSaving} sx={{ textTransform: 'none' }}>
+                {editSaving ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+                Save Settings
+              </Button>
+            )}
+            {editTab === 1 && (
+              <Button variant="contained" onClick={handleVhostSave} disabled={vhostSaving || vhostLoading} sx={{ textTransform: 'none' }}>
+                {vhostSaving ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+                Save & Reload Nginx
+              </Button>
+            )}
           </DialogActions>
         </Dialog>
 

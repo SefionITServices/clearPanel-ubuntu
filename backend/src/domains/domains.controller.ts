@@ -67,9 +67,41 @@ export class DomainsController {
     return { domain: domain.name, serverIp, instructions: dnsInstructions };
   }
 
+  @Get(':id/vhost')
+  async getVhostConfig(@Param('id') id: string) {
+    const domains = await this.domainsService.listDomains();
+    const domain = domains.find(d => d.id === id);
+    if (!domain) {
+      return { success: false, message: 'Domain not found' };
+    }
+    return this.webServerService.getVhostConfig(domain.name);
+  }
+
+  @Put(':id/vhost')
+  async saveVhostConfig(@Param('id') id: string, @Body() body: { config: string }) {
+    const domains = await this.domainsService.listDomains();
+    const domain = domains.find(d => d.id === id);
+    if (!domain) {
+      return { success: false, message: 'Domain not found' };
+    }
+    return this.webServerService.saveVhostConfig(domain.name, body.config);
+  }
+
   @Put(':id/path')
   async updateDomainPath(@Param('id') id: string, @Body() body: { folderPath: string }) {
     return this.domainsService.updateDomainPath(id, body.folderPath);
+  }
+
+  @Put(':id/settings')
+  async updateDomain(
+    @Param('id') id: string,
+    @Body() body: { folderPath?: string; nameservers?: string[] },
+  ) {
+    const result = await this.domainsService.updateDomain(id, body);
+    if (!result) {
+      return { success: false, message: 'Domain not found' };
+    }
+    return { success: true, domain: result.domain, automationLogs: result.logs };
   }
 
   @Delete(':id')
@@ -85,17 +117,5 @@ export class DomainsController {
       automationLogs: result.logs,
       mailAutomationLogs: result.mailAutomationLogs,
     };
-  }
-
-  @Put(':id')
-  async updateDomain(
-    @Param('id') id: string,
-    @Body() body: { folderPath?: string; nameservers?: string[] },
-  ) {
-    const result = await this.domainsService.updateDomain(id, body);
-    if (!result) {
-      return { success: false, message: 'Domain not found' };
-    }
-    return { success: true, domain: result.domain, automationLogs: result.logs };
   }
 }
