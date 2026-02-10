@@ -74,7 +74,7 @@ EOF
   postconf -e "myorigin = \$mydomain"
   postconf -e "inet_interfaces = all"
   postconf -e "inet_protocols = all"
-  postconf -e "mydestination = localhost"
+  postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost"
   postconf -e "virtual_mailbox_domains = hash:$POSTFIX_VDOMAINS"
   postconf -e "virtual_mailbox_maps = hash:$POSTFIX_VMAILBOX"
   postconf -e "virtual_alias_maps = hash:$POSTFIX_VALIAS"
