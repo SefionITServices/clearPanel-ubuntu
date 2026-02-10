@@ -617,4 +617,12 @@ export const mailAPI = {
   async getDmarcSummary(domainId: string): Promise<DmarcReportSummary> {
     return fetchJSON<DmarcReportSummary>(`${API_BASE}/domains/${domainId}/dmarc-reports/summary`);
   },
+
+  // ---- Webmail SSO ----
+
+  async getSsoUrl(domainId: string, mailboxId: string): Promise<{ url: string; token: string }> {
+    return fetchJSON<{ url: string; token: string }>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sso`, {
+      method: 'POST',
+    });
+  },
 };

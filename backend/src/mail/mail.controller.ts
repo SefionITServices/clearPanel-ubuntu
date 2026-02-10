@@ -13,6 +13,7 @@ import {
 import { Throttle, ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
 import { MailService, DomainSettingsUpdate } from './mail.service';
 import { MailStatusService } from './mail-status.service';
+import { MailSsoService } from './mail-sso.service';
 
 @UseGuards(ThrottlerGuard)
 @Controller('mail')
@@ -20,6 +21,7 @@ export class MailController {
   constructor(
     private readonly mailService: MailService,
     private readonly mailStatusService: MailStatusService,
+    private readonly mailSsoService: MailSsoService,
   ) { }
 
   @SkipThrottle()
@@ -504,5 +506,25 @@ export class MailController {
   @Get('domains/:id/dmarc-reports/summary')
   getDmarcSummary(@Param('id') id: string) {
     return this.mailService.getDmarcSummary(id);
+  }
+
+  // ---- Webmail SSO ----
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/sso')
+  generateSsoUrl(
+    @Param('id') id: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    return this.mailSsoService.generateSsoUrl(id, mailboxId);
+  }
+
+  @SkipThrottle()
+  @Get('sso/verify')
+  verifySsoToken(@Query('token') token: string) {
+    if (!token) {
+      throw new BadRequestException('token query parameter is required');
+    }
+    return this.mailSsoService.verifyToken(token);
   }
 }

@@ -55,6 +55,7 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import SearchIcon from '@mui/icons-material/Search';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SpeedIcon from '@mui/icons-material/Speed';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { SmtpRelayPanel, QuotaWarningPanel } from '../components/MailGlobalPanels';
 import { SieveFiltersPanel, CatchAllPanel, DmarcReportsPanel } from '../components/MailDomainPanels';
@@ -1185,6 +1186,24 @@ export default function MailDomainsPage() {
   };
 
   // --- Rate Limiting ---
+  const [ssoBusy, setSsoBusy] = useState<Record<string, boolean>>({});
+
+  const handleOpenWebmail = async (domainId: string, mailboxId: string) => {
+    const key = `${domainId}-${mailboxId}`;
+    setSsoBusy((prev) => ({ ...prev, [key]: true }));
+    try {
+      const { url } = await mailAPI.getSsoUrl(domainId, mailboxId);
+      // url is relative like /roundcube/?_sso_token=...
+      // Open in a new tab; if Roundcube is on a different host, adjust origin
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      setFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Failed to launch webmail SSO' });
+    } finally {
+      setSsoBusy((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  // --- Rate Limiting (continued) ---
   const handleLoadRateLimits = async (domainId: string) => {
     try {
       const data = await mailAPI.getRateLimits(domainId);
@@ -2256,6 +2275,20 @@ export default function MailDomainsPage() {
                                       >
                                         Edit
                                       </Button>
+                                      <Tooltip title="Open Roundcube webmail as this mailbox (SSO)">
+                                        <span>
+                                          <Button
+                                            size="small"
+                                            variant="outlined"
+                                            color="primary"
+                                            startIcon={<OpenInNewIcon fontSize="small" />}
+                                            onClick={() => void handleOpenWebmail(domain.id, mailbox.id)}
+                                            disabled={!mailbox.active || Boolean(ssoBusy[`${domain.id}-${mailbox.id}`]) || mailboxBusyState}
+                                          >
+                                            {ssoBusy[`${domain.id}-${mailbox.id}`] ? 'Opening…' : 'Webmail'}
+                                          </Button>
+                                        </span>
+                                      </Tooltip>
                                       <Button
                                         size="small"
                                         variant="outlined"
