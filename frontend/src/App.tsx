@@ -119,6 +119,14 @@ export function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/app-store"
+              element={
+                <ProtectedRoute>
+                  <AppStorePage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
