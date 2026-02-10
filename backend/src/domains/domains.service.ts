@@ -326,25 +326,57 @@ export class DomainsService {
     const domains = await this.readDomains();
     const domain = domains.find((d) => d.id === id);
     if (!domain) return null;
+    const oldPath = domain.folderPath;
     domain.folderPath = newPath;
     await fs.mkdir(newPath, { recursive: true });
     await this.writeDomains(domains);
+
+    // Update the nginx vhost if path actually changed
+    if (oldPath !== newPath) {
+      try {
+        await this.webServerService.createVirtualHost(domain.name, newPath);
+      } catch (e) {
+        console.error(`Vhost update failed for ${domain.name}:`, e);
+      }
+    }
     return domain;
   }
 
-  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[] }): Promise<Domain | null> {
+  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[] }): Promise<{ domain: Domain; logs: AutomationLog[] } | null> {
     const domains = await this.readDomains();
     const domain = domains.find((d) => d.id === id);
     if (!domain) return null;
-    if (updates.folderPath !== undefined) {
+    const logs: AutomationLog[] = [];
+
+    if (updates.folderPath !== undefined && updates.folderPath !== domain.folderPath) {
+      const oldPath = domain.folderPath;
       domain.folderPath = updates.folderPath;
       await fs.mkdir(updates.folderPath, { recursive: true });
+
+      // Update the nginx virtual host with the new document root
+      try {
+        const vhostResult = await this.webServerService.createVirtualHost(domain.name, updates.folderPath);
+        console.log(`Vhost update for ${domain.name}: ${vhostResult.message}`);
+        logs.push({
+          task: 'Update Nginx virtual host',
+          success: vhostResult.success,
+          message: vhostResult.message,
+        });
+      } catch (e) {
+        console.error('Vhost update failed:', e);
+        logs.push({
+          task: 'Update Nginx virtual host',
+          success: false,
+          message: 'Failed to update Nginx virtual host',
+          detail: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
     if (updates.nameservers !== undefined) {
       domain.nameservers = updates.nameservers.filter(Boolean);
     }
     await this.writeDomains(domains);
-    return domain;
+    return { domain, logs };
   }
 
   async deleteDomain(id: string): Promise<DomainDeletionResult | null> {

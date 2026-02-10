@@ -96,6 +96,6 @@ export class DomainsController {
     if (!result) {
       return { success: false, message: 'Domain not found' };
     }
-    return { success: true, domain: result };
+    return { success: true, domain: result.domain, automationLogs: result.logs };
   }
 }
