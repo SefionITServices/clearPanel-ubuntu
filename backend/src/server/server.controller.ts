@@ -79,11 +79,9 @@ export class ServerController {
 
     // 2. Update /etc/hosts
     try {
-      // Add/update the 127.0.1.1 line for the new hostname
-      await execAsync(
-        `sudo sed -i '/^127\.0\.1\.1/d' /etc/hosts && echo "127.0.1.1  ${hostname}" | sudo tee -a /etc/hosts >/dev/null`,
-        { timeout: 5000 },
-      );
+      // Remove existing 127.0.1.1 line, then add the new one
+      await execAsync(`sudo sed -i '/^127\\.0\\.1\\.1/d' /etc/hosts`, { timeout: 5000 });
+      await execAsync(`echo "127.0.1.1  ${hostname}" | sudo tee -a /etc/hosts >/dev/null`, { timeout: 5000 });
       logs.push({ task: 'Update /etc/hosts', success: true, message: 'Updated 127.0.1.1 entry' });
     } catch (err: any) {
       logs.push({ task: 'Update /etc/hosts', success: false, message: 'Failed to update /etc/hosts', detail: err.message });
@@ -91,11 +89,11 @@ export class ServerController {
 
     // 3. Update Postfix myhostname if installed
     try {
-      await execAsync(`command -v postconf`, { timeout: 3000 });
+      await execAsync('sudo test -x /usr/sbin/postconf', { timeout: 3000 });
       const domain = hostname.includes('.') ? hostname.split('.').slice(1).join('.') : hostname;
       await execAsync(`sudo postconf -e "myhostname = ${hostname}"`, { timeout: 5000 });
       await execAsync(`sudo postconf -e "mydomain = ${domain}"`, { timeout: 5000 });
-      await execAsync('sudo systemctl reload postfix', { timeout: 10000 });
+      await execAsync('sudo systemctl reload postfix 2>/dev/null || true', { timeout: 10000 });
       logs.push({ task: 'Update Postfix hostname', success: true, message: `Postfix myhostname = ${hostname}` });
     } catch {
       logs.push({ task: 'Update Postfix hostname', success: false, message: 'Postfix not installed or reload failed (skipped)' });
