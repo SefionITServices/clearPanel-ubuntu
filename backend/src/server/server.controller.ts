@@ -23,7 +23,6 @@ interface NameserverRequest {
 }
 
 @Controller('server')
-@UseGuards(AuthGuard)
 export class ServerController {
   constructor(
     private readonly serverSettingsService: ServerSettingsService,
@@ -43,6 +42,7 @@ export class ServerController {
 
   /** GET /api/server/hostname — return current hostname */
   @Get('hostname')
+  @UseGuards(AuthGuard)
   async getHostname() {
     try {
       const { stdout } = await execAsync('hostname -f 2>/dev/null || hostname', { timeout: 5000 });
@@ -59,6 +59,7 @@ export class ServerController {
 
   /** POST /api/server/hostname — change hostname */
   @Post('hostname')
+  @UseGuards(AuthGuard)
   async setHostname(@Body() body: { hostname: string }) {
     const hostname = body.hostname?.trim().toLowerCase();
     if (!hostname) throw new BadRequestException('hostname is required');
