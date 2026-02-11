@@ -1,8 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { isIP } from 'node:net';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { ServerSettingsService } from './server-settings.service';
 import { DnsService } from '../dns/dns.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
+import { AuthGuard } from '../auth/auth.guard';
+
+const execAsync = promisify(exec);
 
 interface AutomationLog {
   task: string;
@@ -18,6 +23,7 @@ interface NameserverRequest {
 }
 
 @Controller('server')
+@UseGuards(AuthGuard)
 export class ServerController {
   constructor(
     private readonly serverSettingsService: ServerSettingsService,
@@ -33,6 +39,72 @@ export class ServerController {
       : null;
     const zone = settings.primaryDomain ? await this.dnsService.getZone(settings.primaryDomain) : null;
     return { settings, nameserverInfo: info, zone };
+  }
+
+  /** GET /api/server/hostname — return current hostname */
+  @Get('hostname')
+  async getHostname() {
+    try {
+      const { stdout } = await execAsync('hostname -f 2>/dev/null || hostname', { timeout: 5000 });
+      const current = stdout.trim();
+      const settings = await this.serverSettingsService.getSettings();
+      return {
+        hostname: settings.hostname || current,
+        systemHostname: current,
+      };
+    } catch {
+      return { hostname: 'localhost', systemHostname: 'localhost' };
+    }
+  }
+
+  /** POST /api/server/hostname — change hostname */
+  @Post('hostname')
+  async setHostname(@Body() body: { hostname: string }) {
+    const hostname = body.hostname?.trim().toLowerCase();
+    if (!hostname) throw new BadRequestException('hostname is required');
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(hostname)) {
+      throw new BadRequestException('Invalid hostname format');
+    }
+
+    const logs: AutomationLog[] = [];
+
+    // 1. Set system hostname via hostnamectl
+    try {
+      await execAsync(`sudo hostnamectl set-hostname "${hostname}"`, { timeout: 10000 });
+      logs.push({ task: 'Set system hostname', success: true, message: `Hostname set to ${hostname}` });
+    } catch (err: any) {
+      logs.push({ task: 'Set system hostname', success: false, message: 'Failed to set hostname', detail: err.message });
+    }
+
+    // 2. Update /etc/hosts
+    try {
+      // Add/update the 127.0.1.1 line for the new hostname
+      await execAsync(
+        `sudo sed -i '/^127\.0\.1\.1/d' /etc/hosts && echo "127.0.1.1  ${hostname}" | sudo tee -a /etc/hosts >/dev/null`,
+        { timeout: 5000 },
+      );
+      logs.push({ task: 'Update /etc/hosts', success: true, message: 'Updated 127.0.1.1 entry' });
+    } catch (err: any) {
+      logs.push({ task: 'Update /etc/hosts', success: false, message: 'Failed to update /etc/hosts', detail: err.message });
+    }
+
+    // 3. Update Postfix myhostname if installed
+    try {
+      await execAsync(`command -v postconf`, { timeout: 3000 });
+      const domain = hostname.includes('.') ? hostname.split('.').slice(1).join('.') : hostname;
+      await execAsync(`sudo postconf -e "myhostname = ${hostname}"`, { timeout: 5000 });
+      await execAsync(`sudo postconf -e "mydomain = ${domain}"`, { timeout: 5000 });
+      await execAsync('sudo systemctl reload postfix', { timeout: 10000 });
+      logs.push({ task: 'Update Postfix hostname', success: true, message: `Postfix myhostname = ${hostname}` });
+    } catch {
+      logs.push({ task: 'Update Postfix hostname', success: false, message: 'Postfix not installed or reload failed (skipped)' });
+    }
+
+    // 4. Persist in settings
+    await this.serverSettingsService.updateSettings({ hostname });
+    logs.push({ task: 'Persist hostname setting', success: true, message: 'Saved to server-settings.json' });
+
+    return { success: true, hostname, automationLogs: logs };
   }
 
   @Post('nameservers')

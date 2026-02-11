@@ -38,6 +38,7 @@ export class ServerSettingsService implements OnModuleInit {
       : current.nameservers;
 
     const next: ServerSettings = {
+      hostname: update.hostname ?? current.hostname,
       primaryDomain: update.primaryDomain ?? current.primaryDomain,
       serverIp: this.resolveServerIp(update.serverIp ?? current.serverIp),
       nameservers,
@@ -66,6 +67,7 @@ export class ServerSettingsService implements OnModuleInit {
       const data = await fs.readFile(this.settingsPath, 'utf-8');
       const parsed = JSON.parse(data) as ServerSettings;
       const normalized: ServerSettings = {
+        hostname: parsed.hostname,
         primaryDomain: parsed.primaryDomain?.toLowerCase(),
         serverIp: this.resolveServerIp(parsed.serverIp),
         nameservers: this.normalizeNameservers(parsed.nameservers ?? []),
@@ -75,6 +77,7 @@ export class ServerSettingsService implements OnModuleInit {
       return normalized;
     } catch (error) {
       const defaultSettings: ServerSettings = {
+        hostname: undefined,
         primaryDomain: undefined,
         serverIp: this.resolveServerIp(undefined),
         nameservers: [],
@@ -129,6 +132,7 @@ export class ServerSettingsService implements OnModuleInit {
 
   private clone(settings: ServerSettings): ServerSettings {
     return {
+      hostname: settings.hostname,
       primaryDomain: settings.primaryDomain,
       serverIp: settings.serverIp,
       nameservers: [...settings.nameservers],

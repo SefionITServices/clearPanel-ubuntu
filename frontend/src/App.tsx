@@ -21,6 +21,7 @@ import AppStorePage from './pages/AppStore';
 import PhpManagerPage from './pages/PhpManager';
 import MailDomainsPage from './pages/MailDomains';
 import LogsPage from './pages/Logs';
+import SettingsPage from './pages/Settings';
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { authenticated, loading } = useAuth();
@@ -151,6 +152,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <LogsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <SettingsPage />
                 </ProtectedRoute>
               }
             />

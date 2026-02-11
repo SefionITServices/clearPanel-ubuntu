@@ -56,7 +56,7 @@ export default function DashboardPage() {
   const [diskUsed, setDiskUsed] = useState('--');
   const [diskTotal, setDiskTotal] = useState('--');
   const [diskPercent, setDiskPercent] = useState(0);
-  const [serverInfo, setServerInfo] = useState<{ primaryDomain?: string; serverIp?: string }>({});
+  const [serverInfo, setServerInfo] = useState<{ primaryDomain?: string; serverIp?: string; hostname?: string }>({});
 
   useEffect(() => {
     // Load domains count
@@ -85,7 +85,13 @@ export default function DashboardPage() {
       setServerInfo({
         primaryDomain: data.settings?.primaryDomain || '-',
         serverIp: data.settings?.serverIp || '-',
+        hostname: data.settings?.hostname,
       });
+    }).catch(() => {});
+
+    // Load hostname if not in settings
+    fetch('/api/server/hostname').then(r => r.json()).then(data => {
+      setServerInfo(prev => ({ ...prev, hostname: prev.hostname || data.hostname || data.systemHostname }));
     }).catch(() => {});
   }, []);
 
@@ -243,6 +249,14 @@ export default function DashboardPage() {
                 Server Information
               </Typography>
               <Stack spacing={2.5}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+                    Hostname
+                  </Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ fontFamily: 'monospace' }}>
+                    {serverInfo.hostname || '-'}
+                  </Typography>
+                </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
                     Primary Domain
