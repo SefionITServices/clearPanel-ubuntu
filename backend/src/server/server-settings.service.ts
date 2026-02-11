@@ -9,7 +9,6 @@ import { getDataFilePath } from '../common/paths';
 export class ServerSettingsService implements OnModuleInit {
   private readonly logger = new Logger(ServerSettingsService.name);
   private cache: ServerSettings | null = null;
-  private cachePath: string | null = null;
 
   private get settingsPath(): string {
     return getDataFilePath('server-settings.json');
@@ -60,7 +59,7 @@ export class ServerSettingsService implements OnModuleInit {
   }
 
   private async readSettings(): Promise<ServerSettings> {
-    if (this.cache && this.cachePath === this.settingsPath) {
+    if (this.cache) {
       return this.cache;
     }
 
@@ -75,7 +74,6 @@ export class ServerSettingsService implements OnModuleInit {
         updatedAt: parsed.updatedAt,
       };
       this.cache = normalized;
-      this.cachePath = this.settingsPath;
       return normalized;
     } catch (error) {
       const defaultSettings: ServerSettings = {
@@ -95,7 +93,6 @@ export class ServerSettingsService implements OnModuleInit {
     await fs.mkdir(path.dirname(this.settingsPath), { recursive: true });
     await fs.writeFile(this.settingsPath, payload, 'utf-8');
     this.cache = this.clone(settings);
-    this.cachePath = this.settingsPath;
     if (settings.serverIp) {
       process.env.SERVER_IP = settings.serverIp;
     }
