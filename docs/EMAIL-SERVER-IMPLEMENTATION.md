@@ -66,14 +66,25 @@
 - Keep `/etc/clearpanel/mail/users` group-owned by `dovecot`; scripts enforce this but double-check after manual edits.
 - Back up `/etc/clearpanel/mail` and `/var/vmail` alongside `mail-domains.json`, `mail-automation-history.json`, and DKIM keys before upgrades.
 
-## 8. Future Enhancements
+## 8. Roundcube Webmail & SSO
+- Roundcube is installed via the App Store (`Email → Roundcube → Install`).
+- Backend calls `scripts/email/install-roundcube.sh`, which:
+	- Installs Roundcube and PHP-FPM packages.
+	- Creates and enables an Nginx vhost for the detected webmail domain (e.g. `webmail.<primaryDomain>`).
+- After the packages/vhost are in place, the backend automatically runs `scripts/email/setup-roundcube-sso.sh`:
+	- Deploys the `clearpanel_sso` Roundcube plugin.
+	- Configures a Dovecot master-user for one-click webmail login from clearPanel.
+- The Roundcube diagnostics in the App Store will report:
+	- `Roundcube nginx vhost found` when the vhost exists.
+	- `No Roundcube nginx vhost configured` if nginx is missing a matching site (usually before install).
+
+## 9. Future Enhancements
 - Automated TLS lifecycle (Certbot hooks to reload Postfix/Dovecot, optional wildcard support).
 - Outbound reputation safeguards (postscreen, postsrsd, rate limiting, DMARC aggregate reporting).
-- Optional webmail bundle (Roundcube) once authentication delegation is defined.
 - Metrics/exporters for Prometheus (Postfix mailq, Dovecot sessions, Rspamd scores).
 - UI-driven DNS publishing (push records directly to supported providers instead of manual instructions).
 
-## 9. Next Steps
+## 10. Next Steps
 1. Convert the checklist TODOs into tracked issues with owners and milestones.
 2. Wire the new automation history endpoint into the frontend UX.
 3. Plan the frontend mail management views to align with the API contract.

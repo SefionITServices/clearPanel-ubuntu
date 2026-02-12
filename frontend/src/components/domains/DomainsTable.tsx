@@ -33,6 +33,7 @@ export interface DomainRow {
   redirectsTo?: string;
   forceHttps?: boolean;
   nameservers?: string[];
+  phpVersion?: string;
 }
 
 interface Props {
@@ -73,6 +74,7 @@ export function DomainsTable({
             </TableCell>
             <TableCell>Domain</TableCell>
             <TableCell>Document Root</TableCell>
+            <TableCell>PHP Version</TableCell>
             <TableCell>Redirects To</TableCell>
             <TableCell>Force HTTPS Redirect</TableCell>
             <TableCell align="right">Actions</TableCell>
@@ -112,6 +114,11 @@ export function DomainsTable({
                   <HomeIcon fontSize="small" color="action" />
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>{row.folderPath}</Typography>
                 </Stack>
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="text.secondary">
+                  {row.phpVersion ? `PHP ${row.phpVersion}` : 'Auto'}
+                </Typography>
               </TableCell>
               <TableCell>
                 <Typography variant="body2" color="text.secondary">

@@ -23,7 +23,10 @@ export default function DomainsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', folderPath: '', nameservers: '' });
+  const [form, setForm] = useState({ name: '', folderPath: '', nameservers: '', phpVersion: '' });
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageDomain, setManageDomain] = useState<DomainRow | null>(null);
+  const [managePhpVersion, setManagePhpVersion] = useState('');
 
   // Simulate forceHttps and redirects for demo
   useEffect(() => {
@@ -65,6 +68,10 @@ export default function DomainsPage() {
         payload.folderPath = form.folderPath.trim();
       }
 
+      if (form.phpVersion.trim()) {
+        payload.phpVersion = form.phpVersion.trim();
+      }
+
       if (nameserverList.length > 0) {
         payload.nameservers = nameserverList;
       }
@@ -81,7 +88,7 @@ export default function DomainsPage() {
       }
       
       setAddOpen(false);
-  setForm({ name: '', folderPath: '', nameservers: '' });
+    	setForm({ name: '', folderPath: '', nameservers: '', phpVersion: '' });
       // Refresh
       const data = await fetch('/api/domains').then(r => r.json());
       setDomains(
@@ -101,8 +108,25 @@ export default function DomainsPage() {
     }
   };
 
-  // Dummy handlers for demo
-  const handleManage = (row: DomainRow) => alert('Manage: ' + row.name);
+  const reloadDomains = async () => {
+    const data = await fetch('/api/domains').then(r => r.json());
+    setDomains(
+      data
+        .map((d: any) => ({
+          ...d,
+          isMain: !!d.isPrimary,
+          redirectsTo: 'Not Redirected',
+          forceHttps: false,
+        }))
+        .sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0)),
+    );
+  };
+
+  const handleManage = (row: DomainRow) => {
+    setManageDomain(row);
+    setManagePhpVersion(row.phpVersion || '');
+    setManageOpen(true);
+  };
   const handleCreateEmail = (row: DomainRow) => alert('Create Email: ' + row.name);
   const handleToggleHttps = (row: DomainRow, value: boolean) => alert('Force HTTPS: ' + value);
 
@@ -115,18 +139,7 @@ export default function DomainsPage() {
       });
       
       if (response.ok) {
-        // Refresh the domains list
-        const data = await fetch('/api/domains').then(r => r.json());
-        setDomains(
-          data
-            .map((d: any) => ({
-              ...d,
-              isMain: !!d.isPrimary,
-              redirectsTo: 'Not Redirected',
-              forceHttps: false,
-            }))
-            .sort((a: any, b: any) => (a.isPrimary ? -1 : b.isPrimary ? 1 : 0))
-        );
+        await reloadDomains();
         alert(`Domain "${row.name}" deleted successfully`);
       } else {
         alert('Failed to delete domain');
@@ -200,6 +213,7 @@ export default function DomainsPage() {
           onToggleHttps={handleToggleHttps}
           onDelete={handleDelete}
         />
+        {/* Create Domain Dialog */}
         <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
           <DialogTitle>Create A New Domain</DialogTitle>
           <DialogContent>
@@ -219,6 +233,23 @@ export default function DomainsPage() {
                 placeholder="/home/example.com"
               />
               <TextField
+                select
+                label="PHP Version (optional)"
+                value={form.phpVersion}
+                onChange={e => setForm(f => ({ ...f, phpVersion: e.target.value }))}
+                fullWidth
+                SelectProps={{ native: true }}
+                helperText="If empty, clearPanel will auto-detect an installed PHP-FPM version."
+              >
+                <option value="">Auto-detect PHP-FPM</option>
+                <option value="8.4">PHP 8.4</option>
+                <option value="8.3">PHP 8.3</option>
+                <option value="8.2">PHP 8.2</option>
+                <option value="8.1">PHP 8.1</option>
+                <option value="8.0">PHP 8.0</option>
+                <option value="7.4">PHP 7.4</option>
+              </TextField>
+              <TextField
                 label="Nameservers (optional)"
                 value={form.nameservers}
                 onChange={e => setForm(f => ({ ...f, nameservers: e.target.value }))}
@@ -233,6 +264,65 @@ export default function DomainsPage() {
           <DialogActions>
             <Button onClick={() => setAddOpen(false)}>Cancel</Button>
             <Button onClick={handleAdd} variant="contained" disabled={!form.name}>Add</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Manage Domain (PHP Version) Dialog */}
+        <Dialog open={manageOpen} onClose={() => setManageOpen(false)}>
+          <DialogTitle>Manage Domain</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {manageDomain?.name}
+              </Typography>
+              <TextField
+                select
+                label="PHP Version"
+                value={managePhpVersion}
+                onChange={e => setManagePhpVersion(e.target.value)}
+                fullWidth
+                SelectProps={{ native: true }}
+                helperText="If empty, clearPanel will auto-detect an installed PHP-FPM version."
+              >
+                <option value="">Auto-detect PHP-FPM</option>
+                <option value="8.4">PHP 8.4</option>
+                <option value="8.3">PHP 8.3</option>
+                <option value="8.2">PHP 8.2</option>
+                <option value="8.1">PHP 8.1</option>
+                <option value="8.0">PHP 8.0</option>
+                <option value="7.4">PHP 7.4</option>
+              </TextField>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setManageOpen(false)}>Cancel</Button>
+            <Button
+              variant="contained"
+              disabled={!manageDomain}
+              onClick={async () => {
+                if (!manageDomain) return;
+                try {
+                  const body: any = { phpVersion: managePhpVersion || undefined };
+                  const res = await fetch(`/api/domains/${manageDomain.id}/settings`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  });
+                  if (!res.ok) {
+                    alert('Failed to update domain');
+                    return;
+                  }
+                  await reloadDomains();
+                  setManageOpen(false);
+                  alert('Domain PHP version updated');
+                } catch (e) {
+                  console.error('Update error:', e);
+                  alert('Error updating domain');
+                }
+              }}
+            >
+              Save
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

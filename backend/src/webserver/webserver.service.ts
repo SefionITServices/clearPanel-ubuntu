@@ -3,12 +3,15 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { PhpService } from '../php/php.service';
 
 const execAsync = promisify(exec);
 
 @Injectable()
 export class WebServerService {
   private nginxAvailable = false;
+
+  constructor(private readonly phpService: PhpService) {}
 
   async onModuleInit() {
     await this.checkNginx();
@@ -35,20 +38,18 @@ export class WebServerService {
     }
   }
 
-  /**
-   * Detect the active versioned PHP-FPM socket.
-   * Checks from highest to lowest version; falls back to generic socket.
-   */
-  private async detectPhpFpmSocket(): Promise<string> {
-    const versions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
-    for (const ver of versions) {
-      const sock = `/var/run/php/php${ver}-fpm.sock`;
+  /** Resolve a PHP-FPM socket, honoring an optional explicit PHP version. */
+  private async resolvePhpSocket(phpVersion?: string): Promise<string> {
+    if (phpVersion) {
+      const explicit = this.phpService.getFpmSocket(phpVersion);
       try {
-        await fs.access(sock);
-        return sock;
-      } catch {}
+        await fs.access(explicit);
+        return explicit;
+      } catch {
+        // Fall through to auto-detect if the requested socket does not exist
+      }
     }
-    return '/var/run/php/php-fpm.sock';
+    return this.phpService.getActiveFpmSocket();
   }
 
   async installNginx(): Promise<{ success: boolean; message: string }> {
@@ -68,6 +69,7 @@ export class WebServerService {
   async ensureVirtualHost(
     domain: string,
     documentRoot: string,
+    phpVersion?: string,
   ): Promise<{ success: boolean; message: string; created: boolean; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
@@ -118,7 +120,7 @@ export class WebServerService {
       };
     }
 
-    const created = await this.createVirtualHost(domain, documentRoot);
+    const created = await this.createVirtualHost(domain, documentRoot, phpVersion);
     return {
       success: created.success,
       created: created.success,
@@ -127,14 +129,18 @@ export class WebServerService {
     };
   }
 
-  async createVirtualHost(domain: string, documentRoot: string): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
+  async createVirtualHost(
+    domain: string,
+    documentRoot: string,
+    phpVersion?: string,
+  ): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
       return { success: false, message: 'Nginx not available. Install nginx first.' };
     }
 
-    // Detect the active PHP-FPM socket (versioned)
-    const phpSocket = await this.detectPhpFpmSocket();
+    // Detect the PHP-FPM socket (per-domain when specified)
+    const phpSocket = await this.resolvePhpSocket(phpVersion);
 
     const configContent = `server {
     listen 80;

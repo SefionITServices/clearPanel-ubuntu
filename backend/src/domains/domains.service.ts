@@ -56,7 +56,14 @@ export class DomainsService {
     await fs.writeFile(getDataFilePath('domains.json'), JSON.stringify(domains, null, 2));
   }
 
-  async addDomain(username: string, name: string, folderPath?: string, customNameservers?: string[], pathMode?: string): Promise<DomainCreationResult> {
+  async addDomain(
+    username: string,
+    name: string,
+    folderPath?: string,
+    customNameservers?: string[],
+    pathMode?: string,
+    phpVersion?: string,
+  ): Promise<DomainCreationResult> {
     const domains = await this.readDomains();
     const logs: AutomationLog[] = [];
 
@@ -108,11 +115,14 @@ export class DomainsService {
 
     const serverIp = await this.serverSettingsService.getServerIp();
 
+    const normalizedPhpVersion = phpVersion?.trim() || undefined;
+
     const domain: Domain = existing
       ? {
         ...existing,
         folderPath: existing.folderPath || finalPath,
         nameservers: nameservers.length ? nameservers : existing.nameservers,
+        phpVersion: normalizedPhpVersion || existing.phpVersion,
       }
       : {
         id: randomUUID(),
@@ -120,6 +130,7 @@ export class DomainsService {
         folderPath: finalPath,
         createdAt: new Date(),
         nameservers,
+        phpVersion: normalizedPhpVersion,
       };
 
     const nameserverMessage = (() => {
@@ -230,7 +241,7 @@ export class DomainsService {
 
     // Ensure nginx virtual host (idempotent)
     try {
-      const vhostResult = await this.webServerService.ensureVirtualHost(name, domain.folderPath);
+      const vhostResult = await this.webServerService.ensureVirtualHost(name, domain.folderPath, domain.phpVersion);
       console.log(`Virtual host setup: ${vhostResult.message}`);
       logs.push({
         task: vhostResult.created ? 'Create Nginx virtual host' : 'Ensure Nginx virtual host',
@@ -334,7 +345,7 @@ export class DomainsService {
     // Update the nginx vhost if path actually changed
     if (oldPath !== newPath) {
       try {
-        await this.webServerService.createVirtualHost(domain.name, newPath);
+        await this.webServerService.createVirtualHost(domain.name, newPath, domain.phpVersion);
       } catch (e) {
         console.error(`Vhost update failed for ${domain.name}:`, e);
       }
@@ -342,7 +353,7 @@ export class DomainsService {
     return domain;
   }
 
-  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[] }): Promise<{ domain: Domain; logs: AutomationLog[] } | null> {
+  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[]; phpVersion?: string }): Promise<{ domain: Domain; logs: AutomationLog[] } | null> {
     const domains = await this.readDomains();
     const domain = domains.find((d) => d.id === id);
     if (!domain) return null;
@@ -355,7 +366,7 @@ export class DomainsService {
 
       // Update the nginx virtual host with the new document root
       try {
-        const vhostResult = await this.webServerService.createVirtualHost(domain.name, updates.folderPath);
+        const vhostResult = await this.webServerService.createVirtualHost(domain.name, updates.folderPath, domain.phpVersion);
         console.log(`Vhost update for ${domain.name}: ${vhostResult.message}`);
         logs.push({
           task: 'Update Nginx virtual host',
@@ -374,6 +385,9 @@ export class DomainsService {
     }
     if (updates.nameservers !== undefined) {
       domain.nameservers = updates.nameservers.filter(Boolean);
+    }
+    if (updates.phpVersion !== undefined) {
+      domain.phpVersion = updates.phpVersion.trim() || undefined;
     }
     await this.writeDomains(domains);
     return { domain, logs };

@@ -16,7 +16,7 @@ export class DomainsController {
   ) { }
 
   @Post()
-  async addDomain(@Body() body: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[] }, @Req() req: any) {
+  async addDomain(@Body() body: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[]; phpVersion?: string }, @Req() req: any) {
     const username = req.session.username;
     const { domain, logs, mailDomain, mailAutomationLogs } = await this.domainsService.addDomain(
       username,
@@ -24,6 +24,7 @@ export class DomainsController {
       body.folderPath,
       body.nameservers,
       body.pathMode,
+      body.phpVersion,
     );
     // Return combined info with DNS zone for convenience
     const zone = await this.dnsService.getZone(body.name);
@@ -95,7 +96,7 @@ export class DomainsController {
   @Put(':id/settings')
   async updateDomain(
     @Param('id') id: string,
-    @Body() body: { folderPath?: string; nameservers?: string[] },
+    @Body() body: { folderPath?: string; nameservers?: string[]; phpVersion?: string },
   ) {
     const result = await this.domainsService.updateDomain(id, body);
     if (!result) {

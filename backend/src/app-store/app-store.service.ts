@@ -1318,10 +1318,30 @@ location /pgadmin {
       } catch { /* use default */ }
 
       const { stdout, stderr } = await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 300_000 });
-      const logs = [stdout?.trim(), stderr?.trim()].filter(Boolean).join('\n');
+
+      // Auto-configure Roundcube SSO plugin and Dovecot master-user
+      const ssoScript = path.join(scriptsDir, 'setup-roundcube-sso.sh');
+      const apiUrl = 'http://localhost:3334';
+      let ssoStdout = '';
+      let ssoStderr = '';
+      try {
+        const ssoResult = await exec(`sudo bash ${ssoScript} '${apiUrl}'`, { timeout: 300_000 });
+        ssoStdout = ssoResult.stdout ?? '';
+        ssoStderr = ssoResult.stderr ?? '';
+      } catch (e: any) {
+        this.logger.warn(`Roundcube SSO setup failed: ${e.message}`);
+      }
+
+      const logsParts = [
+        stdout?.trim(),
+        stderr?.trim(),
+        ssoStdout.trim() && `--- Roundcube SSO ---\n${ssoStdout.trim()}`,
+        ssoStderr.trim() && `--- Roundcube SSO (stderr) ---\n${ssoStderr.trim()}`,
+      ].filter(Boolean) as string[];
+      const logs = logsParts.join('\n\n');
       return {
         success: true,
-        message: `Roundcube installed. Access via: http://${webmailDomain}`,
+        message: `Roundcube installed with SSO. Access via: http://${webmailDomain}`,
         logs,
       };
     } catch (e: any) {

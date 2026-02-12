@@ -20,8 +20,8 @@ export class WebServerController {
   }
 
   @Post('vhost/:domain')
-  async createVirtualHost(@Param('domain') domain: string, @Body() body: { documentRoot: string }) {
-    return this.webServerService.createVirtualHost(domain, body.documentRoot);
+  async createVirtualHost(@Param('domain') domain: string, @Body() body: { documentRoot: string; phpVersion?: string }) {
+    return this.webServerService.createVirtualHost(domain, body.documentRoot, body.phpVersion);
   }
 
   @Delete('vhost/:domain')
