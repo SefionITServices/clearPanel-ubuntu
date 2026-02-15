@@ -23,8 +23,24 @@ echo "=== ClearPanel Roundcube Installation ==="
 echo "Webmail domain: ${WEBMAIL_DOMAIN}"
 echo "Database type:  ${DB_TYPE}"
 
+# --- Detect PHP-FPM version ---
+PHP_VER=""
+for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
+  if [[ -S "/var/run/php/php${ver}-fpm.sock" ]] || dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
+    PHP_VER="$ver"
+    break
+  fi
+done
+if [[ -z "$PHP_VER" ]]; then
+  PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || true)
+fi
+if [[ -z "$PHP_VER" ]]; then
+  PHP_VER="8.2"
+fi
+echo "[✓] PHP-FPM version: ${PHP_VER}"
+
 # --- Install Roundcube + dependencies ---
-echo "Installing Roundcube and PHP dependencies..."
+echo "Installing Roundcube and PHP ${PHP_VER} dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 
 # Pre-seed debconf to skip interactive prompts
@@ -38,39 +54,65 @@ apt-get update -qq
 apt-get install -y -qq \
   roundcube \
   roundcube-plugins \
-  roundcube-plugins-extra \
-  php-fpm \
-  php-mbstring \
-  php-xml \
-  php-intl \
-  php-zip \
-  php-gd \
-  php-curl \
-  php-imagick \
-  php-ldap 2>/dev/null || true
+  roundcube-plugins-extra
+
+apt-get install -y -qq \
+  "php${PHP_VER}-cli" \
+  "php${PHP_VER}-fpm" \
+  "php${PHP_VER}-mbstring" \
+  "php${PHP_VER}-xml" \
+  "php${PHP_VER}-intl" \
+  "php${PHP_VER}-zip" \
+  "php${PHP_VER}-gd" \
+  "php${PHP_VER}-curl" \
+  "php${PHP_VER}-ldap"
+
+# Optional niceties for image previews/composer-style deps on some distros.
+apt-get install -y -qq "php${PHP_VER}-imagick" >/dev/null 2>&1 || \
+  apt-get install -y -qq php-imagick >/dev/null 2>&1 || true
+
+phpenmod -v "${PHP_VER}" intl mbstring xml zip gd curl ldap >/dev/null 2>&1 || true
+
+if ! php"${PHP_VER}" -r 'exit(defined("INTL_IDNA_VARIANT_UTS46") ? 0 : 1);'; then
+  echo "ERROR: php${PHP_VER}-intl is missing/not enabled; Roundcube login will crash." >&2
+  exit 1
+fi
 
 echo "[✓] Roundcube packages installed"
-
-# --- Detect PHP-FPM version ---
-PHP_VER=""
-for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
-  if [[ -S "/var/run/php/php${ver}-fpm.sock" ]]; then
-    PHP_VER="$ver"
-    break
-  fi
-done
-if [[ -z "$PHP_VER" ]]; then
-  PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.2")
-fi
-echo "[✓] PHP-FPM version: ${PHP_VER}"
 
 # --- Configure Roundcube ---
 ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
 if [[ -f "$ROUNDCUBE_CONF" ]]; then
-  # Set defaults for IMAP connection to localhost
+  # Set defaults for local IMAP/SMTP submission via Postfix.
+  sed -i "s|\$config\['imap_host'\].*|\$config['imap_host'] = ['localhost:143'];|" "$ROUNDCUBE_CONF" 2>/dev/null || true
   sed -i "s|\$config\['default_host'\].*|\$config['default_host'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-  sed -i "s|\$config\['smtp_server'\].*|\$config['smtp_server'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+  sed -i "s|\$config\['smtp_server'\].*|\$config['smtp_host'] = 'tls://localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+  sed -i "s|\$config\['smtp_host'\].*|\$config['smtp_host'] = 'tls://localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
   sed -i "s|\$config\['smtp_port'\].*|\$config['smtp_port'] = 587;|" "$ROUNDCUBE_CONF" 2>/dev/null || true
+
+  if ! grep -q "\$config\['imap_host'\]" "$ROUNDCUBE_CONF"; then
+    printf "\n\$config['imap_host'] = ['localhost:143'];\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['default_host'\]" "$ROUNDCUBE_CONF"; then
+    printf "\$config['default_host'] = 'localhost';\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['smtp_host'\]" "$ROUNDCUBE_CONF"; then
+    printf "\$config['smtp_host'] = 'tls://localhost';\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['smtp_port'\]" "$ROUNDCUBE_CONF"; then
+    printf "\$config['smtp_port'] = 587;\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['smtp_conn_options'\]" "$ROUNDCUBE_CONF"; then
+    cat >>"$ROUNDCUBE_CONF" <<'EOF'
+$config['smtp_conn_options'] = [
+    'ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false,
+        'allow_self_signed' => true,
+    ],
+];
+EOF
+  fi
 
   # Enable useful plugins
   if ! grep -q "'managesieve'" "$ROUNDCUBE_CONF"; then
