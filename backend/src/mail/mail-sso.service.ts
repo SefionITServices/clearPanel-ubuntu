@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes } from 'crypto';
+import * as fs from 'fs/promises';
 import { MailService } from './mail.service';
 import { ServerSettingsService } from '../server/server-settings.service';
 
@@ -149,13 +150,13 @@ export class MailSsoService {
       return `${explicit.replace(/\/+$/, '')}/?${tokenParam}`;
     }
 
-    // Preferred default: webmail.<mail-domain> (domain tied to the mailbox)
+    // Use per-mail-domain webmail host only when a matching vhost is present.
     const normalizedDomain = mailDomain?.trim().toLowerCase();
-    if (normalizedDomain) {
+    if (normalizedDomain && await this.hasWebmailVhost(normalizedDomain)) {
       return `https://webmail.${normalizedDomain}/?${tokenParam}`;
     }
 
-    // Fallback: derive from server settings
+    // Default fallback: the panel primary domain's webmail host.
     try {
       const settings = await this.serverSettings.getSettings();
       if (settings.primaryDomain) {
@@ -167,5 +168,21 @@ export class MailSsoService {
 
     // Last resort for legacy deployments that expose /roundcube under panel vhost
     return `/roundcube/?${tokenParam}`;
+  }
+
+  private async hasWebmailVhost(domain: string): Promise<boolean> {
+    const candidates = [
+      `/etc/nginx/sites-enabled/webmail.${domain}`,
+      `/etc/nginx/sites-available/webmail.${domain}`,
+    ];
+    for (const file of candidates) {
+      try {
+        await fs.access(file);
+        return true;
+      } catch {
+        // continue
+      }
+    }
+    return false;
   }
 }
