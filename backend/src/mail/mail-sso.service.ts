@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes } from 'crypto';
 import { MailService } from './mail.service';
+import { ServerSettingsService } from '../server/server-settings.service';
 
 /**
  * SSO token structure:
@@ -36,6 +37,7 @@ export class MailSsoService {
   constructor(
     private readonly config: ConfigService,
     private readonly mailService: MailService,
+    private readonly serverSettings: ServerSettingsService,
   ) {
     this.secret = this.config.get<string>('SSO_SECRET')
       || this.config.get<string>('SESSION_SECRET')
@@ -71,10 +73,10 @@ export class MailSsoService {
 
     const token = this.signPayload(payload);
 
-    // Build the Roundcube SSO URL — the plugin will pick up `_sso_token` query param.
-    // The actual webmail host/path is configured on the server; we return a relative
-    // URL template that the frontend or a reverse-proxy can resolve.
-    const url = `/roundcube/?_sso_token=${encodeURIComponent(token)}`;
+    // Build a direct Roundcube URL for the webmail vhost.
+    // Relative /roundcube URLs fail on installs where the panel vhost
+    // does not proxy that path.
+    const url = await this.buildWebmailSsoUrl(token, domain.domain);
 
     this.logger.log(`SSO token issued for ${mailbox.email}`);
     return { url, token };
@@ -136,5 +138,34 @@ export class MailSsoService {
       const old = this.nonceQueue.shift();
       if (old) this.usedNonces.delete(old);
     }
+  }
+
+  private async buildWebmailSsoUrl(token: string, mailDomain: string): Promise<string> {
+    const tokenParam = `_sso_token=${encodeURIComponent(token)}`;
+
+    // Highest priority: explicit override
+    const explicit = this.config.get<string>('WEBMAIL_BASE_URL')?.trim();
+    if (explicit) {
+      return `${explicit.replace(/\/+$/, '')}/?${tokenParam}`;
+    }
+
+    // Preferred default: webmail.<mail-domain> (domain tied to the mailbox)
+    const normalizedDomain = mailDomain?.trim().toLowerCase();
+    if (normalizedDomain) {
+      return `https://webmail.${normalizedDomain}/?${tokenParam}`;
+    }
+
+    // Fallback: derive from server settings
+    try {
+      const settings = await this.serverSettings.getSettings();
+      if (settings.primaryDomain) {
+        return `https://webmail.${settings.primaryDomain}/?${tokenParam}`;
+      }
+    } catch {
+      // ignore and fall back
+    }
+
+    // Last resort for legacy deployments that expose /roundcube under panel vhost
+    return `/roundcube/?${tokenParam}`;
   }
 }
