@@ -104,15 +104,42 @@ export default function SetupPage() {
     const detectServerIp = async () => {
         setDetectingIp(true);
         setIpDetectFailed(false);
+        let detectedIp: string | null = null;
+
+        // Method 1: Ask backend to detect public IP
         try {
             const res = await fetch('/api/setup/detect-ip');
-            const data = await res.json();
-            if (data.ip) {
-                setConfig(prev => ({ ...prev, serverIp: data.ip }));
-            } else {
-                setIpDetectFailed(true);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.ip) detectedIp = data.ip;
             }
         } catch {
+            // Backend might not be ready yet
+        }
+
+        // Method 2: Client-side fallback — if user accessed the panel via IP,
+        // window.location.hostname IS the VPS IP
+        if (!detectedIp) {
+            const host = window.location.hostname;
+            if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
+                detectedIp = host;
+            }
+        }
+
+        // Method 3: Client-side external API call (HTTPS)
+        if (!detectedIp) {
+            try {
+                const res = await fetch('https://api.ipify.org?format=json');
+                const data = await res.json();
+                if (data.ip) detectedIp = data.ip;
+            } catch {
+                // May fail if no internet or CORS
+            }
+        }
+
+        if (detectedIp) {
+            setConfig(prev => ({ ...prev, serverIp: detectedIp! }));
+        } else {
             setIpDetectFailed(true);
         }
         setDetectingIp(false);

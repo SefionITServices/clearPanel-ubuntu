@@ -374,7 +374,24 @@ echo -e "${GREEN}✓ Mail ports opened (25, 587, 993, 143, 4190)${NC}"
 echo -e "${YELLOW}🚀 Starting clearPanel service...${NC}"
 systemctl start clearpanel
 
-sleep 2
+# Wait for backend to be fully ready (max 30 seconds)
+echo -e "${YELLOW}⏳ Waiting for backend to start...${NC}"
+BACKEND_READY=false
+for i in $(seq 1 15); do
+    if curl -s --max-time 2 "http://localhost:3334/api/setup/status" >/dev/null 2>&1; then
+        BACKEND_READY=true
+        break
+    fi
+    sleep 2
+done
+
+if [ "$BACKEND_READY" = true ]; then
+    echo -e "${GREEN}✓ Backend API is responding${NC}"
+else
+    echo -e "${YELLOW}⚠ Backend API not responding yet — may still be starting up${NC}"
+    echo -e "${YELLOW}  Check with: curl http://localhost:3334/api/setup/status${NC}"
+    echo -e "${YELLOW}  Logs: sudo journalctl -u clearpanel -n 30${NC}"
+fi
 
 # Check status
 if systemctl is-active --quiet clearpanel; then
