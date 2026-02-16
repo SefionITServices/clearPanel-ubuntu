@@ -7,6 +7,7 @@ echo "🚀 Installing clearPanel on VPS..."
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
@@ -231,9 +232,7 @@ chmod 2775 /etc/bind/zones
 chgrp bind /etc/bind/named.conf.local 2>/dev/null || true
 chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
 
-# (sudoers for BIND9 already covered by /etc/sudoers.d/clearpanel above)
-
-# (sudoers for certbot already covered by /etc/sudoers.d/clearpanel above)\n\n# (sudoers for databases already covered by /etc/sudoers.d/clearpanel above)
+# (sudoers for BIND9, certbot, databases already covered by /etc/sudoers.d/clearpanel above)
 
 # Enable and start BIND9 (handle alias: bind9 vs named)
 BIND_SVC="named"
@@ -420,7 +419,7 @@ if systemctl is-active --quiet clearpanel; then
     echo "  View logs: sudo journalctl -u clearpanel -f"
     echo "  Restart: sudo systemctl restart clearpanel"
     echo "  Stop: sudo systemctl stop clearpanel"
-    echo "  Update: cd /opt/clearpanel && git pull && cd backend && npm run build && sudo systemctl restart clearpanel"
+    echo "  Update: cd /opt/clearpanel && bash update.sh"
     echo ""
     echo -e "${YELLOW}🔍 Troubleshooting if panel is not accessible:${NC}"
     echo "1. Check service status: sudo systemctl status clearpanel"
