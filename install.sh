@@ -72,7 +72,7 @@ elif [ -f "$INSTALL_DIR/backend/.env" ] && grep -q "DATA_DIR=" "$INSTALL_DIR/bac
 fi
 
 # Clone or update the repo directly in the install directory (keeps .git for easy updates)
-REPO_URL="https://github.com/SefionITServices/clearPanel-ubuntu.git"
+REPO_URL="git@github.com:SefionITServices/clearPanel-ubuntu.git"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo -e "${YELLOW}📥 Updating existing clearPanel installation...${NC}"
