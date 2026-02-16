@@ -37,6 +37,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { useAuth } from '../auth/AuthContext';
 
 // Backend defaults to ~/public_html/{domain} if no path provided.
 // We dynamically discover the primary domain to offer an accurate shared-path option.
@@ -49,6 +50,7 @@ interface DomainInfo {
 export default function DomainCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { username } = useAuth();
   const [domainType, setDomainType] = useState<'addon' | 'subdomain'>(
     searchParams.get('type') === 'subdomain' ? 'subdomain' : 'addon'
   );
@@ -56,13 +58,14 @@ export default function DomainCreatePage() {
   const [subdomainPrefix, setSubdomainPrefix] = useState('');
   const [parentDomain, setParentDomain] = useState('');
   const [shareRoot, setShareRoot] = useState(false);
-  const [pathMode, setPathMode] = useState<'public_html' | 'root' | 'custom'>('public_html');
+  const [pathMode, setPathMode] = useState<'public_html' | 'root' | 'websites' | 'custom'>('public_html');
   const [customFolderPath, setCustomFolderPath] = useState('');
   const [sharedFolderPath, setSharedFolderPath] = useState('');
   const [subdomain, setSubdomain] = useState('');
   const [nameservers, setNameservers] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [primaryDomain, setPrimaryDomain] = useState<DomainInfo | null>(null);
+  const [allDomains, setAllDomains] = useState<DomainInfo[]>([]);
   const [loadingPrimaryDomain, setLoadingPrimaryDomain] = useState(true);
   const [primaryDomainError, setPrimaryDomainError] = useState<string | null>(null);
   const [vpsNameservers, setVpsNameservers] = useState<string[]>([]);
@@ -86,7 +89,9 @@ export default function DomainCreatePage() {
         }
         const data = await response.json();
         if (!cancelled && Array.isArray(data) && data.length > 0) {
-          const primary = data[0] as DomainInfo;
+          const domainList = data as DomainInfo[];
+          setAllDomains(domainList);
+          const primary = domainList[0];
           setPrimaryDomain(primary);
           setParentDomain(primary.name);
           if (shareRoot) {
@@ -178,7 +183,9 @@ export default function DomainCreatePage() {
           }
           payload.folderPath = trimmedSharedPath;
         } else {
-          if (pathMode === 'custom') {
+          if (pathMode === 'websites') {
+            payload.folderPath = `/home/${username || 'root'}/websites/${finalDomainName}`;
+          } else if (pathMode === 'custom') {
             if (trimmedCustomPath) {
               payload.folderPath = trimmedCustomPath;
             }
@@ -465,12 +472,12 @@ export default function DomainCreatePage() {
                         select
                         value={parentDomain}
                         onChange={(e) => setParentDomain(e.target.value)}
-                        disabled={submitting || !primaryDomain}
+                        disabled={submitting || allDomains.length === 0}
                         sx={{ minWidth: 220 }}
                       >
-                        {primaryDomain && (
-                          <MuiMenuItem value={primaryDomain.name}>{primaryDomain.name}</MuiMenuItem>
-                        )}
+                        {allDomains.map((d) => (
+                          <MuiMenuItem key={d.name} value={d.name}>{d.name}</MuiMenuItem>
+                        ))}
                       </TextField>
                     </Stack>
                     {subdomainPrefix && parentDomain && (
@@ -606,6 +613,15 @@ export default function DomainCreatePage() {
                           label={
                             <Typography variant="body2">
                               Inside Home Root <Typography component="span" variant="caption" color="text.secondary">(~/{domain || 'example.com'})</Typography>
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          value="websites"
+                          control={<Radio />}
+                          label={
+                            <Typography variant="body2">
+                              Inside websites folder <Typography component="span" variant="caption" color="text.secondary">(/home/{username || 'user'}/websites/{domain || 'example.com'})</Typography>
                             </Typography>
                           }
                         />

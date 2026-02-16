@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { exec as execCb } from 'child_process';
+import { exec as execCb, execSync } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const exec = promisify(execCb);
 
@@ -487,10 +490,19 @@ export class DatabaseService {
       `SELECT d.datname, pg_database_size(d.datname) as size FROM pg_database d WHERE d.datname LIKE '${prefix}_%' ORDER BY d.datname`
     );
     if (!raw) return [];
-    return raw.split('\n').filter(Boolean).map((line) => {
+    const dbs: DatabaseInfo[] = [];
+    for (const line of raw.split('\n').filter(Boolean)) {
       const [name, size] = line.split('|');
-      return { name, size: parseInt(size, 10) || 0, tables: 0 };
-    });
+      let tables = 0;
+      try {
+        const tblCount = await this.pgExecDb(name,
+          `SELECT count(*) FROM pg_tables WHERE schemaname = 'public'`
+        );
+        tables = parseInt(tblCount, 10) || 0;
+      } catch {}
+      dbs.push({ name, size: parseInt(size, 10) || 0, tables });
+    }
+    return dbs;
   }
 
   async createPgDatabase(name: string): Promise<{ success: boolean; message: string }> {
@@ -518,12 +530,12 @@ export class DatabaseService {
     const prefix = this.getPrefix();
     if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
     const raw = await this.pgExecDb(database,
-      `SELECT tablename, pg_total_relation_size(quote_ident(tablename))::bigint as size FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`
+      `SELECT t.tablename, pg_total_relation_size(quote_ident(t.tablename))::bigint as size, COALESCE(s.n_live_tup, 0)::bigint as rows FROM pg_tables t LEFT JOIN pg_stat_user_tables s ON t.tablename = s.relname WHERE t.schemaname = 'public' ORDER BY t.tablename`
     );
     if (!raw) return [];
     return raw.split('\n').filter(Boolean).map((line) => {
-      const [name, size] = line.split('|');
-      return { name, rows: 0, size: parseInt(size, 10) || 0, engine: 'PostgreSQL' };
+      const [name, size, rows] = line.split('|');
+      return { name, rows: parseInt(rows, 10) || 0, size: parseInt(size, 10) || 0, engine: 'PostgreSQL' };
     });
   }
 
@@ -632,9 +644,443 @@ export class DatabaseService {
       `SELECT datname FROM pg_database WHERE has_database_privilege('${user}', datname, 'CONNECT') AND datname LIKE '${prefix}_%' AND datistemplate = false`
     );
     if (!raw) return [];
-    return raw.split('\n').filter(Boolean).map((db) => ({
-      database: db.trim(),
-      privileges: ['CONNECT'],
-    }));
+
+    const results: UserPrivilege[] = [];
+    for (const dbLine of raw.split('\n').filter(Boolean)) {
+      const db = dbLine.trim();
+      const privs: string[] = ['CONNECT'];
+      // Check additional database-level privileges
+      try {
+        const dbPrivRaw = await this.pgExec(
+          `SELECT privilege_type FROM information_schema.role_usage_grants WHERE grantee = '${user}' AND object_catalog = '${db}' UNION SELECT CASE WHEN has_database_privilege('${user}', '${db}', 'CREATE') THEN 'CREATE' END WHERE has_database_privilege('${user}', '${db}', 'CREATE')`
+        );
+        if (dbPrivRaw) {
+          for (const p of dbPrivRaw.split('\n').filter(Boolean)) {
+            const pt = p.trim();
+            if (pt && !privs.includes(pt)) privs.push(pt);
+          }
+        }
+      } catch {}
+      // Check table-level privileges
+      try {
+        const tablePrivRaw = await this.pgExecDb(db,
+          `SELECT DISTINCT privilege_type FROM information_schema.role_table_grants WHERE grantee = '${user}' AND table_schema = 'public'`
+        );
+        if (tablePrivRaw) {
+          for (const p of tablePrivRaw.split('\n').filter(Boolean)) {
+            const pt = p.trim();
+            if (pt && !privs.includes(pt)) privs.push(pt);
+          }
+        }
+      } catch {}
+      results.push({ database: db, privileges: privs });
+    }
+    return results;
+  }
+
+  // ========================
+  // EXPORT / BACKUP
+  // ========================
+
+  /**
+   * Export a MySQL/MariaDB database to SQL dump string
+   */
+  async exportDatabase(name: string): Promise<string> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+    return this.sudo(`mysqldump --single-transaction --routines --triggers "${safeName}"`, 120000);
+  }
+
+  /**
+   * Export a PostgreSQL database to SQL dump string
+   */
+  async exportPgDatabase(name: string): Promise<string> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+    return this.sudo(`-u postgres pg_dump "${safeName}"`, 120000);
+  }
+
+  // ========================
+  // IMPORT / RESTORE
+  // ========================
+
+  /**
+   * Import SQL into a MySQL/MariaDB database
+   */
+  async importDatabase(name: string, sql: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+
+    // Write SQL to temp file, then import
+    const tmpFile = path.join(os.tmpdir(), `cp-import-${Date.now()}.sql`);
+    try {
+      fs.writeFileSync(tmpFile, sql, 'utf-8');
+      await this.sudo(`bash -c "mysql '${safeName}' < '${tmpFile}'"`, 300000);
+      return { success: true, message: `Imported SQL into "${safeName}" successfully` };
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  }
+
+  /**
+   * Import SQL into a PostgreSQL database
+   */
+  async importPgDatabase(name: string, sql: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied: not your database');
+    const safeName = name.replace(/[^a-zA-Z0-9_]/g, '');
+
+    const tmpFile = path.join(os.tmpdir(), `cp-import-${Date.now()}.sql`);
+    try {
+      fs.writeFileSync(tmpFile, sql, 'utf-8');
+      await this.sudo(`-u postgres psql -d "${safeName}" -f "${tmpFile}"`, 300000);
+      return { success: true, message: `Imported SQL into "${safeName}" successfully` };
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  }
+
+  // ========================
+  // SQL QUERY RUNNER
+  // ========================
+
+  /**
+   * Execute a read-only SQL query on a MySQL/MariaDB database
+   */
+  async executeQuery(
+    database: string,
+    sql: string,
+  ): Promise<{ columns: string[]; rows: string[][]; rowCount: number; duration: number }> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    // Block destructive statements for safety
+    const upperSql = sql.trim().toUpperCase();
+    const blocked = ['DROP DATABASE', 'DROP SCHEMA', 'TRUNCATE DATABASE', 'SHUTDOWN'];
+    if (blocked.some(b => upperSql.startsWith(b))) {
+      throw new Error('This statement type is not allowed via the query runner');
+    }
+    // Limit results
+    const hasLimit = /\bLIMIT\b/i.test(sql);
+    const safeSql = hasLimit ? sql : `${sql.replace(/;\s*$/, '')} LIMIT 1000`;
+    const escaped = safeSql.replace(/"/g, '\\"').replace(/`/g, '\\`');
+    const safeName = database.replace(/[^a-zA-Z0-9_]/g, '');
+    const start = Date.now();
+    const raw = await this.sudo(`mysql -N -B "${safeName}" -e "${escaped}"`, 60000);
+    const duration = Date.now() - start;
+    // Get column names
+    let columns: string[] = [];
+    try {
+      const colRaw = await this.sudo(`mysql "${safeName}" -e "${escaped}" 2>/dev/null | head -1`, 10000);
+      columns = colRaw.split('\t');
+    } catch {}
+    const rows = raw ? raw.split('\n').map(line => line.split('\t')) : [];
+    return { columns, rows, rowCount: rows.length, duration };
+  }
+
+  /**
+   * Execute a SQL query on a PostgreSQL database
+   */
+  async executePgQuery(
+    database: string,
+    sql: string,
+  ): Promise<{ columns: string[]; rows: string[][]; rowCount: number; duration: number }> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const upperSql = sql.trim().toUpperCase();
+    const blocked = ['DROP DATABASE', 'DROP SCHEMA', 'SHUTDOWN'];
+    if (blocked.some(b => upperSql.startsWith(b))) {
+      throw new Error('This statement type is not allowed via the query runner');
+    }
+    const hasLimit = /\bLIMIT\b/i.test(sql);
+    const safeSql = hasLimit ? sql : `${sql.replace(/;\s*$/, '')} LIMIT 1000`;
+    const escaped = safeSql.replace(/"/g, '\\"');
+    const safeName = database.replace(/[^a-zA-Z0-9_]/g, '');
+    const start = Date.now();
+    // Use csv format for easier parsing
+    const raw = await this.sudo(`-u postgres psql -d "${safeName}" -c "${escaped}" --csv`, 60000);
+    const duration = Date.now() - start;
+    const lines = raw.split('\n').filter(Boolean);
+    const columns = lines.length > 0 ? lines[0].split(',') : [];
+    const rows = lines.slice(1).map(line => {
+      // Simple CSV parse (handles basic cases)
+      const cells: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (const ch of line) {
+        if (ch === '"') { inQuotes = !inQuotes; continue; }
+        if (ch === ',' && !inQuotes) { cells.push(current); current = ''; continue; }
+        current += ch;
+      }
+      cells.push(current);
+      return cells;
+    });
+    return { columns, rows, rowCount: rows.length, duration };
+  }
+
+  // ========================
+  // METRICS / STATS
+  // ========================
+
+  async getMetrics(): Promise<{
+    totalDatabases: number;
+    totalUsers: number;
+    totalSize: number;
+    engines: { engine: string; databases: number; users: number; size: number }[];
+  }> {
+    const engineStatuses = await this.getAllEngineStatus();
+    const engineMetrics: { engine: string; databases: number; users: number; size: number }[] = [];
+    let totalDbs = 0, totalUsers = 0, totalSize = 0;
+
+    for (const eng of engineStatuses) {
+      if (!eng.installed || !eng.running) continue;
+      let dbs = 0, usrs = 0, sz = 0;
+      try {
+        if (eng.engine === 'mariadb' || eng.engine === 'mysql') {
+          const dbList = await this.listDatabases();
+          dbs = dbList.length;
+          sz = dbList.reduce((s, d) => s + d.size, 0);
+          const userList = await this.listUsers();
+          usrs = userList.length;
+        } else if (eng.engine === 'postgresql') {
+          const dbList = await this.listPgDatabases();
+          dbs = dbList.length;
+          sz = dbList.reduce((s, d) => s + d.size, 0);
+          const userList = await this.listPgUsers();
+          usrs = userList.length;
+        }
+      } catch {}
+      totalDbs += dbs;
+      totalUsers += usrs;
+      totalSize += sz;
+      engineMetrics.push({ engine: eng.engine, databases: dbs, users: usrs, size: sz });
+    }
+
+    return { totalDatabases: totalDbs, totalUsers: totalUsers, totalSize: totalSize, engines: engineMetrics };
+  }
+
+  // ========================
+  // CONNECTION INFO
+  // ========================
+
+  async getConnectionInfo(): Promise<{
+    mysql: { host: string; port: number; socket: string } | null;
+    postgresql: { host: string; port: number } | null;
+  }> {
+    const result: any = { mysql: null, postgresql: null };
+
+    // MySQL / MariaDB
+    try {
+      const portRaw = await this.mysqlExec(`SELECT @@port`);
+      const socketRaw = await this.mysqlExec(`SELECT @@socket`);
+      const hostnameRaw = await this.mysqlExec(`SELECT @@hostname`);
+      result.mysql = {
+        host: hostnameRaw?.trim() || 'localhost',
+        port: parseInt(portRaw?.trim(), 10) || 3306,
+        socket: socketRaw?.trim() || '/var/run/mysqld/mysqld.sock',
+      };
+    } catch {}
+
+    // PostgreSQL
+    try {
+      const portRaw = await this.pgExec(`SHOW port`);
+      result.postgresql = {
+        host: 'localhost',
+        port: parseInt(portRaw?.trim(), 10) || 5432,
+      };
+    } catch {}
+
+    return result;
+  }
+
+  // ========================
+  // REPAIR / OPTIMIZE TABLES
+  // ========================
+
+  async repairTable(database: string, table: string): Promise<{ success: boolean; message: string; output: string }> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const safeDb = database.replace(/[^a-zA-Z0-9_]/g, '');
+    const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
+    const raw = await this.mysqlExec(`REPAIR TABLE \`${safeDb}\`.\`${safeTable}\``);
+    return { success: true, message: `Repair completed for ${safeTable}`, output: raw };
+  }
+
+  async optimizeTable(database: string, table: string): Promise<{ success: boolean; message: string; output: string }> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const safeDb = database.replace(/[^a-zA-Z0-9_]/g, '');
+    const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
+    const raw = await this.mysqlExec(`OPTIMIZE TABLE \`${safeDb}\`.\`${safeTable}\``);
+    return { success: true, message: `Optimize completed for ${safeTable}`, output: raw };
+  }
+
+  async checkTable(database: string, table: string): Promise<{ success: boolean; message: string; output: string }> {
+    const prefix = this.getPrefix();
+    if (!database.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    const safeDb = database.replace(/[^a-zA-Z0-9_]/g, '');
+    const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
+    const raw = await this.mysqlExec(`CHECK TABLE \`${safeDb}\`.\`${safeTable}\``);
+    return { success: true, message: `Check completed for ${safeTable}`, output: raw };
+  }
+
+  // ========================
+  // UNINSTALL ENGINE
+  // ========================
+
+  async uninstallEngine(engine: DbEngine): Promise<{ success: boolean; message: string; logs: string[] }> {
+    const logs: string[] = [];
+    try {
+      if (engine === 'mariadb') {
+        logs.push('Stopping MariaDB...');
+        try { await exec('sudo systemctl stop mariadb', { timeout: 15000 }); } catch {}
+        logs.push('Removing MariaDB packages...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mariadb-server mariadb-client mariadb-common', { timeout: 120000 });
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        logs.push('MariaDB removed successfully');
+        return { success: true, message: 'MariaDB uninstalled', logs };
+      } else if (engine === 'mysql') {
+        logs.push('Stopping MySQL...');
+        try { await exec('sudo systemctl stop mysql', { timeout: 15000 }); } catch {}
+        try { await exec('sudo systemctl stop mysqld', { timeout: 15000 }); } catch {}
+        logs.push('Removing MySQL packages...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mysql-server mysql-client mysql-common', { timeout: 120000 });
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        logs.push('MySQL removed successfully');
+        return { success: true, message: 'MySQL uninstalled', logs };
+      } else if (engine === 'postgresql') {
+        logs.push('Stopping PostgreSQL...');
+        try { await exec('sudo systemctl stop postgresql', { timeout: 15000 }); } catch {}
+        logs.push('Removing PostgreSQL packages...');
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y postgresql postgresql-client postgresql-contrib', { timeout: 120000 });
+        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        logs.push('PostgreSQL removed successfully');
+        return { success: true, message: 'PostgreSQL uninstalled', logs };
+      }
+      return { success: false, message: `Unknown engine: ${engine}`, logs };
+    } catch (e: any) {
+      const errMsg = e.stderr || e.message || String(e);
+      logs.push(`Error: ${errMsg}`);
+      throw new Error(`Failed to uninstall ${engine}: ${errMsg}`);
+    }
+  }
+
+  // ========================
+  // REMOTE ACCESS CONFIG
+  // ========================
+
+  async getRemoteAccessStatus(): Promise<{
+    mysql: { enabled: boolean; bindAddress: string } | null;
+    postgresql: { enabled: boolean; listenAddresses: string } | null;
+  }> {
+    const result: any = { mysql: null, postgresql: null };
+
+    // MySQL/MariaDB
+    const mysqlConfPaths = [
+      '/etc/mysql/mariadb.conf.d/50-server.cnf',
+      '/etc/mysql/mysql.conf.d/mysqld.cnf',
+      '/etc/mysql/my.cnf',
+    ];
+    for (const confPath of mysqlConfPaths) {
+      try {
+        const content = await this.sudo(`cat "${confPath}"`, 5000);
+        const bindMatch = content.match(/bind-address\s*=\s*(.+)/);
+        const bindAddr = bindMatch ? bindMatch[1].trim() : '127.0.0.1';
+        result.mysql = {
+          enabled: bindAddr === '0.0.0.0' || bindAddr === '*',
+          bindAddress: bindAddr,
+        };
+        break;
+      } catch {}
+    }
+
+    // PostgreSQL
+    try {
+      const pgConf = await this.sudo(`-u postgres psql -t -A -c "SHOW config_file"`, 5000);
+      if (pgConf) {
+        const content = await this.sudo(`cat "${pgConf.trim()}"`, 5000);
+        const listenMatch = content.match(/listen_addresses\s*=\s*'([^']+)'/);
+        const listenAddr = listenMatch ? listenMatch[1].trim() : 'localhost';
+        result.postgresql = {
+          enabled: listenAddr === '*' || listenAddr === '0.0.0.0',
+          listenAddresses: listenAddr,
+        };
+      }
+    } catch {}
+
+    return result;
+  }
+
+  async setRemoteAccess(
+    engine: 'mysql' | 'postgresql',
+    enabled: boolean,
+  ): Promise<{ success: boolean; message: string }> {
+    if (engine === 'mysql') {
+      const confPaths = [
+        '/etc/mysql/mariadb.conf.d/50-server.cnf',
+        '/etc/mysql/mysql.conf.d/mysqld.cnf',
+        '/etc/mysql/my.cnf',
+      ];
+      let found = false;
+      for (const confPath of confPaths) {
+        try {
+          await this.sudo(`test -f "${confPath}"`, 3000);
+          const newBind = enabled ? '0.0.0.0' : '127.0.0.1';
+          await this.sudo(`sed -i "s/^bind-address\\s*=.*/bind-address = ${newBind}/" "${confPath}"`, 5000);
+          found = true;
+          break;
+        } catch {}
+      }
+      if (!found) throw new Error('MySQL/MariaDB configuration file not found');
+
+      // Restart the service
+      try {
+        await exec('sudo systemctl restart mariadb', { timeout: 15000 });
+      } catch {
+        try {
+          await exec('sudo systemctl restart mysql', { timeout: 15000 });
+        } catch {
+          await exec('sudo systemctl restart mysqld', { timeout: 15000 });
+        }
+      }
+
+      return {
+        success: true,
+        message: `MySQL remote access ${enabled ? 'enabled' : 'disabled'}. Service restarted.`,
+      };
+    } else if (engine === 'postgresql') {
+      try {
+        const pgConf = (await this.sudo(`-u postgres psql -t -A -c "SHOW config_file"`, 5000)).trim();
+        const newListen = enabled ? "'*'" : "'localhost'";
+        await this.sudo(`sed -i "s/^#\\?listen_addresses\\s*=.*/listen_addresses = ${newListen}/" "${pgConf}"`, 5000);
+
+        // Also update pg_hba.conf to allow remote connections
+        const hbaConf = (await this.sudo(`-u postgres psql -t -A -c "SHOW hba_file"`, 5000)).trim();
+        if (enabled) {
+          // Add entry for remote connections if not already present
+          const hbaContent = await this.sudo(`cat "${hbaConf}"`, 5000);
+          if (!hbaContent.includes('0.0.0.0/0')) {
+            await this.sudo(`bash -c "echo 'host    all    all    0.0.0.0/0    md5' >> '${hbaConf}'"`, 5000);
+            await this.sudo(`bash -c "echo 'host    all    all    ::/0         md5' >> '${hbaConf}'"`, 5000);
+          }
+        } else {
+          // Remove remote entries
+          await this.sudo(`sed -i '/0\\.0\\.0\\.0\\/0/d' "${hbaConf}"`, 5000);
+          await this.sudo(`sed -i '/::\\/0/d' "${hbaConf}"`, 5000);
+        }
+
+        await exec('sudo systemctl restart postgresql', { timeout: 15000 });
+        return {
+          success: true,
+          message: `PostgreSQL remote access ${enabled ? 'enabled' : 'disabled'}. Service restarted.`,
+        };
+      } catch (e: any) {
+        throw new Error(`Failed to configure PostgreSQL remote access: ${e.message}`);
+      }
+    }
+
+    throw new Error('Invalid engine');
   }
 }

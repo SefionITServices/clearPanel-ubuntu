@@ -20,6 +20,7 @@ import DatabasesPage from './pages/Databases';
 import AppStorePage from './pages/AppStore';
 import PhpManagerPage from './pages/PhpManager';
 import MailDomainsPage from './pages/MailDomains';
+import EmailAccountsPage from './pages/EmailAccounts';
 import LogsPage from './pages/Logs';
 import SettingsPage from './pages/Settings';
 
@@ -144,6 +145,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <MailDomainsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/email-accounts"
+              element={
+                <ProtectedRoute>
+                  <EmailAccountsPage />
                 </ProtectedRoute>
               }
             />

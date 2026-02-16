@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query, UseInterceptors } from '@nestjs/common';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { DatabaseService } from './database.service';
 
@@ -274,6 +275,220 @@ export class DatabaseController {
       return res.json({ success: true, privileges });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // EXPORT / BACKUP
+  // ========================
+
+  @Get('export/:database')
+  async exportDatabase(
+    @Param('database') database: string,
+    @Query('engine') engine: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!database) return res.status(400).json({ success: false, error: 'database required' });
+    try {
+      const sql = this.isPg(engine)
+        ? await this.db.exportPgDatabase(database)
+        : await this.db.exportDatabase(database);
+      res.setHeader('Content-Type', 'application/sql');
+      res.setHeader('Content-Disposition', `attachment; filename="${database}.sql"`);
+      return res.send(sql);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // IMPORT / RESTORE
+  // ========================
+
+  @Post('import')
+  @UseInterceptors(AnyFilesInterceptor())
+  async importDatabase(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const { database, engine, sql: sqlBody } = req.body || {};
+      if (!database) return res.status(400).json({ success: false, error: 'database required' });
+
+      let sql = sqlBody || '';
+
+      // Check for uploaded file
+      const files: Express.Multer.File[] = (req as any).files || [];
+      if (files.length > 0) {
+        sql = files[0].buffer.toString('utf-8');
+      }
+
+      if (!sql) return res.status(400).json({ success: false, error: 'No SQL provided (upload a file or send sql in body)' });
+
+      const data = this.isPg(engine)
+        ? await this.db.importPgDatabase(database, sql)
+        : await this.db.importDatabase(database, sql);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // SQL QUERY RUNNER
+  // ========================
+
+  @Post('query')
+  async executeQuery(
+    @Body() body: { database: string; sql: string; engine?: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.database || !body.sql) {
+      return res.status(400).json({ success: false, error: 'database and sql required' });
+    }
+    try {
+      const result = this.isPg(body.engine)
+        ? await this.db.executePgQuery(body.database, body.sql)
+        : await this.db.executeQuery(body.database, body.sql);
+      return res.json({ success: true, ...result });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // METRICS
+  // ========================
+
+  @Get('metrics')
+  async metrics(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const data = await this.db.getMetrics();
+      return res.json({ success: true, ...data });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // UNINSTALL
+  // ========================
+
+  @Post('uninstall/:engine')
+  async uninstallEngine(
+    @Param('engine') engine: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!valid.includes(engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.uninstallEngine(engine as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // REMOTE ACCESS
+  // ========================
+
+  @Get('connection-info')
+  async getConnectionInfo(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const data = await this.db.getConnectionInfo();
+      return res.json({ success: true, ...data });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
+  // TABLE OPERATIONS (REPAIR / OPTIMIZE / CHECK)
+  // ========================
+
+  @Post('tables/repair')
+  async repairTable(
+    @Body() body: { database: string; table: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
+    try {
+      const data = await this.db.repairTable(body.database, body.table);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('tables/optimize')
+  async optimizeTable(
+    @Body() body: { database: string; table: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
+    try {
+      const data = await this.db.optimizeTable(body.database, body.table);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('tables/check')
+  async checkTable(
+    @Body() body: { database: string; table: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
+    try {
+      const data = await this.db.checkTable(body.database, body.table);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('remote-access')
+  async getRemoteAccess(@Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    try {
+      const data = await this.db.getRemoteAccessStatus();
+      return res.json({ success: true, ...data });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('remote-access')
+  async setRemoteAccess(
+    @Body() body: { engine: 'mysql' | 'postgresql'; enabled: boolean },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.engine || body.enabled === undefined) {
+      return res.status(400).json({ success: false, error: 'engine and enabled required' });
+    }
+    try {
+      const data = await this.db.setRemoteAccess(body.engine, body.enabled);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
     }
   }
 }

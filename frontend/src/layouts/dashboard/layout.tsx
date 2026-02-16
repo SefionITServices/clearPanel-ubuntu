@@ -99,6 +99,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/ssl': { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
         '/databases': { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
         '/php': { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
+        '/email-accounts': { title: 'Email Accounts', path: '/email-accounts', icon: <EmailIcon /> },
         '/mail-domains': { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
         '/terminal': { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
         '/logs': { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
