@@ -7,24 +7,20 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  login(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+  async login(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     const { username, password } = body;
     if (!username || !password) {
-      console.log('[Auth] Login missing credentials');
       return res
         .status(HttpStatus.BAD_REQUEST)
         .json({ success: false, error: 'Username and password are required' });
     }
 
-    console.log('[Auth] Login attempt:', { username, passwordLength: password?.length });
-    const ok = this.authService.validate(username, password);
+    const ok = await this.authService.validate(username, password);
     if (ok) {
       (req.session as any).isAuthenticated = true;
       (req.session as any).username = username;
-      console.log('[Auth] Login successful for:', username);
       return res.json({ success: true, message: 'Login successful' });
     }
-    console.log('[Auth] Login failed for:', username);
     return res.status(HttpStatus.UNAUTHORIZED).json({ success: false, error: 'Invalid credentials' });
   }
 

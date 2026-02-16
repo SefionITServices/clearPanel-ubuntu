@@ -46,6 +46,10 @@ type SanitizedDomainSettings = {
 export class MailService {
   private readonly logger = new Logger(MailService.name);
 
+  /** In-memory cache for mail-domains.json */
+  private mailDomainsCache: { data: MailDomain[]; ts: number } | null = null;
+  private static readonly CACHE_TTL = 5000; // 5s
+
   constructor(
     private readonly automation: MailAutomationService,
     private readonly serverSettings: ServerSettingsService,
@@ -656,10 +660,15 @@ export class MailService {
   }
 
   private async readDomains(): Promise<MailDomain[]> {
+    const now = Date.now();
+    if (this.mailDomainsCache && now - this.mailDomainsCache.ts < MailService.CACHE_TTL) {
+      return this.mailDomainsCache.data.map(d => ({ ...d })); // shallow clone to avoid mutation
+    }
     try {
       const payload = await fs.readFile(getDataFilePath('mail-domains.json'), 'utf-8');
       const data = JSON.parse(payload) as MailDomain[];
       data.forEach((domain) => this.applyDomainDefaults(domain));
+      this.mailDomainsCache = { data, ts: now };
       return data;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -676,6 +685,7 @@ export class MailService {
     const mailFile = getDataFilePath('mail-domains.json');
     await fs.mkdir(path.dirname(mailFile), { recursive: true });
     await fs.writeFile(mailFile, JSON.stringify(domains, null, 2), 'utf-8');
+    this.mailDomainsCache = { data: domains, ts: Date.now() }; // Update cache
   }
 
   private sanitizeDomainSettings(payload: DomainSettingsUpdate): SanitizedDomainSettings | null {

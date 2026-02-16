@@ -14,13 +14,21 @@ export function SetupGuard() {
     }, []);
 
     const checkSetupStatus = async () => {
+        // Cache setup status in sessionStorage so it's only fetched once per browser session
+        const cached = sessionStorage.getItem('setupCompleted');
+        if (cached === 'true') {
+            setSetupCompleted(true);
+            setLoading(false);
+            return;
+        }
         try {
             const response = await fetch('/api/setup/status');
             const data = await response.json();
             setSetupCompleted(data.completed);
-        } catch (error) {
-            console.error('Failed to check setup status:', error);
-            // Assume setup is not completed on error
+            if (data.completed) {
+                sessionStorage.setItem('setupCompleted', 'true');
+            }
+        } catch {
             setSetupCompleted(false);
         } finally {
             setLoading(false);

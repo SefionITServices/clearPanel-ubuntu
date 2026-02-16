@@ -29,7 +29,7 @@ export class WebServerService {
 
   private async checkNginx(): Promise<void> {
     try {
-      await execAsync('which nginx');
+      await execAsync('which nginx', { timeout: 10_000 });
       this.nginxAvailable = true;
       console.log('✅ Nginx detected');
     } catch {
@@ -55,10 +55,10 @@ export class WebServerService {
   async installNginx(): Promise<{ success: boolean; message: string }> {
     try {
       console.log('Installing nginx...');
-      await execAsync('sudo apt update && sudo apt install -y nginx');
+      await execAsync('sudo apt update && sudo apt install -y nginx', { timeout: 120_000 });
       this.nginxAvailable = true;
-      await execAsync('sudo systemctl enable nginx');
-      await execAsync('sudo systemctl start nginx');
+      await execAsync('sudo systemctl enable nginx', { timeout: 30_000 });
+      await execAsync('sudo systemctl start nginx', { timeout: 30_000 });
       return { success: true, message: 'Nginx installed successfully' };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -97,7 +97,7 @@ export class WebServerService {
           try {
             await fs.symlink(configPath, symlinkPath);
           } catch {
-            await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
+            await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`, { timeout: 10_000 });
           }
         }
       } catch {
@@ -105,13 +105,13 @@ export class WebServerService {
         try {
           await fs.symlink(configPath, symlinkPath);
         } catch {
-          await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
+          await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`, { timeout: 10_000 });
         }
       }
 
       // Validate and reload nginx so the vhost takes effect.
-      await execAsync('sudo nginx -t');
-      await execAsync('sudo systemctl reload nginx');
+      await execAsync('sudo nginx -t', { timeout: 15_000 });
+      await execAsync('sudo systemctl reload nginx', { timeout: 30_000 });
 
       return {
         success: true,
@@ -184,7 +184,7 @@ export class WebServerService {
         // Fallback: write via temp file + sudo tee
         const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
         await fs.writeFile(tmpFile, configContent, { encoding: 'utf8' });
-        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`);
+        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`, { timeout: 10_000 });
         await fs.unlink(tmpFile).catch(() => {});
       }
 
@@ -193,12 +193,12 @@ export class WebServerService {
         try { await fs.unlink(symlinkPath); } catch {}
         await fs.symlink(configPath, symlinkPath);
       } catch {
-        await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`);
+        await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`, { timeout: 10_000 });
       }
 
       // Test nginx config
       try {
-        await execAsync('sudo nginx -t');
+        await execAsync('sudo nginx -t', { timeout: 15_000 });
       } catch {
         // If test fails, remove bad config and report
         try { await fs.unlink(symlinkPath); } catch {}
@@ -210,7 +210,7 @@ export class WebServerService {
       }
 
       // Reload nginx
-      await execAsync('sudo systemctl reload nginx');
+      await execAsync('sudo systemctl reload nginx', { timeout: 30_000 });
       
       return {
         success: true,
@@ -253,17 +253,17 @@ export class WebServerService {
       } catch {
         const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
         await fs.writeFile(tmpFile, config, { encoding: 'utf8' });
-        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`);
+        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`, { timeout: 10_000 });
         await fs.unlink(tmpFile).catch(() => {});
       }
       // Test nginx config
       try {
-        await execAsync('sudo nginx -t');
+        await execAsync('sudo nginx -t', { timeout: 15_000 });
       } catch (e) {
         return { success: false, message: `Nginx config test failed. Please fix the syntax. Error: ${e instanceof Error ? e.message : String(e)}` };
       }
       // Reload nginx
-      await execAsync('sudo systemctl reload nginx');
+      await execAsync('sudo systemctl reload nginx', { timeout: 30_000 });
       return { success: true, message: `Virtual host config updated and nginx reloaded for ${domain}` };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -279,13 +279,13 @@ export class WebServerService {
 
     try {
       // Remove symlink
-      await execAsync(`sudo rm -f /etc/nginx/sites-enabled/${domain}`);
+      await execAsync(`sudo rm -f /etc/nginx/sites-enabled/${domain}`, { timeout: 10_000 });
       
       // Remove config
-      await execAsync(`sudo rm -f /etc/nginx/sites-available/${domain}`);
+      await execAsync(`sudo rm -f /etc/nginx/sites-available/${domain}`, { timeout: 10_000 });
       
       // Reload nginx
-      await execAsync('sudo systemctl reload nginx');
+      await execAsync('sudo systemctl reload nginx', { timeout: 30_000 });
       
       return { success: true, message: `Virtual host removed for ${domain}` };
     } catch (error) {
@@ -305,12 +305,12 @@ export class WebServerService {
     }
 
     try {
-      const { stdout } = await execAsync('nginx -v 2>&1');
+      const { stdout } = await execAsync('nginx -v 2>&1', { timeout: 10_000 });
       result.version = stdout.trim();
     } catch {}
 
     try {
-      const { stdout } = await execAsync('sudo systemctl is-active nginx');
+      const { stdout } = await execAsync('sudo systemctl is-active nginx', { timeout: 30_000 });
       result.running = stdout.trim() === 'active';
     } catch {}
 

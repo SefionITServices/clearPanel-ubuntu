@@ -40,7 +40,7 @@ export class DnsServerService {
 
     try {
       // Check if BIND9 is installed
-      const { stdout } = await execAsync('named -v 2>&1 || true');
+      const { stdout } = await execAsync('named -v 2>&1 || true', { timeout: 10_000 });
       if (stdout.includes('BIND')) {
         status.installed = true;
         status.version = stdout.trim().split('\n')[0];
@@ -52,7 +52,7 @@ export class DnsServerService {
     if (status.installed) {
       try {
         // Check if named service is running
-        const { stdout } = await execAsync('systemctl is-active named || systemctl is-active bind9 || true');
+        const { stdout } = await execAsync('systemctl is-active named || systemctl is-active bind9 || true', { timeout: 30_000 });
         status.running = stdout.trim() === 'active';
       } catch (error) {
         this.logger.debug('Named service check failed');
@@ -74,27 +74,27 @@ export class DnsServerService {
       // Detect package manager and install
       let installCmd = '';
       try {
-        await execAsync('which apt-get');
+        await execAsync('which apt-get', { timeout: 10_000 });
         installCmd = 'apt-get update && apt-get install -y bind9 bind9utils bind9-doc';
       } catch {
         try {
-          await execAsync('which dnf');
+          await execAsync('which dnf', { timeout: 10_000 });
           installCmd = 'dnf install -y bind bind-utils';
         } catch {
           return { success: false, message: 'Unsupported package manager. Please install BIND9 manually.' };
         }
       }
 
-      const { stdout, stderr } = await execAsync(`sudo ${installCmd}`);
+      const { stdout, stderr } = await execAsync(`sudo ${installCmd}`, { timeout: 120_000 });
       
       // Create zones directory
-      await execAsync(`sudo mkdir -p ${this.zonesPath}`);
-      await execAsync(`sudo chown -R bind:bind ${this.zonesPath} || sudo chown -R named:named ${this.zonesPath} || true`);
+      await execAsync(`sudo mkdir -p ${this.zonesPath}`, { timeout: 10_000 });
+      await execAsync(`sudo chown -R bind:bind ${this.zonesPath} || sudo chown -R named:named ${this.zonesPath} || true`, { timeout: 10_000 });
 
       // Enable and start the service
       const serviceName = await this.getServiceName();
-      await execAsync(`sudo systemctl enable ${serviceName}`);
-      await execAsync(`sudo systemctl start ${serviceName}`);
+      await execAsync(`sudo systemctl enable ${serviceName}`, { timeout: 30_000 });
+      await execAsync(`sudo systemctl start ${serviceName}`, { timeout: 30_000 });
 
       this.logger.log('BIND9 installed and started successfully');
       return { 
@@ -197,7 +197,7 @@ www     IN  CNAME   ${domain}.
       
       // Try to set ownership (may fail if not root, but that's okay if permissions are set correctly)
       try {
-        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`);
+        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
       } catch {
         // Ignore chown errors - file permissions should be sufficient
       }
@@ -254,24 +254,24 @@ www     IN  CNAME   ${domain}.
     try {
       // Try without sudo first (if user has permissions)
       try {
-        await execAsync(`systemctl reload ${serviceName}`);
+        await execAsync(`systemctl reload ${serviceName}`, { timeout: 30_000 });
         this.logger.log('BIND9 reloaded successfully');
         return;
       } catch {
         // If that fails, try with sudo (may fail due to NoNewPrivileges)
         try {
-          await execAsync(`sudo systemctl reload ${serviceName}`);
+          await execAsync(`sudo systemctl reload ${serviceName}`, { timeout: 30_000 });
           this.logger.log('BIND9 reloaded successfully');
           return;
         } catch (sudoError) {
           this.logger.warn('BIND9 reload failed, trying restart', sudoError);
           // Try restart without sudo
           try {
-            await execAsync(`systemctl restart ${serviceName}`);
+            await execAsync(`systemctl restart ${serviceName}`, { timeout: 30_000 });
             return;
           } catch {
             // Last resort: try restart with sudo
-            await execAsync(`sudo systemctl restart ${serviceName}`);
+            await execAsync(`sudo systemctl restart ${serviceName}`, { timeout: 30_000 });
           }
         }
       }
@@ -372,7 +372,7 @@ zone "${domain}" {
   private async getServiceName(): Promise<string> {
     // BIND service is called 'named' on RHEL/CentOS, 'bind9' on Debian/Ubuntu
     try {
-      await execAsync('systemctl list-units --type=service | grep bind9');
+      await execAsync('systemctl list-units --type=service | grep bind9', { timeout: 10_000 });
       return 'bind9';
     } catch {
       return 'named';

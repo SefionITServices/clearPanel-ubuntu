@@ -183,7 +183,7 @@ export class AppStoreService {
 
   private async which(bin: string): Promise<boolean> {
     try {
-      await exec(`which ${bin}`);
+      await exec(`which ${bin}`, { timeout: 10_000 });
       return true;
     } catch {
       return false;
@@ -245,7 +245,7 @@ export class AppStoreService {
     let installed = false;
     let version = '';
     try {
-      const v = (await exec('node --version')).stdout.trim();
+      const v = (await exec('node --version', { timeout: 10_000 })).stdout.trim();
       installed = true;
       version = v.replace(/^v/, '');
     } catch {}
@@ -257,7 +257,7 @@ export class AppStoreService {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('composer --version 2>/dev/null')).stdout.trim();
+        const out = (await exec('composer --version 2>/dev/null', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/Composer version (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -284,7 +284,7 @@ export class AppStoreService {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('certbot --version 2>&1')).stdout.trim();
+        const out = (await exec('certbot --version 2>&1', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/certbot (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -297,7 +297,7 @@ export class AppStoreService {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('wp --version 2>/dev/null')).stdout.trim();
+        const out = (await exec('wp --version 2>/dev/null', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/WP-CLI (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -317,7 +317,7 @@ export class AppStoreService {
     // Also check pip-based install
     if (!installed) {
       try {
-        const v = (await exec('pip3 show pgadmin4 2>/dev/null | grep Version')).stdout.trim();
+        const v = (await exec('pip3 show pgadmin4 2>/dev/null | grep Version', { timeout: 10_000 })).stdout.trim();
         const m = v.match(/Version:\s*(\S+)/);
         if (m) { installed = true; version = m[1]; }
       } catch {}
@@ -1062,21 +1062,21 @@ location /pgadmin {
     const checks: DiagnoseCheck[] = [];
 
     let nodeVersion = '';
-    try { nodeVersion = (await exec('node --version')).stdout.trim(); } catch {}
+    try { nodeVersion = (await exec('node --version', { timeout: 10_000 })).stdout.trim(); } catch {}
     checks.push({ name: 'Node.js Binary', status: nodeVersion ? 'ok' : 'error', detail: nodeVersion ? `node ${nodeVersion} found` : 'node command not found' });
 
     let npmVersion = '';
-    try { npmVersion = (await exec('npm --version')).stdout.trim(); } catch {}
+    try { npmVersion = (await exec('npm --version', { timeout: 10_000 })).stdout.trim(); } catch {}
     checks.push({ name: 'npm', status: npmVersion ? 'ok' : 'error', detail: npmVersion ? `npm v${npmVersion} found` : 'npm not found' });
 
     // Check if npx is available
     let npxOk = false;
-    try { await exec('which npx'); npxOk = true; } catch {}
+    try { await exec('which npx', { timeout: 10_000 }); npxOk = true; } catch {}
     checks.push({ name: 'npx', status: npxOk ? 'ok' : 'warn', detail: npxOk ? 'npx is available' : 'npx not found' });
 
     // Check NODE_PATH or global modules location
     let globalPath = '';
-    try { globalPath = (await exec('npm root -g 2>/dev/null')).stdout.trim(); } catch {}
+    try { globalPath = (await exec('npm root -g 2>/dev/null', { timeout: 10_000 })).stdout.trim(); } catch {}
     if (globalPath) checks.push({ name: 'Global Modules', status: 'ok', detail: `Global path: ${globalPath}` });
 
     // Check Node.js source (nodesource vs system)
@@ -1098,7 +1098,7 @@ location /pgadmin {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('composer --version 2>/dev/null')).stdout.trim();
+        const out = (await exec('composer --version 2>/dev/null', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/Composer version (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -1107,7 +1107,7 @@ location /pgadmin {
 
     // Check PHP CLI dependency
     let phpCli = false;
-    try { await exec('php --version 2>/dev/null'); phpCli = true; } catch {}
+    try { await exec('php --version 2>/dev/null', { timeout: 10_000 }); phpCli = true; } catch {}
     checks.push({ name: 'PHP CLI', status: phpCli ? 'ok' : 'error', detail: phpCli ? 'PHP CLI is available (required by Composer)' : 'PHP CLI not found — Composer requires PHP' });
 
     // Check common PHP extensions needed by Composer
@@ -1115,7 +1115,7 @@ location /pgadmin {
     for (const ext of neededExts) {
       let enabled = false;
       try {
-        const out = (await exec(`php -m 2>/dev/null`)).stdout;
+        const out = (await exec(`php -m 2>/dev/null`, { timeout: 10_000 })).stdout;
         enabled = out.toLowerCase().includes(ext);
       } catch {}
       checks.push({ name: `PHP ext: ${ext}`, status: enabled ? 'ok' : 'warn', detail: enabled ? `${ext} extension loaded` : `${ext} extension not loaded — some packages may fail` });
@@ -1224,7 +1224,7 @@ location /pgadmin {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('certbot --version 2>&1')).stdout.trim();
+        const out = (await exec('certbot --version 2>&1', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/certbot (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -1234,7 +1234,7 @@ location /pgadmin {
     // Nginx plugin
     let nginxPlugin = false;
     try {
-      const out = (await exec('certbot plugins 2>/dev/null')).stdout;
+      const out = (await exec('certbot plugins 2>/dev/null', { timeout: 10_000 })).stdout;
       nginxPlugin = out.includes('nginx');
     } catch {}
     checks.push({ name: 'Nginx Plugin', status: nginxPlugin ? 'ok' : 'warn', detail: nginxPlugin ? 'python3-certbot-nginx plugin available' : 'Nginx plugin not found — install python3-certbot-nginx' });
@@ -1296,7 +1296,7 @@ location /pgadmin {
     let version = '';
     if (installed) {
       try {
-        const out = (await exec('wp --version 2>/dev/null')).stdout.trim();
+        const out = (await exec('wp --version 2>/dev/null', { timeout: 10_000 })).stdout.trim();
         const m = out.match(/WP-CLI (\S+)/);
         if (m) version = m[1];
       } catch {}
@@ -1307,7 +1307,7 @@ location /pgadmin {
     let phpCli = false;
     let phpVer = '';
     try {
-      const out = (await exec('php --version 2>/dev/null')).stdout;
+      const out = (await exec('php --version 2>/dev/null', { timeout: 10_000 })).stdout;
       phpCli = true;
       const m = out.match(/PHP (\d+\.\d+\.\d+)/);
       if (m) phpVer = m[1];
@@ -1334,7 +1334,7 @@ location /pgadmin {
 
       // Check for updates available
       try {
-        const out = (await exec('wp cli check-update 2>/dev/null')).stdout.trim();
+        const out = (await exec('wp cli check-update 2>/dev/null', { timeout: 10_000 })).stdout.trim();
         const hasUpdate = out.includes('Success') === false && out.length > 0 && !out.includes('WP-CLI is at the latest');
         checks.push({ name: 'WP-CLI Updates', status: hasUpdate ? 'warn' : 'ok', detail: hasUpdate ? 'A WP-CLI update is available' : 'WP-CLI is up to date' });
       } catch {}
@@ -1591,8 +1591,8 @@ location /pgadmin {
     // Also check pip-based install
     if (!installed) {
       try {
-        const out = (await exec('mailman --version 2>/dev/null')).stdout.trim();
-        const m = out.match(/GNU Mailman (\S+)/);
+        const { stdout } = await exec('mailman --version 2>/dev/null', { timeout: 10_000 });
+        const m = stdout.match(/GNU Mailman (\S+)/);
         if (m) { installed = true; version = m[1]; }
       } catch {}
     }
@@ -1652,7 +1652,7 @@ location /pgadmin {
     } catch {}
     if (!installed) {
       try {
-        const { stdout } = await exec('mailman --version 2>/dev/null');
+        const { stdout } = await exec('mailman --version 2>/dev/null', { timeout: 10_000 });
         installed = stdout.includes('GNU Mailman');
       } catch {}
     }

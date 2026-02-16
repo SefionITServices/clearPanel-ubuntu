@@ -34,6 +34,10 @@ interface DomainDeletionResult {
 
 @Injectable()
 export class DomainsService {
+  /** In-memory cache for domains.json */
+  private domainsCache: { data: Domain[]; ts: number } | null = null;
+  private static readonly CACHE_TTL = 5000; // 5s
+
   constructor(
     private readonly dnsService: DnsService,
     private readonly webServerService: WebServerService,
@@ -43,9 +47,15 @@ export class DomainsService {
     private readonly directoryStructureService: DirectoryStructureService,
   ) { }
   private async readDomains(): Promise<Domain[]> {
+    const now = Date.now();
+    if (this.domainsCache && now - this.domainsCache.ts < DomainsService.CACHE_TTL) {
+      return this.domainsCache.data;
+    }
     try {
       const data = await fs.readFile(getDataFilePath('domains.json'), 'utf-8');
-      return JSON.parse(data);
+      const domains = JSON.parse(data);
+      this.domainsCache = { data: domains, ts: now };
+      return domains;
     } catch {
       return [];
     }
@@ -54,6 +64,7 @@ export class DomainsService {
   private async writeDomains(domains: Domain[]): Promise<void> {
     await fs.mkdir(path.dirname(getDataFilePath('domains.json')), { recursive: true });
     await fs.writeFile(getDataFilePath('domains.json'), JSON.stringify(domains, null, 2));
+    this.domainsCache = { data: domains, ts: Date.now() }; // Update cache on write
   }
 
   async addDomain(

@@ -1,30 +1,42 @@
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, CssBaseline } from '@mui/material';
+import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { theme } from './theme';
-import LoginPage from './pages/Login';
-import SetupPage from './pages/Setup';
+
+// Lazy-load all pages — only the visited page is downloaded
+const LoginPage = lazy(() => import('./pages/Login'));
+const SetupPage = lazy(() => import('./pages/Setup'));
+const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const FileManagerPage = lazy(() => import('./pages/FileManager'));
+const TerminalPage = lazy(() => import('./pages/terminal/TerminalPage'));
+const ToolsPage = lazy(() => import('./pages/Tools'));
+const DomainCreatePage = lazy(() => import('./pages/DomainCreate'));
+const DnsEditorPage = lazy(() => import('./pages/DnsEditor'));
+const DomainsListView = lazy(() => import('./pages/DomainsListView'));
+const NameserverSetupPage = lazy(() => import('./pages/NameserverSetup'));
+const SslPage = lazy(() => import('./pages/Ssl'));
+const DatabasesPage = lazy(() => import('./pages/Databases'));
+const AppStorePage = lazy(() => import('./pages/AppStore'));
+const PhpManagerPage = lazy(() => import('./pages/PhpManager'));
+const MailDomainsPage = lazy(() => import('./pages/MailDomains'));
+const EmailAccountsPage = lazy(() => import('./pages/EmailAccounts'));
+const ForwardersPage = lazy(() => import('./pages/Forwarders'));
+const EmailFiltersPage = lazy(() => import('./pages/EmailFilters'));
+const LogsPage = lazy(() => import('./pages/Logs'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+
+// Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
-import DashboardPage from './pages/Dashboard';
-import FileManagerPage from './pages/FileManager';
-import TerminalPage from './pages/terminal/TerminalPage';
-import ToolsPage from './pages/Tools';
-import DomainCreatePage from './pages/DomainCreate';
-import DnsEditorPage from './pages/DnsEditor';
-import DomainsListView from './pages/DomainsListView';
-import NameserverSetupPage from './pages/NameserverSetup';
-import SslPage from './pages/Ssl';
-import DatabasesPage from './pages/Databases';
-import AppStorePage from './pages/AppStore';
-import PhpManagerPage from './pages/PhpManager';
-import MailDomainsPage from './pages/MailDomains';
-import EmailAccountsPage from './pages/EmailAccounts';
-import ForwardersPage from './pages/Forwarders';
-import EmailFiltersPage from './pages/EmailFilters';
-import LogsPage from './pages/Logs';
-import SettingsPage from './pages/Settings';
+
+function PageLoader() {
+  return (
+    <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+      <CircularProgress />
+    </Box>
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { authenticated, loading } = useAuth();
@@ -39,6 +51,7 @@ export function App() {
       <CssBaseline />
       <AuthProvider>
         <BrowserRouter>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* Setup wizard - no auth required, shown on first run */}
             <Route path="/setup" element={<SetupPage />} />
@@ -194,6 +207,7 @@ export function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

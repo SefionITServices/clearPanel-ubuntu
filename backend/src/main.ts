@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import session from 'express-session';
+import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
@@ -28,11 +29,19 @@ async function bootstrap() {
     }
   }));
 
+  // Compress all responses (gzip/brotli) — major speed improvement
+  app.use(compression());
+
   app.setGlobalPrefix('api');
 
-  // Serve static frontend files in production
+  // Serve static frontend files in production with cache headers
   if (config.get<string>('NODE_ENV') === 'production') {
-    app.useStaticAssets(join(__dirname, '..', 'public'));
+    app.useStaticAssets(join(__dirname, '..', 'public'), {
+      maxAge: '7d',           // cache static assets for 7 days
+      immutable: true,        // hashed filenames never change
+      etag: true,
+      lastModified: true,
+    });
     app.setBaseViewsDir(join(__dirname, '..', 'public'));
   }
 

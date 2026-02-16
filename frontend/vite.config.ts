@@ -6,6 +6,24 @@ export default defineConfig({
   build: {
     outDir: '../backend/public',
     emptyOutDir: true,
+    // Drop console.log in production builds
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split heavy vendor libs into separate cached chunks
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+          'vendor-monaco': ['@monaco-editor/react'],
+        },
+      },
+    },
   },
   server: {
     port: 4000,

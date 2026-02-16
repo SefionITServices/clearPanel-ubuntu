@@ -20,10 +20,20 @@ export interface DnsZone {
 
 @Injectable()
 export class DnsService {
+  /** In-memory cache for dns.json */
+  private zonesCache: { data: DnsZone[]; ts: number } | null = null;
+  private static readonly CACHE_TTL = 5000; // 5s
+
   private async readZones(): Promise<DnsZone[]> {
+    const now = Date.now();
+    if (this.zonesCache && now - this.zonesCache.ts < DnsService.CACHE_TTL) {
+      return this.zonesCache.data;
+    }
     try {
       const data = await fs.readFile(getDataFilePath('dns.json'), 'utf-8');
-      return JSON.parse(data);
+      const zones = JSON.parse(data);
+      this.zonesCache = { data: zones, ts: now };
+      return zones;
     } catch {
       return [];
     }
@@ -33,6 +43,7 @@ export class DnsService {
     const dnsFile = getDataFilePath('dns.json');
     await fs.mkdir(path.dirname(dnsFile), { recursive: true });
     await fs.writeFile(dnsFile, JSON.stringify(zones, null, 2));
+    this.zonesCache = { data: zones, ts: Date.now() }; // Update cache on write
   }
 
   async ensureDefaultZone(
