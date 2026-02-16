@@ -302,15 +302,17 @@ export default function ToolsPage() {
           label: 'Forwarders',
           icon: <ForwardToInboxIcon sx={{ fontSize: 28 }} />,
           description: 'Configure email forwarding',
-          onClick: () => navigate('/mail-domains'),
+          onClick: () => navigate('/forwarders'),
           color: '#4285F4',
+          favoritePath: '/forwarders',
         },
         {
           label: 'Email Filters',
           icon: <FilterAltIcon sx={{ fontSize: 28 }} />,
           description: 'Set up email filters',
-          onClick: () => navigate('/mail-domains'),
+          onClick: () => navigate('/email-filters'),
           color: '#FF6B35',
+          favoritePath: '/email-filters',
         },
         ...(roundcubeInstalled
           ? [

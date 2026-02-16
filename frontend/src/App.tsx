@@ -21,6 +21,8 @@ import AppStorePage from './pages/AppStore';
 import PhpManagerPage from './pages/PhpManager';
 import MailDomainsPage from './pages/MailDomains';
 import EmailAccountsPage from './pages/EmailAccounts';
+import ForwardersPage from './pages/Forwarders';
+import EmailFiltersPage from './pages/EmailFilters';
 import LogsPage from './pages/Logs';
 import SettingsPage from './pages/Settings';
 
@@ -153,6 +155,22 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <EmailAccountsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/forwarders"
+              element={
+                <ProtectedRoute>
+                  <ForwardersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/email-filters"
+              element={
+                <ProtectedRoute>
+                  <EmailFiltersPage />
                 </ProtectedRoute>
               }
             />
