@@ -1393,14 +1393,64 @@ location /pgadmin {
 
     // Check if any Roundcube vhost exists
     let vhostFound = false;
+    let vhostPath = '';
     try {
       const out = await this.sudo(`grep -rl 'roundcube' /etc/nginx/sites-enabled/ 2>/dev/null | head -1`);
       vhostFound = out.length > 0;
+      vhostPath = out;
     } catch {}
     checks.push({
       name: 'Nginx Vhost',
       status: vhostFound ? 'ok' : 'warn',
-      detail: vhostFound ? 'Roundcube nginx vhost found' : 'No Roundcube nginx vhost configured',
+      detail: vhostFound ? `Roundcube nginx vhost found: ${vhostPath}` : 'No Roundcube nginx vhost configured',
+    });
+
+    // Check which PHP-FPM version this vhost uses and verify intl support.
+    let phpFpmVersion = '';
+    if (vhostPath) {
+      try {
+        const conf = await this.sudo(`cat ${vhostPath}`);
+        const match = conf.match(/php(\d+\.\d+)-fpm\.sock/);
+        if (match) phpFpmVersion = match[1];
+      } catch {}
+    }
+    checks.push({
+      name: 'Webmail PHP-FPM',
+      status: phpFpmVersion ? 'ok' : 'warn',
+      detail: phpFpmVersion ? `Vhost uses php${phpFpmVersion}-fpm` : 'Could not detect PHP-FPM socket version from Roundcube vhost',
+    });
+
+    if (phpFpmVersion) {
+      let intlDefined = false;
+      try {
+        const out = await this.sudo(`php${phpFpmVersion} -r 'echo defined("INTL_IDNA_VARIANT_UTS46") ? "ok" : "missing";' 2>/dev/null || true`);
+        intlDefined = out.trim() === 'ok';
+      } catch {}
+      checks.push({
+        name: `PHP intl (${phpFpmVersion})`,
+        status: intlDefined ? 'ok' : 'error',
+        detail: intlDefined
+          ? `php${phpFpmVersion}-intl is available (INTL_IDNA_VARIANT_UTS46 is defined)`
+          : `php${phpFpmVersion}-intl is missing/not enabled — Roundcube login can fail with HTTP 500`,
+      });
+    }
+
+    // Ensure Roundcube uses smtp_host key (smtp_server is legacy/invalid in current defaults).
+    let smtpHostSet = false;
+    let legacySmtpServerKey = false;
+    try {
+      const conf = await this.sudo(`cat /etc/roundcube/config.inc.php 2>/dev/null || true`);
+      smtpHostSet = conf.includes(`$config['smtp_host']`);
+      legacySmtpServerKey = conf.includes(`$config['smtp_server']`);
+    } catch {}
+    checks.push({
+      name: 'Roundcube SMTP Config',
+      status: smtpHostSet ? 'ok' : 'warn',
+      detail: smtpHostSet
+        ? 'smtp_host is configured'
+        : legacySmtpServerKey
+          ? 'Only smtp_server key found; use smtp_host to avoid send/auth issues'
+          : 'smtp_host not configured',
     });
 
     // Check Dovecot (IMAP)
