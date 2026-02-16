@@ -45,13 +45,23 @@ export class FilesService {
     const list = await Promise.all(
       items.map(async (it) => {
         const p = path.join(dirPath, it.name);
-        const stats = await fs.stat(p);
+        const lstat = await fs.lstat(p);
+        const isSymlink = lstat.isSymbolicLink();
+        let stats = lstat;
+        let symlinkTarget: string | undefined;
+        if (isSymlink) {
+          try {
+            stats = await fs.stat(p);
+            symlinkTarget = await fs.readlink(p);
+          } catch { /* broken symlink — use lstat */ }
+        }
         return {
           name: it.name,
-          type: it.isDirectory() ? 'directory' : 'file',
+          type: isSymlink ? 'symlink' : it.isDirectory() ? 'directory' : 'file',
           size: stats.size,
           modified: stats.mtime,
           permissions: stats.mode.toString(8).slice(-3),
+          ...(symlinkTarget ? { symlinkTarget } : {}),
         };
       })
     );
@@ -187,6 +197,49 @@ export class FilesService {
         await fs.copyFile(srcPath, destPath);
       }
     }
+  }
+
+  /**
+   * Change file ownership (chown) — requires sudo
+   */
+  async chown(username: string, p: string, owner: string, group?: string) {
+    const full = this.validatePath(p, username);
+
+    // Validate owner/group (only alphanumeric, underscore, hyphen)
+    const validName = /^[a-zA-Z0-9_-]+$/;
+    if (!validName.test(owner)) throw new Error('Invalid owner name');
+    if (group && !validName.test(group)) throw new Error('Invalid group name');
+
+    const ownerGroup = group ? `${owner}:${group}` : owner;
+    try {
+      await exec(`sudo chown ${ownerGroup} ${JSON.stringify(full)}`);
+      return { success: true, message: `Ownership changed to ${ownerGroup}` };
+    } catch (e: any) {
+      throw new Error(`Failed to change ownership: ${e.stderr || e.message}`);
+    }
+  }
+
+  /**
+   * Create a symbolic link
+   */
+  async createSymlink(username: string, target: string, linkPath: string) {
+    const targetFull = this.validatePath(target, username);
+    const linkFull = this.validatePath(linkPath, username);
+
+    const exists = await fs.access(linkFull).then(() => true).catch(() => false);
+    if (exists) throw new Error('Link path already exists');
+
+    await fs.symlink(targetFull, linkFull);
+    return { success: true, message: 'Symbolic link created' };
+  }
+
+  /**
+   * Read symlink target
+   */
+  async readSymlink(username: string, p: string) {
+    const full = this.validatePath(p, username);
+    const target = await fs.readlink(full);
+    return { success: true, target };
   }
 
   /**

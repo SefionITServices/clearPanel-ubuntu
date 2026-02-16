@@ -57,7 +57,8 @@ export class FilesController {
     for (const f of files) {
       try {
         const username = (req.session as any).username;
-        await this.files.writeFile(username, dest, f.originalname, f.buffer, false);
+        const overwrite = body.overwrite === true || body.overwrite === 'true';
+        await this.files.writeFile(username, dest, f.originalname, f.buffer, overwrite);
         results.push({ name: f.originalname, ok: true });
       } catch (e: any) {
         results.push({ name: f.originalname, ok: false, error: e.message });
@@ -184,6 +185,49 @@ export class FilesController {
     try {
       const username = (req.session as any).username;
       const data = await this.files.chmod(username, body.path, body.mode);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('chown')
+  async chown(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.path || !body.owner) {
+      return res.status(400).json({ success: false, error: 'path and owner required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.chown(username, body.path, body.owner, body.group);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('symlink')
+  async symlink(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!body.target || !body.linkPath) {
+      return res.status(400).json({ success: false, error: 'target and linkPath required' });
+    }
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.createSymlink(username, body.target, body.linkPath);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('readlink')
+  async readlink(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    if (!this.ensureAuth(req, res)) return;
+    if (!p) return res.status(400).json({ success: false, error: 'path required' });
+    try {
+      const username = (req.session as any).username;
+      const data = await this.files.readSymlink(username, p);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });

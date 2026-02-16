@@ -2,10 +2,11 @@
 
 export interface FileItem {
   name: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'directory' | 'symlink';
   size: number;
   modified: string;
   permissions: string;
+  symlinkTarget?: string;
 }
 
 export interface ListResponse {
@@ -131,9 +132,10 @@ export const filesAPI = {
     });
   },
 
-  async upload(destPath: string, files: File[]): Promise<UploadResponse> {
+  async upload(destPath: string, files: File[], overwrite = false): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('path', destPath);
+    if (overwrite) formData.append('overwrite', 'true');
     files.forEach((file) => {
       formData.append('file', file);
     });
@@ -230,5 +232,26 @@ export const filesAPI = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sources, destination, format }),
     });
+  },
+
+  async chown(path: string, owner: string, group?: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/chown`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, owner, group }),
+    });
+  },
+
+  async symlink(target: string, linkPath: string): Promise<ApiResponse> {
+    return fetchJSON<ApiResponse>(`${API_BASE}/symlink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, linkPath }),
+    });
+  },
+
+  async readlink(path: string): Promise<ApiResponse & { target: string }> {
+    const url = `${API_BASE}/readlink?path=${encodeURIComponent(path)}`;
+    return fetchJSON<ApiResponse & { target: string }>(url);
   },
 };

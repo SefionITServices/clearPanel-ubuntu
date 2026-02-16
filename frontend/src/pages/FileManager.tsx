@@ -68,6 +68,9 @@ import {
   Code as CodeIcon,
   Description,
   MoreVert as MoreVertIcon,
+  Link as LinkIcon,
+  Person as PersonIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { filesAPI, FileItem } from '../api/files';
 import { DashboardLayout } from '../layouts/dashboard/layout';
@@ -148,6 +151,9 @@ function rwxToOctal(perms: boolean[]): string {
 }
 
 function getFileIcon(item: FileItem) {
+  if (item.type === 'symlink') {
+    return <LinkIcon sx={{ color: '#26C6DA', fontSize: 28 }} />;
+  }
   if (item.type === 'directory') {
     return <Folder sx={{ color: '#FFA726', fontSize: 28 }} />;
   }
@@ -221,6 +227,14 @@ export default function FileManagerPage() {
   const [previewName, setPreviewName] = useState('');
   const [goToPathOpen, setGoToPathOpen] = useState(false);
   const [goToPathValue, setGoToPathValue] = useState('');
+  const [chownOpen, setChownOpen] = useState(false);
+  const [chownTarget, setChownTarget] = useState('');
+  const [chownOwner, setChownOwner] = useState('');
+  const [chownGroup, setChownGroup] = useState('');
+  const [symlinkOpen, setSymlinkOpen] = useState(false);
+  const [symlinkTarget, setSymlinkTarget] = useState('');
+  const [symlinkLinkPath, setSymlinkLinkPath] = useState('');
+  const [uploadOverwrite, setUploadOverwrite] = useState(false);
 
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ mouseX: number; mouseY: number; item: FileItem | null } | null>(null);
@@ -365,7 +379,7 @@ export default function FileManagerPage() {
     if (!files || files.length === 0) return;
     setLoading(true);
     try {
-      await filesAPI.upload(currentPath, Array.from(files) as File[]);
+      await filesAPI.upload(currentPath, Array.from(files) as File[], uploadOverwrite);
       setSuccessMsg(`Uploaded ${files.length} file(s)`);
       refresh();
     } catch (e: any) {
@@ -452,6 +466,38 @@ export default function FileManagerPage() {
       await filesAPI.chmod(chmodTarget, chmodOctal);
       setChmodOpen(false);
       setSuccessMsg('Permissions updated');
+      refresh();
+    } catch (e: any) { setError(e.message); }
+  };
+
+  // Chown
+  const openChown = (item: FileItem) => {
+    const p = currentPath ? `${currentPath}/${item.name}` : item.name;
+    setChownTarget(p);
+    setChownOwner('');
+    setChownGroup('');
+    setChownOpen(true);
+  };
+
+  const handleChownSubmit = async () => {
+    if (!chownOwner) return;
+    try {
+      await filesAPI.chown(chownTarget, chownOwner, chownGroup || undefined);
+      setChownOpen(false);
+      setSuccessMsg('Ownership changed');
+      refresh();
+    } catch (e: any) { setError(e.message); }
+  };
+
+  // Symlink
+  const handleSymlinkCreate = async () => {
+    if (!symlinkTarget || !symlinkLinkPath) return;
+    try {
+      await filesAPI.symlink(symlinkTarget, symlinkLinkPath);
+      setSymlinkOpen(false);
+      setSymlinkTarget('');
+      setSymlinkLinkPath('');
+      setSuccessMsg('Symbolic link created');
       refresh();
     } catch (e: any) { setError(e.message); }
   };
@@ -678,6 +724,13 @@ export default function FileManagerPage() {
               Upload
               <input type="file" hidden multiple onChange={(e) => e.target.files && handleUpload(e.target.files)} />
             </Button>
+            <Tooltip title="When enabled, uploaded files overwrite existing files with the same name">
+              <FormControlLabel
+                control={<Switch size="small" checked={uploadOverwrite} onChange={(_, v) => setUploadOverwrite(v)} />}
+                label={<Typography variant="caption">Overwrite</Typography>}
+                sx={{ ml: 0 }}
+              />
+            </Tooltip>
             <Button variant="outlined" startIcon={<CreateNewFolder />} onClick={() => setMkdirOpen(true)} sx={{ textTransform: 'none' }}>
               New Folder
             </Button>
@@ -873,6 +926,11 @@ export default function FileManagerPage() {
                               {item.type === 'directory' && (
                                 <Typography variant="caption" color="text.secondary" display="block">Folder</Typography>
                               )}
+                              {item.type === 'symlink' && (
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  → {item.symlinkTarget || 'symlink'}
+                                </Typography>
+                              )}
                             </Box>
                           </Box>
                         </TableCell>
@@ -1003,6 +1061,10 @@ export default function FileManagerPage() {
               <ListItemIcon><Lock fontSize="small" /></ListItemIcon>
               <ListItemText>Permissions</ListItemText>
             </MenuItem>,
+            <MenuItem key="chown" onClick={() => ctxAction(() => openChown(ctxMenu.item!))}>
+              <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Ownership</ListItemText>
+            </MenuItem>,
             <MenuItem key="info" onClick={() => ctxAction(() => openInfo(ctxMenu.item!))}>
               <ListItemIcon><Info fontSize="small" /></ListItemIcon>
               <ListItemText>Properties</ListItemText>
@@ -1027,6 +1089,14 @@ export default function FileManagerPage() {
             <MenuItem key="newfolder" onClick={() => ctxAction(() => setMkdirOpen(true))}>
               <ListItemIcon><CreateNewFolder fontSize="small" /></ListItemIcon>
               <ListItemText>New Folder</ListItemText>
+            </MenuItem>,
+            <MenuItem key="newsymlink" onClick={() => ctxAction(() => {
+              setSymlinkLinkPath(currentPath ? `${currentPath}/` : '');
+              setSymlinkTarget('');
+              setSymlinkOpen(true);
+            })}>
+              <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>New Symlink</ListItemText>
             </MenuItem>,
             clipboard && (
               <MenuItem key="paste" onClick={() => ctxAction(handlePaste)}>
@@ -1149,6 +1219,45 @@ export default function FileManagerPage() {
           <DialogActions>
             <Button onClick={() => setChmodOpen(false)}>Cancel</Button>
             <Button onClick={handleChmodSubmit} variant="contained">Apply</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Chown */}
+        <Dialog open={chownOpen} onClose={() => setChownOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Change Ownership</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" mb={2}>{chownTarget}</Typography>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField autoFocus label="Owner" fullWidth placeholder="e.g. www-data"
+                value={chownOwner} onChange={(e) => setChownOwner(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleChownSubmit(); }} />
+              <TextField label="Group (optional)" fullWidth placeholder="e.g. www-data"
+                value={chownGroup} onChange={(e) => setChownGroup(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleChownSubmit(); }} />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setChownOpen(false)}>Cancel</Button>
+            <Button onClick={handleChownSubmit} variant="contained" disabled={!chownOwner}>Apply</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Create Symlink */}
+        <Dialog open={symlinkOpen} onClose={() => setSymlinkOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Create Symbolic Link</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField autoFocus label="Target (points to)" fullWidth placeholder="e.g. public_html/shared"
+                value={symlinkTarget} onChange={(e) => setSymlinkTarget(e.target.value)} />
+              <TextField label="Link path (new link name)" fullWidth placeholder="e.g. public_html/link"
+                value={symlinkLinkPath} onChange={(e) => setSymlinkLinkPath(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSymlinkCreate(); }} />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSymlinkOpen(false)}>Cancel</Button>
+            <Button onClick={handleSymlinkCreate} variant="contained" disabled={!symlinkTarget || !symlinkLinkPath}
+              startIcon={<LinkIcon />}>Create Link</Button>
           </DialogActions>
         </Dialog>
 
