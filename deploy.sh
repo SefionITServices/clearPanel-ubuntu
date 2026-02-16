@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+# ─────────────────────────────────────────────────────────────────────
+# ⚠️  DEPRECATED — Use update.sh instead for safe production updates.
+#     update.sh automatically backs up data, preserves configuration,
+#     and is safe to run on a live server.
+#
+#     This script is kept for backward compatibility.
+# ─────────────────────────────────────────────────────────────────────
+
+echo -e "\033[1;33m⚠️  NOTE: Consider using update.sh instead — it includes automatic backups.\033[0m"
+echo ""
 echo "🚀 Deploying clearPanel..."
 
 # Configuration

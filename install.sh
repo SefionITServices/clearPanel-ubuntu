@@ -59,6 +59,17 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd -r -s /bin/false -d "$INSTALL_DIR" "$SERVICE_USER"
 fi
 
+# Detect if this is a re-install (panel already set up) vs fresh install
+IS_FRESH_INSTALL=true
+if [ -f "$INSTALL_DIR/data/setup-status.json" ]; then
+    IS_FRESH_INSTALL=false
+    echo -e "${CYAN}ℹ️  Existing installation detected — data will be preserved${NC}"
+elif [ -f "$INSTALL_DIR/backend/.env" ] && grep -q "DATA_DIR=" "$INSTALL_DIR/backend/.env" 2>/dev/null; then
+    # .env exists with DATA_DIR → setup was completed, setup-status may live in DATA_DIR
+    IS_FRESH_INSTALL=false
+    echo -e "${CYAN}ℹ️  Existing installation detected (configured .env) — data will be preserved${NC}"
+fi
+
 # Clone or update the repo directly in the install directory (keeps .git for easy updates)
 REPO_URL="https://github.com/SefionITServices/clearPanel-ubuntu.git"
 
@@ -139,9 +150,13 @@ EOF
     chmod 600 "$INSTALL_DIR/backend/.env"
 fi
 
-# Ensure setup-status.json does NOT exist so the setup wizard will run
-rm -f "$INSTALL_DIR/data/setup-status.json"
-echo -e "${GREEN}✓ Setup wizard will run on first access${NC}"
+# Only clear setup-status on truly fresh installs (not re-installs / updates)
+if [ "$IS_FRESH_INSTALL" = true ]; then
+    rm -f "$INSTALL_DIR/data/setup-status.json"
+    echo -e "${GREEN}✓ Setup wizard will run on first access${NC}"
+else
+    echo -e "${GREEN}✓ Existing setup state preserved — setup wizard will NOT re-run${NC}"
+fi
 
 # Setup systemd service
 echo -e "${YELLOW}⚙️  Setting up systemd service...${NC}"

@@ -9,7 +9,7 @@ import { MailStatusService, MailMetrics } from './mail-status.service';
 import { ServerSettingsService } from '../server/server-settings.service';
 import { DnsService } from '../dns/dns.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
-import { getDataFilePath } from '../common/paths';
+import { getDataFilePath, getMailStateDir } from '../common/paths';
 
 const DEFAULT_SPAM_THRESHOLD = 6.0;
 const DEFAULT_GREYLISTING_DELAY_SECONDS = 300;
@@ -893,11 +893,7 @@ export class MailService {
     postscreen: { enabled: boolean; configuredAt?: string };
     dmarc: { domains: string[]; configuredAt?: string };
   }> {
-    const resolvedMailMode = this.resolveMailMode();
-    const stateRoot =
-      resolvedMailMode === 'production'
-        ? '/etc/clearpanel/mail'
-        : path.join(process.cwd(), '..', 'backend', 'mail-state');
+    const stateRoot = getMailStateDir();
 
     const result = {
       tls: { configured: false } as { configured: boolean; hostname?: string; certDir?: string; configuredAt?: string },

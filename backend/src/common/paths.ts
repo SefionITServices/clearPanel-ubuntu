@@ -15,3 +15,36 @@ export function getDataDir(): string {
 export function getDataFilePath(filename: string): string {
   return path.join(getDataDir(), filename);
 }
+
+/**
+ * Resolve the mail-state directory.
+ *   production  → /etc/clearpanel/mail
+ *   development → <repo>/backend/mail-state
+ */
+export function getMailStateDir(): string {
+  const mode = process.env.MAIL_MODE || process.env.NODE_ENV;
+  if (mode === 'production') {
+    return '/etc/clearpanel/mail';
+  }
+  return path.join(process.cwd(), '..', 'backend', 'mail-state');
+}
+
+/**
+ * Get the full path to a file inside the mail-state directory.
+ */
+export function getMailStateFilePath(filename: string): string {
+  return path.join(getMailStateDir(), filename);
+}
+
+/**
+ * Resolve the mail-policies directory.
+ *   production  → DATA_DIR/mail-policies
+ *   development → <repo>/backend/mail-policies
+ */
+export function getMailPoliciesDir(): string {
+  const mode = process.env.MAIL_MODE || process.env.NODE_ENV;
+  if (mode === 'production') {
+    return path.join(getDataDir(), 'mail-policies');
+  }
+  return path.join(process.cwd(), '..', 'backend', 'mail-policies');
+}

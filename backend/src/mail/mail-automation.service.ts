@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
+import { getMailStateDir } from '../common/paths';
 
 const execAsync = promisify(exec);
 
@@ -737,7 +738,7 @@ export class MailAutomationService {
   }
 
   async getQuotaWarningConfig(): Promise<{ threshold: number; adminEmail?: string; updatedAt?: string } | null> {
-    const stateDir = path.join(process.cwd(), '..', 'backend', 'mail-state');
+    const stateDir = getMailStateDir();
     const filePath = path.join(stateDir, 'quota-warning.json');
     try {
       const raw = await import('node:fs/promises').then(fs => fs.readFile(filePath, 'utf-8'));
@@ -875,7 +876,7 @@ export class MailAutomationService {
   }
 
   async getRateLimits(domain: string): Promise<{ email: string; limit: number; updatedAt?: string }[]> {
-    const stateDir = path.join(process.cwd(), '..', 'backend', 'mail-state', 'rate-limits');
+    const stateDir = path.join(getMailStateDir(), 'rate-limits');
     const filePath = path.join(stateDir, `${domain}.json`);
     try {
       const raw = await import('node:fs/promises').then(fs => fs.readFile(filePath, 'utf-8'));
