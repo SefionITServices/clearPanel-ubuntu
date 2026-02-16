@@ -131,6 +131,7 @@ if [ ! -f "$INSTALL_DIR/backend/.env" ]; then
     cat > "$INSTALL_DIR/backend/.env" << EOF
 NODE_ENV=production
 PORT=3334
+MAIL_MODE=production
 SESSION_SECRET=$(openssl rand -hex 32)
 ROOT_PATH=/home
 EOF

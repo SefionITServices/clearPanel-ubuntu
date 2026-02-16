@@ -36,7 +36,7 @@ configure_master_cf() {
   cp "$MASTER_CF" "${MASTER_CF}.bak.$(date +%s)"
 
   # Comment out the default "smtp inet" line
-  sed -i 's/^smtp\(\s\+inet\)/# smtp\1/' "$MASTER_CF"
+  sed -i 's/^smtp\([[:space:]]\+inet\)/# smtp\1/' "$MASTER_CF"
 
   # Append postscreen services
   cat >>"$MASTER_CF" <<'MASTER'
@@ -135,7 +135,7 @@ configure_srs() {
 # -----------------------------------------------------------------------
 # Apply
 # -----------------------------------------------------------------------
-if is_dev_mode || [[ "$DRY_RUN" == "true" ]]; then
+if [[ "$MAIL_MODE" != "production" || "$DRY_RUN" == "true" ]]; then
   echo ""
   echo "[dev/dry-run] Would apply:"
   echo "  • Postscreen in master.cf (port 25)"

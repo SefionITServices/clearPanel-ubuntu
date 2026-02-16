@@ -44,9 +44,8 @@ if [[ "$MAIL_MODE" == "production" ]]; then
   printf 'Created Maildir at %s\n' "$MAILDIR"
 
   # --- Add to Postfix virtual mailbox map ---
-  local_entry="${MAILBOX}\t${DOMAIN}/${LOCAL_PART}/Maildir/"
   # Remove existing entry if any, then append
-  sed -i "/^${MAILBOX}\s/d" "$POSTFIX_VMAILBOX" 2>/dev/null || true
+  remove_map_entry_by_key "$MAILBOX" "$POSTFIX_VMAILBOX"
   printf '%s\t%s/%s/Maildir/\n' "$MAILBOX" "$DOMAIN" "$LOCAL_PART" >>"$POSTFIX_VMAILBOX"
   postmap_rebuild "$POSTFIX_VMAILBOX"
   printf 'Added %s to Postfix virtual mailbox map\n' "$MAILBOX"
@@ -61,7 +60,7 @@ if [[ "$MAIL_MODE" == "production" ]]; then
   PASSWD_LINE="${MAILBOX}:${PASSWORD_HASH}:${VMAIL_UID}:${VMAIL_GID}::${USER_HOME}::${QUOTA_RULE}"
 
   # Remove existing line for this user, then append
-  sed -i "/^${MAILBOX}:/d" "$DOVECOT_PASSWD" 2>/dev/null || true
+  remove_passwd_entry_by_user "$MAILBOX" "$DOVECOT_PASSWD"
   printf '%s\n' "$PASSWD_LINE" >>"$DOVECOT_PASSWD"
   chmod 640 "$DOVECOT_PASSWD"
   chown root:dovecot "$DOVECOT_PASSWD" 2>/dev/null || true
