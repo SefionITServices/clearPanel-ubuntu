@@ -25,9 +25,10 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   echo -e "${RED}Do not run this script as root. Use a sudo-enabled user.${NC}"
+# Ensure root/sudo privileges
+if [[ $EUID -ne 0 ]]; then
+   echo -e "${YELLOW}Re-running with sudo...${NC}"
+   exec sudo bash "$0" "$@"
    exit 1
 fi
 

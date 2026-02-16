@@ -40,9 +40,10 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # ── Pre-flight checks ───────────────────────────────────────────────
-if [[ $EUID -eq 0 ]]; then
-    echo -e "${RED}Do not run as root.  Use a sudo-enabled user.${NC}"
-    exit 1
+# Ensure we have root/sudo privileges (needed for systemctl, chown, sudo -u)
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${YELLOW}This script needs root privileges. Re-running with sudo...${NC}"
+    exec sudo bash "$0" "$@"
 fi
 
 if [[ ! -d "$INSTALL_DIR" ]]; then
