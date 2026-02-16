@@ -6,14 +6,6 @@ export default defineConfig({
   build: {
     outDir: '../backend/public',
     emptyOutDir: true,
-    // Drop console.log in production builds
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-      },
-    },
     rollupOptions: {
       output: {
         manualChunks: {
@@ -45,6 +37,9 @@ export default defineConfig({
         },
       },
     },
+  },
+  esbuild: {
+    drop: ['console', 'debugger'],
   },
   plugins: [react()],
 });
