@@ -13,9 +13,10 @@ import {
   Grid,
   TextField,
   InputAdornment,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import { DashboardLayout } from '../layouts/dashboard/layout';
 import FolderIcon from '@mui/icons-material/Folder';
 import StorageIcon from '@mui/icons-material/Storage';
 import BackupIcon from '@mui/icons-material/Backup';
@@ -35,6 +36,9 @@ import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
 import LockIcon from '@mui/icons-material/Lock';
 import LanIcon from '@mui/icons-material/Lan';
 import LanguageIcon from '@mui/icons-material/Language';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
@@ -45,12 +49,16 @@ function ToolCard({
   description,
   onClick,
   color = '#4285F4',
+  isFavorite,
+  onToggleFavorite,
 }: {
   icon: React.ReactNode;
   label: string;
   description?: string;
   onClick?: () => void;
   color?: string;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }) {
   return (
     <Card
@@ -66,22 +74,39 @@ function ToolCard({
         opacity: onClick ? 1 : 0.7,
       }}
     >
-      <CardContent sx={{ textAlign: 'center', p: 3, '&:last-child': { pb: 3 } }}>
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: 2,
-            bgcolor: `${color}12`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            mx: 'auto',
-            mb: 2,
-            color: color,
-          }}
-        >
-          {icon}
+      <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: 2,
+              bgcolor: `${color}12`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: color,
+            }}
+          >
+            {icon}
+          </Box>
+          {onToggleFavorite && (
+            <Tooltip title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite();
+                }}
+                sx={{
+                  color: isFavorite ? '#FBC02D' : 'text.disabled',
+                  '&:hover': { color: '#FBC02D' },
+                }}
+              >
+                {isFavorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5, lineHeight: 1.3 }}>
           {label}
@@ -110,6 +135,9 @@ export default function ToolsPage() {
   const [serverInfo, setServerInfo] = useState<{ primaryDomain?: string; serverIp?: string }>({});
   const [diskUsage, setDiskUsage] = useState('Loading...');
   const [search, setSearch] = useState('');
+  const [phpMyAdminInstalled, setPhpMyAdminInstalled] = useState(false);
+  const [roundcubeInstalled, setRoundcubeInstalled] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
     fetch('/api/server/nameservers').then(r => r.json()).then(data => {
@@ -122,7 +150,44 @@ export default function ToolsPage() {
       if (data.used && data.total) setDiskUsage(`${formatBytes(data.used)} / ${formatBytes(data.total)}`);
       else if (data.used) setDiskUsage(formatBytes(data.used));
     }).catch(() => setDiskUsage('-'));
+    fetch('/api/app-store/apps')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.apps)) {
+          const php = data.apps.find((a: any) => a.id === 'phpmyadmin');
+          const rc = data.apps.find((a: any) => a.id === 'roundcube');
+          setPhpMyAdminInstalled(!!php?.status?.installed);
+          setRoundcubeInstalled(!!rc?.status?.installed);
+        }
+      })
+      .catch(() => {});
+    if (username) {
+      try {
+        const raw = localStorage.getItem(`clearpanel:favorites:${username}`);
+        if (raw) {
+          const parsed: string[] = JSON.parse(raw);
+          setFavorites(parsed);
+        }
+      } catch {
+        // ignore
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    if (!username) return;
+    try {
+      localStorage.setItem(`clearpanel:favorites:${username}`, JSON.stringify(favorites));
+    } catch {
+      // ignore
+    }
+  }, [favorites, username]);
+
+  const toggleFavorite = (path: string) => {
+    setFavorites((prev) =>
+      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
+    );
+  };
 
   const toolSections: {
     title: string;
@@ -132,6 +197,7 @@ export default function ToolsPage() {
       description?: string;
       onClick?: () => void;
       color?: string;
+        favoritePath?: string;
     }[];
   }[] = [
     {
@@ -143,6 +209,7 @@ export default function ToolsPage() {
           description: 'Browse and manage files',
           onClick: () => navigate('/files'),
           color: '#4285F4',
+          favoritePath: '/files',
         },
         {
           label: 'Disk Usage',
@@ -185,6 +252,7 @@ export default function ToolsPage() {
           description: 'Manage hosted domains',
           onClick: () => navigate('/domains'),
           color: '#4285F4',
+          favoritePath: '/domains',
         },
         {
           label: 'DNS Zones',
@@ -192,6 +260,7 @@ export default function ToolsPage() {
           description: 'Edit DNS records',
           onClick: () => navigate('/dns'),
           color: '#FBBC04',
+          favoritePath: '/dns',
         },
         {
           label: 'SSL Certificates',
@@ -199,6 +268,7 @@ export default function ToolsPage() {
           description: 'Manage SSL / HTTPS',
           onClick: () => navigate('/ssl'),
           color: '#34A853',
+          favoritePath: '/ssl',
         },
         {
           label: 'Nameservers',
@@ -217,6 +287,7 @@ export default function ToolsPage() {
           icon: <EmailIcon sx={{ fontSize: 28 }} />,
           description: 'Manage email accounts',
           color: '#4285F4',
+          favoritePath: '/mail-domains',
         },
         {
           label: 'Forwarders',
@@ -230,6 +301,17 @@ export default function ToolsPage() {
           description: 'Set up email filters',
           color: '#FF6B35',
         },
+        ...(roundcubeInstalled
+          ? [
+              {
+                label: 'Roundcube Webmail',
+                icon: <EmailIcon sx={{ fontSize: 28 }} />,
+                description: 'Open webmail client',
+                onClick: () => window.open('/roundcube/', '_blank', 'noopener,noreferrer'),
+                color: '#34A853',
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -248,12 +330,14 @@ export default function ToolsPage() {
           description: 'MySQL databases & users',
           onClick: () => navigate('/databases'),
           color: '#4285F4',
+          favoritePath: '/databases',
         },
         {
           label: 'Settings',
           icon: <SettingsIcon sx={{ fontSize: 28 }} />,
           description: 'System configuration',
           color: '#5F6368',
+          favoritePath: '/settings',
         },
         {
           label: 'Processes',
@@ -275,6 +359,17 @@ export default function ToolsPage() {
           onClick: () => navigate('/php'),
           color: '#777BB3',
         },
+        ...(phpMyAdminInstalled
+          ? [
+              {
+                label: 'phpMyAdmin',
+                icon: <StorageIcon sx={{ fontSize: 28 }} />,
+                description: 'MySQL/MariaDB web interface',
+                color: '#F89C0E',
+                favoritePath: '/databases',
+              },
+            ]
+          : []),
       ],
     },
   ];
@@ -339,6 +434,8 @@ export default function ToolsPage() {
                             label={it.label}
                             description={it.description}
                             onClick={it.onClick}
+                            isFavorite={!!it.favoritePath && favorites.includes(it.favoritePath)}
+                            onToggleFavorite={it.favoritePath ? () => toggleFavorite(it.favoritePath!) : undefined}
                             color={it.color}
                           />
                         </Grid>

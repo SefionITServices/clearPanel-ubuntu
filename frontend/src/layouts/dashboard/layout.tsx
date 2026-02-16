@@ -39,6 +39,7 @@ import {
   Code as CodeIcon,
   Email as EmailIcon,
   Article as LogsIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -47,25 +48,24 @@ import { dashboardLayoutVars } from './css-vars';
 
 const DRAWER_WIDTH = 260;
 
-const navSections = [
+type NavItem = {
+  title: string;
+  path: string;
+  icon: React.ReactNode;
+};
+
+type NavSection = {
+  title: string;
+  items: NavItem[];
+};
+
+const BASE_NAV_SECTIONS: NavSection[] = [
   {
     title: '',
     items: [
       { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
       { title: 'App Store', path: '/app-store', icon: <StoreIcon /> },
-    ],
-  },
-  {
-    title: 'Management',
-    items: [
-      { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
-      { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
-      { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
-      { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
-      { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
-      { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
-      { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
     ],
   },
   {
@@ -84,6 +84,34 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { username, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [favoriteNavItems, setFavoriteNavItems] = React.useState<NavItem[]>([]);
+
+  React.useEffect(() => {
+    if (!username) return;
+    try {
+      const raw = localStorage.getItem(`clearpanel:favorites:${username}`);
+      if (!raw) return;
+      const paths: string[] = JSON.parse(raw);
+      const map: Record<string, NavItem> = {
+        '/files': { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
+        '/domains': { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
+        '/dns': { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
+        '/ssl': { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
+        '/databases': { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
+        '/php': { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
+        '/mail-domains': { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
+        '/terminal': { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
+        '/logs': { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
+        '/settings': { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+      };
+      const items = paths
+        .map((p) => map[p])
+        .filter((v): v is NavItem => !!v);
+      setFavoriteNavItems(items);
+    } catch {
+      // ignore parse errors
+    }
+  }, [username]);
 
   const handleDrawerToggle = () => setMobileOpen((p) => !p);
   const handleLogout = async () => {
@@ -99,6 +127,27 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const handleMenuClose = () => {
     setAnchorEl(null);
   };
+
+  const navSections: NavSection[] = React.useMemo(() => {
+    const sections: NavSection[] = [...BASE_NAV_SECTIONS];
+    if (favoriteNavItems.length > 0) {
+      sections.splice(1, 0, {
+        title: 'Favorites',
+        items: favoriteNavItems.slice(0, 7).map((item) => ({
+          ...item,
+          icon: (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <StarIcon sx={{ fontSize: 16, color: '#FBC02D' }} />
+              <Box component="span" sx={{ display: 'flex', '& svg': { fontSize: 20 } }}>
+                {item.icon}
+              </Box>
+            </Box>
+          ),
+        })),
+      });
+    }
+    return sections;
+  }, [favoriteNavItems]);
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
