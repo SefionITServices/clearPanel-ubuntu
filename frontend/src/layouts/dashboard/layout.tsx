@@ -35,7 +35,6 @@ import {
   Dns as DnsIcon,
   Terminal as TerminalIcon,
   Storage as StorageIcon,
-  Store as StoreIcon,
   Code as CodeIcon,
   Email as EmailIcon,
   Article as LogsIcon,
@@ -65,7 +64,6 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
-      { title: 'App Store', path: '/app-store', icon: <StoreIcon /> },
     ],
   },
   {

@@ -397,6 +397,106 @@ export class DatabaseController {
   }
 
   // ========================
+  // ENGINE LIFECYCLE (start / stop / restart / logs / diagnose)
+  // ========================
+
+  @Post('engine/start')
+  async startEngine(
+    @Body() body: { engine: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!body.engine || !valid.includes(body.engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.startEngine(body.engine as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('engine/stop')
+  async stopEngine(
+    @Body() body: { engine: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!body.engine || !valid.includes(body.engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.stopEngine(body.engine as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('engine/restart')
+  async restartEngine(
+    @Body() body: { engine: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!body.engine || !valid.includes(body.engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.restartEngine(body.engine as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('engine/logs')
+  async getEngineLogs(
+    @Query('engine') engine: string,
+    @Query('lines') lines: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!engine || !valid.includes(engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.getEngineLogs(engine as any, lines ? parseInt(lines, 10) : 50);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  @Get('engine/diagnose')
+  async diagnoseEngine(
+    @Query('engine') engine: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!this.ensureAuth(req, res)) return;
+    const valid = ['mariadb', 'mysql', 'postgresql'];
+    if (!engine || !valid.includes(engine)) {
+      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
+    }
+    try {
+      const data = await this.db.diagnoseEngine(engine as any);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  // ========================
   // REMOTE ACCESS
   // ========================
 

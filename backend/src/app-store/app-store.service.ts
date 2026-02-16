@@ -449,6 +449,14 @@ export class AppStoreService {
       // Create phpMyAdmin symlink if missing (some distros don't create it)
       try { await this.sudo('ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin'); } catch {}
 
+      // Configure phpMyAdmin configuration storage (phpmyadmin database + tables)
+      try {
+        await this.setupPhpMyAdminConfigStorage();
+        logs += 'phpMyAdmin configuration storage configured.\n';
+      } catch (e: any) {
+        logs += `WARN: Could not configure phpMyAdmin config storage: ${e.message}\n`;
+      }
+
       // Configure nginx to serve phpMyAdmin
       await this.configurePhpMyAdminNginx(phpVer);
 
@@ -554,6 +562,93 @@ location /phpmyadmin {
   }
 
   /**
+   * Create the phpMyAdmin configuration storage database, import tables,
+   * create the control user, and update config.inc.php so that the
+   * "configuration storage is not completely configured" warning goes away.
+   */
+  private async setupPhpMyAdminConfigStorage(): Promise<void> {
+    const controlUser = 'pma';
+    // Generate a random password for the pma control user
+    const controlPass = Array.from({ length: 24 }, () =>
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 62)),
+    ).join('');
+
+    // 1. Create the phpmyadmin database and control user
+    const setupSql = [
+      "CREATE DATABASE IF NOT EXISTS phpmyadmin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+      `CREATE USER IF NOT EXISTS '${controlUser}'@'localhost' IDENTIFIED BY '${controlPass}';`,
+      `GRANT ALL PRIVILEGES ON phpmyadmin.* TO '${controlUser}'@'localhost';`,
+      "FLUSH PRIVILEGES;",
+    ].join(' ');
+    await this.sudo(`mysql -e "${setupSql.replace(/"/g, '\\"')}"`, 30_000);
+
+    // 2. Import the create_tables.sql shipped with phpMyAdmin
+    const sqlFile = '/usr/share/phpmyadmin/sql/create_tables.sql';
+    try {
+      await this.sudo(`test -f ${sqlFile}`);
+      await this.sudo(`mysql phpmyadmin < ${sqlFile}`, 30_000);
+    } catch {
+      this.logger.warn('create_tables.sql not found — skipping table import');
+    }
+
+    // 3. Write or update config.inc.php with the control user settings
+    const configPath = '/etc/phpmyadmin/config.inc.php';
+    const marker = '/* clearPanel: phpMyAdmin config-storage settings */';
+
+    const configBlock = [
+      marker,
+      `$cfg['Servers'][$i]['controluser'] = '${controlUser}';`,
+      `$cfg['Servers'][$i]['controlpass'] = '${controlPass}';`,
+      `$cfg['Servers'][$i]['pmadb']       = 'phpmyadmin';`,
+      `$cfg['Servers'][$i]['bookmarktable']    = 'pma__bookmark';`,
+      `$cfg['Servers'][$i]['relation']         = 'pma__relation';`,
+      `$cfg['Servers'][$i]['table_info']       = 'pma__table_info';`,
+      `$cfg['Servers'][$i]['table_coords']     = 'pma__table_coords';`,
+      `$cfg['Servers'][$i]['pdf_pages']        = 'pma__pdf_pages';`,
+      `$cfg['Servers'][$i]['column_info']      = 'pma__column_info';`,
+      `$cfg['Servers'][$i]['history']          = 'pma__history';`,
+      `$cfg['Servers'][$i]['tracking']         = 'pma__tracking';`,
+      `$cfg['Servers'][$i]['userconfig']       = 'pma__userconfig';`,
+      `$cfg['Servers'][$i]['recent']           = 'pma__recent';`,
+      `$cfg['Servers'][$i]['favorite']         = 'pma__favorite';`,
+      `$cfg['Servers'][$i]['users']            = 'pma__users';`,
+      `$cfg['Servers'][$i]['usergroups']       = 'pma__usergroups';`,
+      `$cfg['Servers'][$i]['navigationhiding'] = 'pma__navigationhiding';`,
+      `$cfg['Servers'][$i]['savedsearches']    = 'pma__savedsearches';`,
+      `$cfg['Servers'][$i]['central_columns']  = 'pma__central_columns';`,
+      `$cfg['Servers'][$i]['designer_settings']= 'pma__designer_settings';`,
+      `$cfg['Servers'][$i]['export_templates'] = 'pma__export_templates';`,
+    ].join('\n');
+
+    try {
+      const existing = await this.sudo(`cat ${configPath}`);
+      if (existing.includes(marker)) {
+        // Replace existing block (between marker and next blank line or EOF)
+        const escapedBlock = configBlock.replace(/'/g, "'\\''");
+        await this.sudo(`bash -c 'python3 -c "
+import re, pathlib
+p = pathlib.Path(\"${configPath}\")
+txt = p.read_text()
+# Remove old clearPanel block
+txt = re.sub(r\"/\\\\* clearPanel.*?(?=\\\\n\\\\n|\\\\Z)\", \"\", txt, flags=re.DOTALL)
+p.write_text(txt)
+"'`);
+      }
+      // Append the config block before the closing ?>
+      if (existing.includes('?>')) {
+        await this.sudo(`sed -i '/^\\?>$/d' ${configPath}`);
+      }
+      await this.sudo(`bash -c 'cat >> ${configPath} << "HEREDOC"\n\n${configBlock}\nHEREDOC'`);
+    } catch {
+      // Config file doesn't exist — create it
+      const fullConfig = `<?php\n$i = 1;\n\n${configBlock}\n`;
+      await this.sudo(`bash -c 'cat > ${configPath} << "HEREDOC"\n${fullConfig}\nHEREDOC'`);
+    }
+
+    this.logger.log('phpMyAdmin configuration storage set up successfully');
+  }
+
+  /**
    * Re-run the phpMyAdmin nginx configuration (useful to fix 502 without reinstalling)
    */
   async reconfigurePhpMyAdmin(): Promise<{ success: boolean; message: string; phpVersion: string }> {
@@ -561,8 +656,16 @@ location /phpmyadmin {
     // Ensure PHP-FPM is running
     try { await this.sudo(`systemctl enable php${phpVer}-fpm`); } catch {}
     try { await this.sudo(`systemctl restart php${phpVer}-fpm`); } catch {}
+
+    // Fix configuration storage if not already configured
+    try {
+      await this.setupPhpMyAdminConfigStorage();
+    } catch (e: any) {
+      this.logger.warn(`Could not fix phpMyAdmin config storage during reconfigure: ${e.message}`);
+    }
+
     await this.configurePhpMyAdminNginx(phpVer);
-    return { success: true, message: `phpMyAdmin reconfigured with PHP ${phpVer}-FPM`, phpVersion: phpVer };
+    return { success: true, message: `phpMyAdmin reconfigured with PHP ${phpVer}-FPM (config storage fixed)`, phpVersion: phpVer };
   }
 
   private async uninstallPhpMyAdmin(): Promise<{ success: boolean; message: string }> {

@@ -132,6 +132,20 @@ const dbAPI = {
   }),
   metrics: () => fetchJSON(`${API}/metrics`),
   uninstallEngine: (engine: string) => fetchJSON(`${API}/uninstall/${engine}`, { method: 'POST' }),
+  startEngine: (engine: string) => fetchJSON(`${API}/engine/start`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine }),
+  }),
+  stopEngine: (engine: string) => fetchJSON(`${API}/engine/stop`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine }),
+  }),
+  restartEngine: (engine: string) => fetchJSON(`${API}/engine/restart`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine }),
+  }),
+  engineLogs: (engine: string, lines = 50) => fetchJSON(`${API}/engine/logs?engine=${engine}&lines=${lines}`),
+  diagnoseEngine: (engine: string) => fetchJSON(`${API}/engine/diagnose?engine=${engine}`),
   remoteAccess: () => fetchJSON(`${API}/remote-access`),
   setRemoteAccess: (engine: string, enabled: boolean) => fetchJSON(`${API}/remote-access`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -250,6 +264,16 @@ export default function DatabasesPage() {
 
   // Uninstall
   const [uninstallingEngine, setUninstallingEngine] = useState<string | null>(null);
+
+  // Engine lifecycle (start / stop / restart)
+  const [startingEngine, setStartingEngine] = useState<string | null>(null);
+  const [stoppingEngine, setStoppingEngine] = useState<string | null>(null);
+  const [restartingEngine, setRestartingEngine] = useState<string | null>(null);
+
+  // Diagnose dialog
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+  const [diagnoseData, setDiagnoseData] = useState<any>(null);
 
   // Remote access
   const [remoteAccess, setRemoteAccess] = useState<{
@@ -537,6 +561,55 @@ export default function DatabasesPage() {
     setUninstallingEngine(null);
   };
 
+  // ---- Engine Lifecycle ----
+  const handleStartEngine = async (engine: string) => {
+    const label = engine === 'postgresql' ? 'PostgreSQL' : engine === 'mariadb' ? 'MariaDB' : 'MySQL';
+    setStartingEngine(engine);
+    try {
+      const data = await dbAPI.startEngine(engine);
+      setSuccess(data.message || `${label} started`);
+      await loadStatus();
+    } catch (e: any) { setError(e.message); }
+    setStartingEngine(null);
+  };
+
+  const handleStopEngine = async (engine: string) => {
+    const label = engine === 'postgresql' ? 'PostgreSQL' : engine === 'mariadb' ? 'MariaDB' : 'MySQL';
+    if (!window.confirm(`Stop ${label}? All active connections will be terminated.`)) return;
+    setStoppingEngine(engine);
+    try {
+      const data = await dbAPI.stopEngine(engine);
+      setSuccess(data.message || `${label} stopped`);
+      await loadStatus();
+    } catch (e: any) { setError(e.message); }
+    setStoppingEngine(null);
+  };
+
+  const handleRestartEngine = async (engine: string) => {
+    const label = engine === 'postgresql' ? 'PostgreSQL' : engine === 'mariadb' ? 'MariaDB' : 'MySQL';
+    setRestartingEngine(engine);
+    try {
+      const data = await dbAPI.restartEngine(engine);
+      setSuccess(data.message || `${label} restarted`);
+      await loadStatus();
+    } catch (e: any) { setError(e.message); }
+    setRestartingEngine(null);
+  };
+
+  const handleDiagnoseEngine = async (engine: string) => {
+    setDiagnoseOpen(true);
+    setDiagnoseLoading(true);
+    setDiagnoseData(null);
+    try {
+      const data = await dbAPI.diagnoseEngine(engine);
+      setDiagnoseData(data);
+    } catch (e: any) {
+      setError(e.message);
+      setDiagnoseOpen(false);
+    }
+    setDiagnoseLoading(false);
+  };
+
   // ---- View Privileges ----
   const handleViewPrivileges = async (user: string, host: string) => {
     setPrivDetailsUser(user);
@@ -692,21 +765,86 @@ export default function DatabasesPage() {
                     >
                       {isManaging ? 'Managing' : 'Manage'}
                     </Button>
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      size="small"
-                      color="error"
-                      startIcon={uninstallingEngine === card.engine ? <CircularProgress size={16} color="inherit" /> : <DeleteForever />}
-                      onClick={() => handleUninstallEngine(card.engine)}
-                      disabled={!!uninstallingEngine}
-                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                    >
-                      {uninstallingEngine === card.engine ? 'Uninstalling...' : 'Uninstall'}
-                    </Button>
+                    <Stack direction="row" spacing={0.5}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="warning"
+                        startIcon={restartingEngine === card.engine ? <CircularProgress size={14} color="inherit" /> : <Refresh />}
+                        onClick={() => handleRestartEngine(card.engine)}
+                        disabled={!!restartingEngine || !!stoppingEngine}
+                        sx={{ textTransform: 'none', fontSize: '0.7rem', flex: 1 }}
+                      >
+                        {restartingEngine === card.engine ? 'Restarting...' : 'Restart'}
+                      </Button>
+                      <Tooltip title="Diagnose">
+                        <IconButton size="small" onClick={() => handleDiagnoseEngine(card.engine)} sx={{ color: '#666' }}>
+                          <HealthAndSafety fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="error"
+                        startIcon={stoppingEngine === card.engine ? <CircularProgress size={14} color="inherit" /> : <LinkOff />}
+                        onClick={() => handleStopEngine(card.engine)}
+                        disabled={!!stoppingEngine || !!restartingEngine}
+                        sx={{ textTransform: 'none', fontSize: '0.7rem', flex: 1 }}
+                      >
+                        {stoppingEngine === card.engine ? 'Stopping...' : 'Stop'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="error"
+                        startIcon={uninstallingEngine === card.engine ? <CircularProgress size={14} color="inherit" /> : <DeleteForever />}
+                        onClick={() => handleUninstallEngine(card.engine)}
+                        disabled={!!uninstallingEngine}
+                        sx={{ textTransform: 'none', fontSize: '0.7rem', flex: 1 }}
+                      >
+                        {uninstallingEngine === card.engine ? 'Removing...' : 'Uninstall'}
+                      </Button>
+                    </Stack>
                     </Stack>
                   ) : isInstalled && !isRunning ? (
-                    <Chip label="Stopped" color="warning" size="small" variant="outlined" />
+                    <Stack spacing={1}>
+                      <Button
+                        variant="contained"
+                        fullWidth
+                        size="small"
+                        color="success"
+                        startIcon={startingEngine === card.engine ? <CircularProgress size={16} color="inherit" /> : <PlayArrow />}
+                        onClick={() => handleStartEngine(card.engine)}
+                        disabled={!!startingEngine}
+                        sx={{ textTransform: 'none', fontWeight: 600 }}
+                      >
+                        {startingEngine === card.engine ? 'Starting...' : `Start ${card.label}`}
+                      </Button>
+                      <Stack direction="row" spacing={0.5}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<HealthAndSafety />}
+                          onClick={() => handleDiagnoseEngine(card.engine)}
+                          sx={{ textTransform: 'none', fontSize: '0.75rem', flex: 1 }}
+                        >
+                          Diagnose
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="error"
+                          startIcon={uninstallingEngine === card.engine ? <CircularProgress size={14} color="inherit" /> : <DeleteForever />}
+                          onClick={() => handleUninstallEngine(card.engine)}
+                          disabled={!!uninstallingEngine}
+                          sx={{ textTransform: 'none', fontSize: '0.75rem', flex: 1 }}
+                        >
+                          {uninstallingEngine === card.engine ? 'Removing...' : 'Uninstall'}
+                        </Button>
+                      </Stack>
+                    </Stack>
                   ) : (
                     <Button
                       variant="contained"
@@ -1590,6 +1728,108 @@ export default function DatabasesPage() {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setPrivDetailsOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* ==================== DIAGNOSE DIALOG ==================== */}
+        <Dialog open={diagnoseOpen} onClose={() => setDiagnoseOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <HealthAndSafety color="primary" />
+            Engine Diagnostics
+          </DialogTitle>
+          <DialogContent dividers>
+            {diagnoseLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : diagnoseData ? (
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={2} flexWrap="wrap">
+                  <Chip
+                    label={`Engine: ${diagnoseData.engine}`}
+                    variant="outlined"
+                    sx={{ fontWeight: 600 }}
+                  />
+                  <Chip
+                    label={diagnoseData.installed ? 'Installed' : 'Not Installed'}
+                    color={diagnoseData.installed ? 'success' : 'default'}
+                    size="small"
+                  />
+                  <Chip
+                    label={diagnoseData.running ? 'Running' : 'Stopped'}
+                    color={diagnoseData.running ? 'success' : 'warning'}
+                    size="small"
+                  />
+                </Stack>
+                {diagnoseData.version && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Version</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                      {diagnoseData.version.split('\n')[0].substring(0, 100)}
+                    </Typography>
+                  </Box>
+                )}
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Disk Usage</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{diagnoseData.diskUsage || 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Port</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{diagnoseData.port || 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Config File</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                      {diagnoseData.configFile || 'N/A'}
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Recent Logs</Typography>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 1.5,
+                      maxHeight: 300,
+                      overflow: 'auto',
+                      bgcolor: '#1e1e1e',
+                      color: '#d4d4d4',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {diagnoseData.logs || 'No logs available'}
+                  </Paper>
+                </Box>
+                {!diagnoseData.running && diagnoseData.installed && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    This engine is installed but not running. Use the <strong>Start</strong> button on the engine card to start it.
+                    Check the logs above for any errors that may be preventing the service from starting.
+                  </Alert>
+                )}
+              </Stack>
+            ) : (
+              <Typography color="text.secondary">No diagnostic data available.</Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {diagnoseData && !diagnoseData.running && diagnoseData.installed && (
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={startingEngine === diagnoseData.engine ? <CircularProgress size={16} color="inherit" /> : <PlayArrow />}
+                onClick={() => { handleStartEngine(diagnoseData.engine); setDiagnoseOpen(false); }}
+                disabled={!!startingEngine}
+                sx={{ textTransform: 'none' }}
+              >
+                Start Engine
+              </Button>
+            )}
+            <Button onClick={() => setDiagnoseOpen(false)}>Close</Button>
           </DialogActions>
         </Dialog>
 

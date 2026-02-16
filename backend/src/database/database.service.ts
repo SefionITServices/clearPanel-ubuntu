@@ -259,6 +259,125 @@ export class DatabaseService {
     return this.installEngine('mariadb');
   }
 
+  // ========================
+  // ENGINE LIFECYCLE (start / stop / restart / logs)
+  // ========================
+
+  private getServiceName(engine: DbEngine): string[] {
+    switch (engine) {
+      case 'mariadb':  return ['mariadb'];
+      case 'mysql':    return ['mysql', 'mysqld'];
+      case 'postgresql': return ['postgresql'];
+      default: return [engine];
+    }
+  }
+
+  async startEngine(engine: DbEngine): Promise<{ success: boolean; message: string }> {
+    const services = this.getServiceName(engine);
+    let lastError = '';
+    for (const svc of services) {
+      try {
+        await exec(`sudo systemctl start ${svc}`, { timeout: 30000 });
+        return { success: true, message: `${engine} started successfully` };
+      } catch (e: any) {
+        lastError = e.stderr || e.message || String(e);
+      }
+    }
+    throw new Error(`Failed to start ${engine}: ${lastError}`);
+  }
+
+  async stopEngine(engine: DbEngine): Promise<{ success: boolean; message: string }> {
+    const services = this.getServiceName(engine);
+    let lastError = '';
+    for (const svc of services) {
+      try {
+        await exec(`sudo systemctl stop ${svc}`, { timeout: 30000 });
+        return { success: true, message: `${engine} stopped successfully` };
+      } catch (e: any) {
+        lastError = e.stderr || e.message || String(e);
+      }
+    }
+    throw new Error(`Failed to stop ${engine}: ${lastError}`);
+  }
+
+  async restartEngine(engine: DbEngine): Promise<{ success: boolean; message: string }> {
+    const services = this.getServiceName(engine);
+    let lastError = '';
+    for (const svc of services) {
+      try {
+        await exec(`sudo systemctl restart ${svc}`, { timeout: 30000 });
+        return { success: true, message: `${engine} restarted successfully` };
+      } catch (e: any) {
+        lastError = e.stderr || e.message || String(e);
+      }
+    }
+    throw new Error(`Failed to restart ${engine}: ${lastError}`);
+  }
+
+  async getEngineLogs(engine: DbEngine, lines = 50): Promise<{ success: boolean; logs: string }> {
+    const services = this.getServiceName(engine);
+    for (const svc of services) {
+      try {
+        const { stdout } = await exec(
+          `sudo journalctl -u ${svc} --no-pager -n ${lines} 2>/dev/null || echo "No logs available"`,
+          { timeout: 15000 },
+        );
+        return { success: true, logs: stdout.trim() };
+      } catch {}
+    }
+    return { success: true, logs: 'No logs available for this engine.' };
+  }
+
+  async diagnoseEngine(engine: DbEngine): Promise<{
+    success: boolean;
+    engine: string;
+    installed: boolean;
+    running: boolean;
+    version: string;
+    logs: string;
+    diskUsage: string;
+    configFile: string;
+    port: string;
+  }> {
+    const status = await this.checkEngine(engine);
+    const logsResult = await this.getEngineLogs(engine, 30);
+
+    let diskUsage = 'N/A';
+    let configFile = 'N/A';
+    let port = 'N/A';
+
+    try {
+      if (engine === 'postgresql') {
+        try { diskUsage = await this.run('du -sh /var/lib/postgresql/ 2>/dev/null | cut -f1'); } catch {}
+        try { configFile = (await this.sudo('-u postgres psql -t -A -c "SHOW config_file"')).trim(); } catch {}
+        try { port = (await this.sudo('-u postgres psql -t -A -c "SHOW port"')).trim(); } catch {}
+      } else {
+        const dataDir = engine === 'mariadb' ? '/var/lib/mysql/' : '/var/lib/mysql/';
+        try { diskUsage = await this.run(`du -sh ${dataDir} 2>/dev/null | cut -f1`); } catch {}
+        for (const p of ['/etc/mysql/mariadb.conf.d/50-server.cnf', '/etc/mysql/mysql.conf.d/mysqld.cnf', '/etc/mysql/my.cnf']) {
+          try {
+            await exec(`test -f ${p}`);
+            configFile = p;
+            break;
+          } catch {}
+        }
+        try { port = await this.mysqlExec("SELECT @@port"); } catch {}
+      }
+    } catch {}
+
+    return {
+      success: true,
+      engine,
+      installed: status.installed,
+      running: status.running,
+      version: status.version,
+      logs: logsResult.logs,
+      diskUsage,
+      configFile,
+      port,
+    };
+  }
+
   /**
    * List databases (filtered to user-prefixed ones)
    */
