@@ -184,30 +184,77 @@ export class SetupService {
     }
 
     async detectServerIp(): Promise<string | null> {
-        // Try to get public IP first
+        // Method 1: Try shell commands (curl / wget / dig)
         try {
             const { execSync } = require('child_process');
-            const publicIp = execSync('curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 icanhazip.com 2>/dev/null', {
-                encoding: 'utf-8',
-                timeout: 10000,
-            }).trim();
-            if (publicIp && this.isValidIPv4(publicIp)) {
-                return publicIp;
+            const commands = [
+                'curl -s --max-time 5 ifconfig.me 2>/dev/null',
+                'curl -s --max-time 5 icanhazip.com 2>/dev/null',
+                'curl -s --max-time 5 api.ipify.org 2>/dev/null',
+                'wget -qO- --timeout=5 ifconfig.me 2>/dev/null',
+                'wget -qO- --timeout=5 icanhazip.com 2>/dev/null',
+                'dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null',
+                "hostname -I 2>/dev/null | awk '{print $1}'",
+            ];
+            for (const cmd of commands) {
+                try {
+                    const result = execSync(cmd, {
+                        encoding: 'utf-8',
+                        timeout: 8000,
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                    }).trim();
+                    if (result && this.isValidIPv4(result)) {
+                        return result;
+                    }
+                } catch {
+                    // Try next command
+                }
             }
         } catch {
-            // Fall through to local detection
+            // Fall through to native detection
         }
 
+        // Method 2: Node.js native HTTPS (no curl/wget needed)
+        try {
+            const ip = await this.fetchIpNative('https://api.ipify.org');
+            if (ip && this.isValidIPv4(ip)) return ip;
+        } catch {
+            // Fall through
+        }
+        try {
+            const ip = await this.fetchIpNative('https://icanhazip.com');
+            if (ip && this.isValidIPv4(ip)) return ip;
+        } catch {
+            // Fall through
+        }
+
+        // Method 3: Local network interfaces
+        // Note: Node.js 18+ returns family as number (4/6) instead of string ('IPv4'/'IPv6')
         const interfaces = os.networkInterfaces();
         for (const value of Object.values(interfaces)) {
             if (!value) continue;
             for (const details of value) {
-                if (details.family === 'IPv4' && !details.internal && details.address) {
+                const isIPv4 = details.family === 'IPv4' || (details.family as unknown) === 4;
+                if (isIPv4 && !details.internal && details.address) {
                     return details.address;
                 }
             }
         }
         return null;
+    }
+
+    /** Fetch IP from an HTTPS endpoint using native Node.js (no curl/wget) */
+    private fetchIpNative(url: string): Promise<string> {
+        const https = require('https');
+        return new Promise((resolve, reject) => {
+            const req = https.get(url, { timeout: 5000 }, (res: any) => {
+                let data = '';
+                res.on('data', (chunk: string) => (data += chunk));
+                res.on('end', () => resolve(data.trim()));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        });
     }
 
     /**

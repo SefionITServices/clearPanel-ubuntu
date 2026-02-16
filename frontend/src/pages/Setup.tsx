@@ -55,6 +55,7 @@ export default function SetupPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [detectingIp, setDetectingIp] = useState(false);
+    const [ipDetectFailed, setIpDetectFailed] = useState(false);
 
     const [config, setConfig] = useState<SetupConfig>({
         adminUsername: '',
@@ -102,13 +103,18 @@ export default function SetupPage() {
 
     const detectServerIp = async () => {
         setDetectingIp(true);
+        setIpDetectFailed(false);
         try {
             const res = await fetch('/api/setup/detect-ip');
             const data = await res.json();
             if (data.ip) {
                 setConfig(prev => ({ ...prev, serverIp: data.ip }));
+            } else {
+                setIpDetectFailed(true);
             }
-        } catch { }
+        } catch {
+            setIpDetectFailed(true);
+        }
         setDetectingIp(false);
     };
 
@@ -327,6 +333,15 @@ export default function SetupPage() {
                                 Server IP detected: <strong>{config.serverIp}</strong>
                             </Alert>
                         )}
+                        {ipDetectFailed && !config.serverIp && !detectingIp && (
+                            <Alert severity="warning" icon={false}>
+                                Could not auto-detect server IP. You can enter it manually in the next step.
+                                <br />
+                                <Typography variant="caption" color="text.secondary">
+                                    Run <code>curl ifconfig.me</code> or <code>hostname -I</code> on your server to find your IP.
+                                </Typography>
+                            </Alert>
+                        )}
                     </Stack>
                 );
 
@@ -403,7 +418,8 @@ export default function SetupPage() {
                             value={config.serverIp}
                             onChange={e => setConfig(p => ({ ...p, serverIp: e.target.value }))}
                             error={!!errors.serverIp}
-                            helperText={errors.serverIp || 'Public IPv4 address of this VPS'}
+                            helperText={errors.serverIp || (ipDetectFailed && !config.serverIp ? 'Auto-detect failed — enter your VPS public IP manually' : 'Public IPv4 address of this VPS')}
+                            placeholder={ipDetectFailed ? 'e.g. 185.199.108.10' : ''}
                             InputProps={{
                                 endAdornment: (
                                     <InputAdornment position="end">
