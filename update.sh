@@ -108,6 +108,9 @@ echo -e "${GREEN}✓ Backup complete${NC}"
 echo ""
 echo -e "${YELLOW}📥 Pulling latest code from remote...${NC}"
 cd "$INSTALL_DIR"
+# Mark repo as safe (root runs git on a clearpanel-owned repo)
+git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+sudo -u "$SERVICE_USER" git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 sudo -u "$SERVICE_USER" git stash 2>/dev/null || true
 sudo -u "$SERVICE_USER" git pull origin main
 echo -e "${GREEN}✓ Code updated${NC}"
