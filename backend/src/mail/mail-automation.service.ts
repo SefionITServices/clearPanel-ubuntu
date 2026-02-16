@@ -889,9 +889,23 @@ export class MailAutomationService {
   private async runScript(script: string, args: string[], options?: { redactArgs?: boolean }) {
     const quotedArgs = args.map((value) => `'${value.replace(/'/g, "'\\''")}'`);
     const command = ['bash', script, ...quotedArgs].join(' ');
+    const mailMode = this.resolveMailMode();
     const safeCommand = options?.redactArgs ? `bash ${script} [REDACTED]` : command;
-    this.logger.debug(`Executing: ${safeCommand}`);
-    return execAsync(command, { env: process.env });
+    this.logger.debug(`Executing (${mailMode}): ${safeCommand}`);
+    return execAsync(command, {
+      env: {
+        ...process.env,
+        MAIL_MODE: mailMode,
+      },
+    });
+  }
+
+  private resolveMailMode(): string {
+    const configuredMode = process.env.MAIL_MODE?.trim().toLowerCase();
+    if (configuredMode === 'production' || configuredMode === 'dev') {
+      return configuredMode;
+    }
+    return process.env.NODE_ENV === 'production' ? 'production' : 'dev';
   }
 
   private compact(stdout: string, stderr: string): string | undefined {

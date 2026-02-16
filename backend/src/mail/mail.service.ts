@@ -580,9 +580,9 @@ export class MailService {
       {
         type: 'TXT',
         name: `_dmarc`,
-        value: `v=DMARC1; p=quarantine; rua=mailto:abuse@${domain.domain}; ruf=mailto:abuse@${domain.domain}; fo=1`,
+        value: `v=DMARC1; p=none; rua=mailto:abuse@${domain.domain}; ruf=mailto:abuse@${domain.domain}; fo=1`,
         ttl: 3600,
-        description: 'DMARC policy with aggregate/forensic reports',
+        description: 'DMARC monitor mode for initial deliverability validation',
       },
     ];
 
@@ -893,8 +893,9 @@ export class MailService {
     postscreen: { enabled: boolean; configuredAt?: string };
     dmarc: { domains: string[]; configuredAt?: string };
   }> {
+    const resolvedMailMode = this.resolveMailMode();
     const stateRoot =
-      process.env.MAIL_MODE === 'production'
+      resolvedMailMode === 'production'
         ? '/etc/clearpanel/mail'
         : path.join(process.cwd(), '..', 'backend', 'mail-state');
 
@@ -935,6 +936,14 @@ export class MailService {
     } catch { /* not configured */ }
 
     return result;
+  }
+
+  private resolveMailMode(): string {
+    const configuredMode = process.env.MAIL_MODE?.trim().toLowerCase();
+    if (configuredMode === 'production' || configuredMode === 'dev') {
+      return configuredMode;
+    }
+    return process.env.NODE_ENV === 'production' ? 'production' : 'dev';
   }
 
   // ---- DNS Auto-Publish (Phase 5) ----

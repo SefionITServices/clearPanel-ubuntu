@@ -32,7 +32,7 @@ printf '%s\n' "$DESTINATION" >"$ALIAS_DIR/${SOURCE}.txt"
 if [[ "$MAIL_MODE" == "production" ]]; then
   # --- Add to Postfix virtual alias map ---
   # Remove existing entry for this source, then append
-  sed -i "/^${SOURCE_FULL}\s/d" "$POSTFIX_VALIAS" 2>/dev/null || true
+  remove_map_entry_by_key "$SOURCE_FULL" "$POSTFIX_VALIAS"
   printf '%s\t%s\n' "$SOURCE_FULL" "$DESTINATION" >>"$POSTFIX_VALIAS"
   postmap_rebuild "$POSTFIX_VALIAS"
   postfix_reload

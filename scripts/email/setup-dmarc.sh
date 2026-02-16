@@ -86,9 +86,9 @@ sign_authenticated = true;
 use_domain = "header";
 try_fallback = true;
 
-# Look for DKIM keys in the standard OpenDKIM location
-path = "/etc/opendkim/keys/\$domain/mail.private";
-selector = "mail";
+# Match the default selector used by install/provision scripts
+path = "/etc/opendkim/keys/\$domain/default.private";
+selector = "default";
 ARC
 
   echo "[✓] Rspamd ARC module configured"
@@ -121,7 +121,7 @@ show_dns_suggestions() {
   echo "=== Required DNS records ==="
   echo ""
   echo "DMARC policy (TXT record):"
-  echo "  _dmarc.${DOMAIN}  IN  TXT  \"v=DMARC1; p=quarantine; rua=mailto:${REPORT_EMAIL}; ruf=mailto:${REPORT_EMAIL}; sp=quarantine; adkim=r; aspf=r; pct=100\""
+  echo "  _dmarc.${DOMAIN}  IN  TXT  \"v=DMARC1; p=none; rua=mailto:${REPORT_EMAIL}; ruf=mailto:${REPORT_EMAIL}; sp=none; adkim=r; aspf=r; pct=100\""
   echo ""
   echo "SPF (if not already set):"
   echo "  ${DOMAIN}  IN  TXT  \"v=spf1 a mx ip4:<YOUR-SERVER-IP> -all\""
@@ -133,7 +133,7 @@ show_dns_suggestions() {
 # -----------------------------------------------------------------------
 # Apply
 # -----------------------------------------------------------------------
-if is_dev_mode; then
+if [[ "$MAIL_MODE" != "production" ]]; then
   echo ""
   echo "[dev] Would configure:"
   echo "  • Rspamd DMARC module (check + aggregate reporting)"
@@ -156,7 +156,7 @@ cat >"$DMARC_STATE_DIR/${DOMAIN}.json" <<JSON
 {
   "domain": "${DOMAIN}",
   "reportEmail": "${REPORT_EMAIL}",
-  "policy": "quarantine",
+  "policy": "none",
   "arcEnabled": true,
   "configuredAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

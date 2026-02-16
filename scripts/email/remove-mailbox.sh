@@ -21,12 +21,12 @@ MAILBOX="${LOCAL_PART}@${DOMAIN}"
 
 if [[ "$MAIL_MODE" == "production" ]]; then
   # --- Remove from Postfix virtual mailbox map ---
-  sed -i "/^${MAILBOX}\s/d" "$POSTFIX_VMAILBOX" 2>/dev/null || true
+  remove_map_entry_by_key "$MAILBOX" "$POSTFIX_VMAILBOX"
   postmap_rebuild "$POSTFIX_VMAILBOX"
   printf 'Removed %s from Postfix virtual mailbox map\n' "$MAILBOX"
 
   # --- Remove from Dovecot passwd-file ---
-  sed -i "/^${MAILBOX}:/d" "$DOVECOT_PASSWD" 2>/dev/null || true
+  remove_passwd_entry_by_user "$MAILBOX" "$DOVECOT_PASSWD"
   printf 'Removed %s from Dovecot passwd-file\n' "$MAILBOX"
 
   # --- Move Maildir to backup (don't delete to preserve mail) ---

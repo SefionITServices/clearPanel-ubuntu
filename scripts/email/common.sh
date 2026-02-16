@@ -40,8 +40,13 @@ fi
 DOMAINS_DIR="$STATE_ROOT/domains"
 MAILBOX_DIR="$STATE_ROOT/mailboxes"
 ALIASES_DIR="$STATE_ROOT/aliases"
-DKIM_KEYS_DIR="$STATE_ROOT/dkim/keys"
-DKIM_PUBLIC_DIR="$STATE_ROOT/dkim/public"
+if [[ "$MAIL_MODE" == "production" ]]; then
+  DKIM_KEYS_DIR="$OPENDKIM_KEYS_DIR"
+  DKIM_PUBLIC_DIR="$MAIL_CONFIG_DIR/dkim/public"
+else
+  DKIM_KEYS_DIR="$STATE_ROOT/dkim/keys"
+  DKIM_PUBLIC_DIR="$STATE_ROOT/dkim/public"
+fi
 LOG_DIR="$STATE_ROOT/logs"
 POLICY_DIR="$STATE_ROOT/policies"
 
@@ -60,6 +65,85 @@ ensure_state_root() {
     # Ensure Postfix map files exist
     touch "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_PASSWD" 2>/dev/null || true
   fi
+}
+
+# Return success when first column contains the exact key.
+map_has_key() {
+  local key="$1"
+  local mapfile="$2"
+  [[ -f "$mapfile" ]] || return 1
+  awk -v key="$key" '$1 == key { found = 1; exit } END { exit found ? 0 : 1 }' "$mapfile"
+}
+
+# Remove rows where first column matches key exactly.
+remove_map_entry_by_key() {
+  local key="$1"
+  local mapfile="$2"
+  local tmpfile
+
+  [[ -f "$mapfile" ]] || return 0
+  tmpfile="$(mktemp)"
+  awk -v key="$key" '$1 != key { print }' "$mapfile" >"$tmpfile"
+  cat "$tmpfile" >"$mapfile"
+  rm -f "$tmpfile"
+}
+
+# Remove rows where first column ends with the provided suffix.
+remove_map_entries_by_key_suffix() {
+  local suffix="$1"
+  local mapfile="$2"
+  local tmpfile
+
+  [[ -f "$mapfile" ]] || return 0
+  tmpfile="$(mktemp)"
+  awk -v suffix="$suffix" '
+    {
+      key = $1
+      if (key != "" && length(key) >= length(suffix) &&
+          substr(key, length(key) - length(suffix) + 1) == suffix) {
+        next
+      }
+      print
+    }
+  ' "$mapfile" >"$tmpfile"
+  cat "$tmpfile" >"$mapfile"
+  rm -f "$tmpfile"
+}
+
+# Remove a single passwd-file user (first colon-separated field).
+remove_passwd_entry_by_user() {
+  local user="$1"
+  local passwd_file="$2"
+  local tmpfile
+
+  [[ -f "$passwd_file" ]] || return 0
+  tmpfile="$(mktemp)"
+  awk -F: -v user="$user" '$1 != user { print }' "$passwd_file" >"$tmpfile"
+  cat "$tmpfile" >"$passwd_file"
+  rm -f "$tmpfile"
+}
+
+# Remove all passwd-file users belonging to a domain.
+remove_passwd_entries_by_domain() {
+  local domain="$1"
+  local passwd_file="$2"
+  local suffix="@${domain}"
+  local tmpfile
+
+  [[ -f "$passwd_file" ]] || return 0
+  tmpfile="$(mktemp)"
+  awk -F: -v suffix="$suffix" '
+    {
+      user = $1
+      if (user != "" && length(user) >= length(suffix) &&
+          substr(user, length(user) - length(suffix) + 1) == suffix) {
+        next
+      }
+      print
+    }
+  ' "$passwd_file" >"$tmpfile"
+  cat "$tmpfile" >"$passwd_file"
+  rm -f "$tmpfile"
 }
 
 # --- Postfix map helpers ---
@@ -147,12 +231,12 @@ write_dkim_record() {
     # key.table: selector._domainkey.domain  domain:selector:/path/to/key
     local key_entry="${selector}._domainkey.${domain}  ${domain}:${selector}:${key_dir}/${selector}.private"
     # Remove old entry for this domain/selector, then append
-    sed -i "/^${selector}\._domainkey\.${domain}\s/d" "$OPENDKIM_KEY_TABLE" 2>/dev/null || true
+    remove_map_entry_by_key "${selector}._domainkey.${domain}" "$OPENDKIM_KEY_TABLE"
     printf '%s\n' "$key_entry" >>"$OPENDKIM_KEY_TABLE"
 
     # signing.table: *@domain  selector._domainkey.domain
     local sign_entry="*@${domain}  ${selector}._domainkey.${domain}"
-    sed -i "/^\*@${domain}\s/d" "$OPENDKIM_SIGNING_TABLE" 2>/dev/null || true
+    remove_map_entry_by_key "*@${domain}" "$OPENDKIM_SIGNING_TABLE"
     printf '%s\n' "$sign_entry" >>"$OPENDKIM_SIGNING_TABLE"
 
     systemctl reload opendkim 2>/dev/null || true

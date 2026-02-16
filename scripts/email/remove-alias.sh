@@ -25,7 +25,7 @@ fi
 
 if [[ "$MAIL_MODE" == "production" ]]; then
   # --- Remove from Postfix virtual alias map ---
-  sed -i "/^${SOURCE_FULL}\s/d" "$POSTFIX_VALIAS" 2>/dev/null || true
+  remove_map_entry_by_key "$SOURCE_FULL" "$POSTFIX_VALIAS"
   postmap_rebuild "$POSTFIX_VALIAS"
   postfix_reload
   printf 'Removed alias %s from Postfix virtual alias map\n' "$SOURCE_FULL"

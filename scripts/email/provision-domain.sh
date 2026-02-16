@@ -30,7 +30,7 @@ JSON
 
 if [[ "$MAIL_MODE" == "production" ]]; then
   # --- Add to Postfix virtual domains ---
-  if ! grep -q "^${DOMAIN}\s" "$POSTFIX_VDOMAINS" 2>/dev/null; then
+  if ! map_has_key "$DOMAIN" "$POSTFIX_VDOMAINS"; then
     printf '%s\tOK\n' "$DOMAIN" >>"$POSTFIX_VDOMAINS"
     postmap_rebuild "$POSTFIX_VDOMAINS"
     printf 'Added %s to Postfix virtual domains\n' "$DOMAIN"
@@ -53,7 +53,8 @@ fi
 # --- DKIM key generation ---
 SELECTOR="default"
 EXISTING_RECORD="$(read_dkim_record "$DOMAIN" "$SELECTOR" || true)"
-if [[ -z "$EXISTING_RECORD" ]]; then
+DKIM_PRIVATE_KEY="$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.private"
+if [[ -z "$EXISTING_RECORD" || ! -f "$DKIM_PRIVATE_KEY" ]]; then
   PUBLIC_KEY="$(generate_dkim_key_material "$DOMAIN" "$SELECTOR")"
   DKIM_RECORD="$(write_dkim_record "$DOMAIN" "$SELECTOR" "$PUBLIC_KEY")"
   printf 'Generated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"

@@ -138,5 +138,12 @@ Double-check `/var/vmail`, `/etc/clearpanel/mail/virtual-*`, `/etc/clearpanel/ma
 - Check `/var/log/mail.log` (Postfix) and `/var/log/dovecot.log` for real-time diagnostics.
 - `sudo rspamadm configtest` and `sudo rspamadm stat` help confirm Rspamd status.
 - Re-run `sudo scripts/email/install-stack.sh` if service packages become corrupted—it is idempotent.
+- Confirm backend automation mode is production on deployed hosts: `grep '^MAIL_MODE=' backend/.env` should show `MAIL_MODE=production`.
+- If domains/mailboxes exist in `mail-domains.json` but not in `/etc/clearpanel/mail/*`, run:
+  `sudo scripts/email/sync-from-clearpanel-data.sh /path/to/mail-domains.json`
+- If outbound lands in spam, run deliverability checks:
+  `scripts/email/check-deliverability.sh example.test mail.example.test <server-ip>`
+- If Postfix identity is wrong (for example `mydomain` became a TLD like `in`), repair it:
+  `sudo scripts/email/fix-postfix-identity.sh mail.example.test`
 
 Document anomalies and update the guide as new edge cases emerge.

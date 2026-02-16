@@ -12,6 +12,24 @@ STACK_FILE="$STATE_ROOT/stack.json"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 HOSTNAME_VAL="${MAIL_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
 
+derive_mydomain() {
+  local host="$1"
+  local dot_count=0
+  local tmp="${host//[^.]}"
+  dot_count="${#tmp}"
+
+  # mail.example.com -> example.com
+  if (( dot_count >= 2 )); then
+    printf '%s\n' "${host#*.}"
+    return
+  fi
+
+  # example.com -> example.com, localhost -> localhost
+  printf '%s\n' "$host"
+}
+
+MYDOMAIN_VAL="$(derive_mydomain "$HOSTNAME_VAL")"
+
 if [[ "$MAIL_MODE" == "production" ]]; then
   echo "=== Installing mail stack (Postfix, Dovecot, Rspamd, ClamAV) ==="
 
@@ -70,7 +88,7 @@ EOF
 
   # --- Configure Postfix ---
   postconf -e "myhostname = $HOSTNAME_VAL"
-  postconf -e "mydomain = $(echo "$HOSTNAME_VAL" | cut -d. -f2-)"
+  postconf -e "mydomain = $MYDOMAIN_VAL"
   postconf -e "myorigin = \$mydomain"
   postconf -e "inet_interfaces = all"
   postconf -e "inet_protocols = all"

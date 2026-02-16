@@ -16,27 +16,27 @@ ensure_state_root
 
 if [[ "$MAIL_MODE" == "production" ]]; then
   # --- Remove from Postfix virtual domains ---
-  sed -i "/^${DOMAIN}\s/d" "$POSTFIX_VDOMAINS" 2>/dev/null || true
+  remove_map_entry_by_key "$DOMAIN" "$POSTFIX_VDOMAINS"
   postmap_rebuild "$POSTFIX_VDOMAINS"
   printf 'Removed %s from Postfix virtual domains\n' "$DOMAIN"
 
   # --- Remove all mailboxes for this domain from Postfix vmailbox ---
-  sed -i "/@${DOMAIN}\s/d" "$POSTFIX_VMAILBOX" 2>/dev/null || true
+  remove_map_entries_by_key_suffix "@${DOMAIN}" "$POSTFIX_VMAILBOX"
   postmap_rebuild "$POSTFIX_VMAILBOX"
   printf 'Removed all mailbox entries for %s from Postfix\n' "$DOMAIN"
 
   # --- Remove all aliases for this domain from Postfix virtual alias ---
-  sed -i "/@${DOMAIN}\s/d" "$POSTFIX_VALIAS" 2>/dev/null || true
+  remove_map_entries_by_key_suffix "@${DOMAIN}" "$POSTFIX_VALIAS"
   postmap_rebuild "$POSTFIX_VALIAS"
   printf 'Removed all alias entries for %s from Postfix\n' "$DOMAIN"
 
   # --- Remove from Dovecot passwd-file ---
-  sed -i "/@${DOMAIN}:/d" "$DOVECOT_PASSWD" 2>/dev/null || true
+  remove_passwd_entries_by_domain "$DOMAIN" "$DOVECOT_PASSWD"
   printf 'Removed all Dovecot users for %s\n' "$DOMAIN"
 
   # --- Remove OpenDKIM entries ---
-  sed -i "/\.${DOMAIN}\s/d" "$OPENDKIM_KEY_TABLE" 2>/dev/null || true
-  sed -i "/@${DOMAIN}\s/d" "$OPENDKIM_SIGNING_TABLE" 2>/dev/null || true
+  remove_map_entries_by_key_suffix "._domainkey.${DOMAIN}" "$OPENDKIM_KEY_TABLE"
+  remove_map_entry_by_key "*@${DOMAIN}" "$OPENDKIM_SIGNING_TABLE"
   rm -rf "$OPENDKIM_KEYS_DIR/$DOMAIN" 2>/dev/null || true
   systemctl reload opendkim 2>/dev/null || true
   printf 'Removed DKIM keys and tables for %s\n' "$DOMAIN"
