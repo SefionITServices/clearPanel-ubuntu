@@ -622,23 +622,33 @@ Contributions welcome! Please:
 
 ## Roadmap
 
-### In Progress
-- ✅ Domain management with automation
-- ✅ DNS server (BIND9) integration
-- ✅ Webserver automation (nginx)
-- ✅ File manager with editor
+See **[ROADMAP.md](ROADMAP.md)** for the full development plan organized in 4 phases.
 
-### Planned
-- 🔲 Frontend UI for DNS server status
-- 🔲 Email server management (Postfix/Dovecot)
-- 🔲 Database management (MySQL/PostgreSQL)
-- 🔲 SSL certificate automation (Let's Encrypt)
-- 🔲 System monitoring dashboard
-- 🔲 User management & permissions
-- 🔲 Backup & restore system
-- 🔲 FTP/SFTP server integration
-- 🔲 DNSSEC support
-- 🔲 Secondary DNS server setup
+### Current Status (v2.1.0 — Phase 1 Complete)
+- ✅ Authentication, setup wizard, dashboard, settings
+- ✅ File Manager, terminal, SSH keys
+- ✅ Domains, DNS editor, BIND9 DNS server, Nginx, SSL, PHP
+- ✅ Email stack (Postfix/Dovecot/OpenDKIM) — domains, accounts, forwarders, filters
+- ✅ MySQL/MariaDB database management
+- ✅ App Store (phpMyAdmin, Roundcube, WordPress)
+- ✅ Cron jobs, firewall (UFW), resource monitoring
+- ✅ Backup & restore, 2FA TOTP, process manager
+- ✅ License system, update checker, system logs
+
+### Next Up (Phase 2 — Pro Panel Parity)
+- 🔲 FTP account manager
+- 🔲 Subdomain & redirect manager
+- 🔲 Auto-responders, mailing lists, spam filter UI
+- 🔲 PostgreSQL support, remote MySQL, DB import/export
+- 🔲 Hotlink protection, custom error pages, IP blocker
+
+### Future (Phase 3–4)
+- 🔲 Docker manager, Git deployment, Node.js/Python app manager
+- 🔲 Activity/audit log, notification system, bandwidth monitoring
+- 🔲 Multi-user/reseller accounts, white-label branding, REST API
+- 🔲 Server migration tool, Cloudflare integration, WHMCS module
+
+See **[CHANGELOG.md](CHANGELOG.md)** for version history.
 
 ## Resources
 

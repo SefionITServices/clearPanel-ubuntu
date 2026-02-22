@@ -25,6 +25,10 @@ Complete documentation for clearPanel web hosting control panel.
 - **[Backup & Restore](BACKUP.md)** - Data protection strategies (coming soon)
 - **[Monitoring](MONITORING.md)** - Health checks and alerting (coming soon)
 
+### Project
+- **[Roadmap](../ROADMAP.md)** - Development phases and planned features
+- **[Changelog](../CHANGELOG.md)** - Version history and release notes
+
 ## Quick Links
 
 ### Installation
