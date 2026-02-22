@@ -455,8 +455,7 @@ if [ -z "$PHP_VER" ]; then
 fi
 info "Using PHP $PHP_VER"
 
-apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra > /dev/null 2>&1 || \
-    add_warn "Roundcube packages failed to install"
+# Install PHP-FPM first (required for Roundcube)
 apt-get install -y -qq \
     "php${PHP_VER}-cli" "php${PHP_VER}-fpm" "php${PHP_VER}-mbstring" \
     "php${PHP_VER}-xml" "php${PHP_VER}-intl" "php${PHP_VER}-zip" \
@@ -465,6 +464,23 @@ apt-get install -y -qq \
 apt-get install -y -qq "php${PHP_VER}-imagick" > /dev/null 2>&1 || \
     apt-get install -y -qq php-imagick > /dev/null 2>&1 || true
 phpenmod -v "${PHP_VER}" intl mbstring xml zip gd curl ldap > /dev/null 2>&1 || true
+
+# Ensure PHP-FPM is running before installing Roundcube
+systemctl enable "php${PHP_VER}-fpm" > /dev/null 2>&1 || true
+systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
+
+# Verify PHP-FPM socket exists (wait up to 5 seconds)
+FPM_SOCK="/var/run/php/php${PHP_VER}-fpm.sock"
+for i in 1 2 3 4 5; do
+    [ -S "$FPM_SOCK" ] && break
+    sleep 1
+done
+if [ ! -S "$FPM_SOCK" ]; then
+    add_warn "PHP-FPM socket not found at $FPM_SOCK — Roundcube may not work"
+fi
+
+apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra > /dev/null 2>&1 || \
+    add_warn "Roundcube packages failed to install"
 
 # Configure Roundcube for localhost IMAP
 ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
@@ -498,7 +514,7 @@ SMTPEOF
     fi
 fi
 
-systemctl enable "php${PHP_VER}-fpm" > /dev/null 2>&1 || true
+# Ensure PHP-FPM is restarted after config changes
 systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
 chown -R www-data:www-data /var/lib/roundcube /var/log/roundcube 2>/dev/null || true
 

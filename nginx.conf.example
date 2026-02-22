@@ -13,7 +13,7 @@ server {
 
     # API routes - proxy to NestJS backend
     location /api {
-        proxy_pass http://localhost:3334;
+        proxy_pass http://127.0.0.1:3334;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -79,7 +79,7 @@ server {
 #
 #     # API routes
 #     location /api {
-#         proxy_pass http://localhost:3334;
+#         proxy_pass http://127.0.0.1:3334;
 #         proxy_http_version 1.1;
 #         proxy_set_header Upgrade $http_upgrade;
 #         proxy_set_header Connection 'upgrade';

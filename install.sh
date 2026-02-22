@@ -312,7 +312,7 @@ if [[ -z "$PHP_VER" ]]; then
 fi
 echo -e "${YELLOW}Using PHP ${PHP_VER} for Roundcube${NC}"
 
-apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra
+# Install PHP-FPM first (required for Roundcube)
 apt-get install -y -qq \
     "php${PHP_VER}-cli" \
     "php${PHP_VER}-fpm" \
@@ -328,6 +328,22 @@ apt-get install -y -qq "php${PHP_VER}-imagick" >/dev/null 2>&1 || \
     apt-get install -y -qq php-imagick >/dev/null 2>&1 || true
 
 phpenmod -v "${PHP_VER}" intl mbstring xml zip gd curl ldap >/dev/null 2>&1 || true
+
+# Ensure PHP-FPM is running before installing Roundcube
+systemctl enable "php${PHP_VER}-fpm" 2>/dev/null || true
+systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
+
+# Verify PHP-FPM socket exists (wait up to 5 seconds)
+FPM_SOCK="/var/run/php/php${PHP_VER}-fpm.sock"
+for i in 1 2 3 4 5; do
+    [ -S "$FPM_SOCK" ] && break
+    sleep 1
+done
+if [ ! -S "$FPM_SOCK" ]; then
+    echo -e "${YELLOW}⚠ PHP-FPM socket not found at $FPM_SOCK — Roundcube may not work${NC}"
+fi
+
+apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra
 if ! php"${PHP_VER}" -r 'exit(defined("INTL_IDNA_VARIANT_UTS46") ? 0 : 1);'; then
     echo -e "${RED}ERROR: php${PHP_VER}-intl is missing/not enabled; Roundcube login will fail${NC}"
     exit 1
@@ -371,7 +387,7 @@ EOF
         sed -i "s|\$config\['plugins'\] = array(|\$config['plugins'] = array(\n  'managesieve',\n  'archive',\n  'zipdownload',\n  'newmail_notifier',|" "$ROUNDCUBE_CONF" 2>/dev/null || true
     fi
 fi
-systemctl enable "php${PHP_VER}-fpm" 2>/dev/null || true
+# Restart PHP-FPM after config changes
 systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
 chown -R www-data:www-data /var/lib/roundcube 2>/dev/null || true
 chown -R www-data:www-data /var/log/roundcube 2>/dev/null || true
