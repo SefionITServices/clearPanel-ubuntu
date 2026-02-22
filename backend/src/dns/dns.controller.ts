@@ -1,7 +1,10 @@
-import { Controller, Get, Param, Post, Body, Put, Delete } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards } from '@nestjs/common';
 import { DnsService } from './dns.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { AddDnsRecordDto, UpdateDnsRecordDto } from './dto/dns-record.dto';
 
 @Controller('dns')
+@UseGuards(AuthGuard)
 export class DnsController {
   constructor(private readonly dnsService: DnsService) {}
 
@@ -18,7 +21,7 @@ export class DnsController {
   @Post('zones/:domain/records')
   async addRecord(
     @Param('domain') domain: string,
-    @Body() body: { type: 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS'; name: string; value: string; ttl?: number; priority?: number },
+    @Body() body: AddDnsRecordDto,
   ) {
     return this.dnsService.addRecord(domain, { type: body.type, name: body.name, value: body.value, ttl: body.ttl ?? 3600, priority: body.priority });
   }
@@ -27,7 +30,7 @@ export class DnsController {
   async updateRecord(
     @Param('domain') domain: string,
     @Param('id') id: string,
-    @Body() body: { type?: 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS'; name?: string; value?: string; ttl?: number; priority?: number },
+    @Body() body: UpdateDnsRecordDto,
   ) {
     return this.dnsService.updateRecord(domain, id, body);
   }

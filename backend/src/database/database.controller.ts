@@ -1,19 +1,18 @@
-import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query, UseInterceptors } from '@nestjs/common';
+﻿import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query, UseInterceptors, UseGuards } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { DatabaseService } from './database.service';
+import { AuthGuard } from '../auth/auth.guard';
+import {
+  CreateDatabaseDto, DeleteDatabaseDto, CreateUserDto, DeleteUserDto,
+  ChangePasswordDto, GrantPrivilegesDto, RevokePrivilegesDto, ExecuteQueryDto,
+  EngineActionDto, TableOperationDto, SetRemoteAccessDto,
+} from './dto/database.dto';
 
 @Controller('database')
+@UseGuards(AuthGuard)
 export class DatabaseController {
   constructor(private readonly db: DatabaseService) {}
-
-  private ensureAuth(req: Request, res: Response) {
-    if (!(req.session as any)?.isAuthenticated) {
-      res.status(HttpStatus.UNAUTHORIZED).json({ error: 'Unauthorized' });
-      return false;
-    }
-    return true;
-  }
 
   private isPg(engine?: string): boolean {
     return engine === 'postgresql' || engine === 'pg';
@@ -25,7 +24,6 @@ export class DatabaseController {
 
   @Get('status')
   async status(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.getStatus();
       return res.json({ success: true, ...data });
@@ -36,7 +34,6 @@ export class DatabaseController {
 
   @Get('engines')
   async engines(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const engines = await this.db.getAllEngineStatus();
       return res.json({ success: true, engines });
@@ -47,7 +44,6 @@ export class DatabaseController {
 
   @Post('install')
   async install(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.installMySQL();
       return res.json(data);
@@ -62,7 +58,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     const valid = ['mariadb', 'mysql', 'postgresql'];
     if (!valid.includes(engine)) {
       return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
@@ -81,7 +76,6 @@ export class DatabaseController {
 
   @Get('list')
   async listDatabases(@Query('engine') engine: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const databases = this.isPg(engine)
         ? await this.db.listPgDatabases()
@@ -93,9 +87,7 @@ export class DatabaseController {
   }
 
   @Post('create')
-  async createDatabase(@Body() body: { name: string; engine?: string }, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
+  async createDatabase(@Body() body: CreateDatabaseDto, @Req() req: Request, @Res() res: Response) {
     try {
       const data = this.isPg(body.engine)
         ? await this.db.createPgDatabase(body.name)
@@ -107,9 +99,7 @@ export class DatabaseController {
   }
 
   @Post('delete')
-  async deleteDatabase(@Body() body: { name: string; engine?: string }, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
+  async deleteDatabase(@Body() body: DeleteDatabaseDto, @Req() req: Request, @Res() res: Response) {
     try {
       const data = this.isPg(body.engine)
         ? await this.db.deletePgDatabase(body.name)
@@ -127,7 +117,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     if (!database) return res.status(400).json({ success: false, error: 'database required' });
     try {
       const tables = this.isPg(engine)
@@ -145,7 +134,6 @@ export class DatabaseController {
 
   @Get('users')
   async listUsers(@Query('engine') engine: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const users = this.isPg(engine)
         ? await this.db.listPgUsers()
@@ -158,14 +146,10 @@ export class DatabaseController {
 
   @Post('users/create')
   async createUser(
-    @Body() body: { name: string; password: string; host?: string; engine?: string },
+    @Body() body: CreateUserDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.name || !body.password) {
-      return res.status(400).json({ success: false, error: 'name and password required' });
-    }
     try {
       const data = this.isPg(body.engine)
         ? await this.db.createPgUser(body.name, body.password)
@@ -178,12 +162,10 @@ export class DatabaseController {
 
   @Post('users/delete')
   async deleteUser(
-    @Body() body: { name: string; host?: string; engine?: string },
+    @Body() body: DeleteUserDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.name) return res.status(400).json({ success: false, error: 'name required' });
     try {
       const data = this.isPg(body.engine)
         ? await this.db.deletePgUser(body.name)
@@ -196,14 +178,10 @@ export class DatabaseController {
 
   @Post('users/password')
   async changePassword(
-    @Body() body: { name: string; password: string; host?: string; engine?: string },
+    @Body() body: ChangePasswordDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.name || !body.password) {
-      return res.status(400).json({ success: false, error: 'name and password required' });
-    }
     try {
       const data = this.isPg(body.engine)
         ? await this.db.changePgPassword(body.name, body.password)
@@ -220,14 +198,10 @@ export class DatabaseController {
 
   @Post('privileges/grant')
   async grant(
-    @Body() body: { user: string; database: string; privileges?: string[]; host?: string; engine?: string },
+    @Body() body: GrantPrivilegesDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.user || !body.database) {
-      return res.status(400).json({ success: false, error: 'user and database required' });
-    }
     try {
       const data = this.isPg(body.engine)
         ? await this.db.grantPgPrivileges(body.user, body.database, body.privileges)
@@ -240,14 +214,10 @@ export class DatabaseController {
 
   @Post('privileges/revoke')
   async revoke(
-    @Body() body: { user: string; database: string; host?: string; engine?: string },
+    @Body() body: RevokePrivilegesDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.user || !body.database) {
-      return res.status(400).json({ success: false, error: 'user and database required' });
-    }
     try {
       const data = this.isPg(body.engine)
         ? await this.db.revokePgPrivileges(body.user, body.database)
@@ -266,7 +236,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     if (!user) return res.status(400).json({ success: false, error: 'user required' });
     try {
       const privileges = this.isPg(engine)
@@ -289,7 +258,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     if (!database) return res.status(400).json({ success: false, error: 'database required' });
     try {
       const sql = this.isPg(engine)
@@ -310,7 +278,6 @@ export class DatabaseController {
   @Post('import')
   @UseInterceptors(AnyFilesInterceptor())
   async importDatabase(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const { database, engine, sql: sqlBody } = req.body || {};
       if (!database) return res.status(400).json({ success: false, error: 'database required' });
@@ -340,14 +307,10 @@ export class DatabaseController {
 
   @Post('query')
   async executeQuery(
-    @Body() body: { database: string; sql: string; engine?: string },
+    @Body() body: ExecuteQueryDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.database || !body.sql) {
-      return res.status(400).json({ success: false, error: 'database and sql required' });
-    }
     try {
       const result = this.isPg(body.engine)
         ? await this.db.executePgQuery(body.database, body.sql)
@@ -364,7 +327,6 @@ export class DatabaseController {
 
   @Get('metrics')
   async metrics(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.getMetrics();
       return res.json({ success: true, ...data });
@@ -383,7 +345,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     const valid = ['mariadb', 'mysql', 'postgresql'];
     if (!valid.includes(engine)) {
       return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
@@ -402,15 +363,10 @@ export class DatabaseController {
 
   @Post('engine/start')
   async startEngine(
-    @Body() body: { engine: string },
+    @Body() body: EngineActionDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    const valid = ['mariadb', 'mysql', 'postgresql'];
-    if (!body.engine || !valid.includes(body.engine)) {
-      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
-    }
     try {
       const data = await this.db.startEngine(body.engine as any);
       return res.json(data);
@@ -421,15 +377,10 @@ export class DatabaseController {
 
   @Post('engine/stop')
   async stopEngine(
-    @Body() body: { engine: string },
+    @Body() body: EngineActionDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    const valid = ['mariadb', 'mysql', 'postgresql'];
-    if (!body.engine || !valid.includes(body.engine)) {
-      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
-    }
     try {
       const data = await this.db.stopEngine(body.engine as any);
       return res.json(data);
@@ -440,15 +391,10 @@ export class DatabaseController {
 
   @Post('engine/restart')
   async restartEngine(
-    @Body() body: { engine: string },
+    @Body() body: EngineActionDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    const valid = ['mariadb', 'mysql', 'postgresql'];
-    if (!body.engine || !valid.includes(body.engine)) {
-      return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
-    }
     try {
       const data = await this.db.restartEngine(body.engine as any);
       return res.json(data);
@@ -464,7 +410,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     const valid = ['mariadb', 'mysql', 'postgresql'];
     if (!engine || !valid.includes(engine)) {
       return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
@@ -483,7 +428,6 @@ export class DatabaseController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
     const valid = ['mariadb', 'mysql', 'postgresql'];
     if (!engine || !valid.includes(engine)) {
       return res.status(400).json({ success: false, error: `Invalid engine. Use one of: ${valid.join(', ')}` });
@@ -502,7 +446,6 @@ export class DatabaseController {
 
   @Get('connection-info')
   async getConnectionInfo(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.getConnectionInfo();
       return res.json({ success: true, ...data });
@@ -517,12 +460,10 @@ export class DatabaseController {
 
   @Post('tables/repair')
   async repairTable(
-    @Body() body: { database: string; table: string },
+    @Body() body: TableOperationDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
     try {
       const data = await this.db.repairTable(body.database, body.table);
       return res.json(data);
@@ -533,12 +474,10 @@ export class DatabaseController {
 
   @Post('tables/optimize')
   async optimizeTable(
-    @Body() body: { database: string; table: string },
+    @Body() body: TableOperationDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
     try {
       const data = await this.db.optimizeTable(body.database, body.table);
       return res.json(data);
@@ -549,12 +488,10 @@ export class DatabaseController {
 
   @Post('tables/check')
   async checkTable(
-    @Body() body: { database: string; table: string },
+    @Body() body: TableOperationDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.database || !body.table) return res.status(400).json({ success: false, error: 'database and table required' });
     try {
       const data = await this.db.checkTable(body.database, body.table);
       return res.json(data);
@@ -565,7 +502,6 @@ export class DatabaseController {
 
   @Get('remote-access')
   async getRemoteAccess(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const data = await this.db.getRemoteAccessStatus();
       return res.json({ success: true, ...data });
@@ -576,14 +512,10 @@ export class DatabaseController {
 
   @Post('remote-access')
   async setRemoteAccess(
-    @Body() body: { engine: 'mysql' | 'postgresql'; enabled: boolean },
+    @Body() body: SetRemoteAccessDto,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (!this.ensureAuth(req, res)) return;
-    if (!body.engine || body.enabled === undefined) {
-      return res.status(400).json({ success: false, error: 'engine and enabled required' });
-    }
     try {
       const data = await this.db.setRemoteAccess(body.engine, body.enabled);
       return res.json(data);

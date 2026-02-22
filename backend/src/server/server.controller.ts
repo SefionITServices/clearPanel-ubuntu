@@ -6,6 +6,7 @@ import { ServerSettingsService } from './server-settings.service';
 import { DnsService } from '../dns/dns.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { SetHostnameDto, ConfigureNameserversDto } from './dto/server.dto';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +32,7 @@ export class ServerController {
   ) {}
 
   @Get('nameservers')
+  @UseGuards(AuthGuard)
   async getNameservers() {
     const settings = await this.serverSettingsService.getSettings();
     const info = settings.primaryDomain
@@ -60,7 +62,7 @@ export class ServerController {
   /** POST /api/server/hostname — change hostname */
   @Post('hostname')
   @UseGuards(AuthGuard)
-  async setHostname(@Body() body: { hostname: string }) {
+  async setHostname(@Body() body: SetHostnameDto) {
     const hostname = body.hostname?.trim().toLowerCase();
     if (!hostname) throw new BadRequestException('hostname is required');
     if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(hostname)) {
@@ -107,7 +109,8 @@ export class ServerController {
   }
 
   @Post('nameservers')
-  async configureNameservers(@Body() body: NameserverRequest) {
+  @UseGuards(AuthGuard)
+  async configureNameservers(@Body() body: ConfigureNameserversDto) {
     const logs: AutomationLog[] = [];
     const domain = this.normalizeDomain(body.primaryDomain);
     if (!domain) {

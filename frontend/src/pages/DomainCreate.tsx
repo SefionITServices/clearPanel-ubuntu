@@ -38,6 +38,8 @@ import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRig
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useAuth } from '../auth/AuthContext';
+import { domainsApi } from '../api/domains';
+import { serverApi } from '../api/server';
 
 // Backend defaults to ~/public_html/{domain} if no path provided.
 // We dynamically discover the primary domain to offer an accurate shared-path option.
@@ -83,11 +85,7 @@ export default function DomainCreatePage() {
     let cancelled = false;
     const loadDomains = async () => {
       try {
-        const response = await fetch('/api/domains');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch domains (${response.status})`);
-        }
-        const data = await response.json();
+        const data = await domainsApi.list();
         if (!cancelled && Array.isArray(data) && data.length > 0) {
           const domainList = data as DomainInfo[];
           setAllDomains(domainList);
@@ -122,15 +120,12 @@ export default function DomainCreatePage() {
   useEffect(() => {
     const loadServerSettings = async () => {
       try {
-        const res = await fetch('/api/server/nameservers');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.settings?.nameservers?.length) {
-            setVpsNameservers(data.settings.nameservers);
-          }
-          if (data.settings?.serverIp) {
-            setServerIp(data.settings.serverIp);
-          }
+        const data = await serverApi.getNameservers();
+        if (data.settings?.nameservers?.length) {
+          setVpsNameservers(data.settings.nameservers);
+        }
+        if (data.settings?.serverIp) {
+          setServerIp(data.settings.serverIp);
         }
       } catch (err) {
         console.error('Failed to load server settings:', err);

@@ -52,6 +52,7 @@ import ImportExportIcon from '@mui/icons-material/ImportExport';
 import EmailIcon from '@mui/icons-material/Email';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { domainsApi } from '../api/domains';
 
 export default function DomainsListView() {
   const navigate = useNavigate();
@@ -82,7 +83,7 @@ export default function DomainsListView() {
   const loadDomains = async () => {
     setLoading(true);
     try {
-      const data = await fetch('/api/domains').then(r => r.json());
+      const data = await domainsApi.list();
       const mapped = data.map((d: any) => ({
         ...d,
         id: d.id,
@@ -108,15 +109,11 @@ export default function DomainsListView() {
     if (!target) return;
     setDeletingId(target.id);
     try {
-      const response = await fetch(`/api/domains/${target.id}`, { method: 'DELETE' });
-      if (response.ok) {
-        await loadDomains();
-        setSnack({ open: true, message: `Domain "${target.name}" deleted`, severity: 'success' });
-      } else {
-        setSnack({ open: true, message: 'Failed to delete domain', severity: 'error' });
-      }
+      await domainsApi.delete(target.id);
+      await loadDomains();
+      setSnack({ open: true, message: `Domain "${target.name}" deleted`, severity: 'success' });
     } catch {
-      setSnack({ open: true, message: 'Error deleting domain', severity: 'error' });
+      setSnack({ open: true, message: 'Failed to delete domain', severity: 'error' });
     } finally {
       setDeletingId(null);
       setConfirmOpen(false);
@@ -151,8 +148,7 @@ export default function DomainsListView() {
   const loadVhostConfig = async (domain: any) => {
     setVhostLoading(true);
     try {
-      const res = await fetch(`/api/domains/${domain.id}/vhost`);
-      const data = await res.json();
+      const data = await domainsApi.getVhost(domain.id);
       if (data.success) {
         setVhostConfig(data.config || '');
         setVhostPath(data.path || '');
@@ -173,12 +169,7 @@ export default function DomainsListView() {
     if (!editDomain) return;
     setVhostSaving(true);
     try {
-      const res = await fetch(`/api/domains/${editDomain.id}/vhost`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: vhostConfig }),
-      });
-      const data = await res.json();
+      const data = await domainsApi.saveVhost(editDomain.id, vhostConfig);
       if (data.success) {
         setSnack({ open: true, message: data.message || 'Virtual host updated', severity: 'success' });
       } else {
@@ -199,23 +190,14 @@ export default function DomainsListView() {
         .split(/\r?\n|,/)
         .map(s => s.trim())
         .filter(Boolean);
-      const response = await fetch(`/api/domains/${editDomain.id}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folderPath: editFolderPath,
-          nameservers: ns,
-        }),
+      await domainsApi.updateSettings(editDomain.id, {
+        folderPath: editFolderPath,
+        nameservers: ns,
       });
-      if (response.ok) {
-        setSnack({ open: true, message: `Domain "${editDomain.name}" updated`, severity: 'success' });
-        setEditOpen(false);
-        setEditDomain(null);
-        await loadDomains();
-      } else {
-        const txt = await response.text();
-        setSnack({ open: true, message: `Failed to update: ${txt}`, severity: 'error' });
-      }
+      setSnack({ open: true, message: `Domain "${editDomain.name}" updated`, severity: 'success' });
+      setEditOpen(false);
+      setEditDomain(null);
+      await loadDomains();
     } catch (e: any) {
       setSnack({ open: true, message: e.message || 'Error updating domain', severity: 'error' });
     } finally {

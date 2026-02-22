@@ -25,6 +25,7 @@ import {
   LinearProgress,
 } from '@mui/material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { appStoreApi } from '../api/app-store';
 import SearchIcon from '@mui/icons-material/Search';
 import StorageIcon from '@mui/icons-material/Storage';
 import MemoryIcon from '@mui/icons-material/Memory';
@@ -117,8 +118,7 @@ export default function AppStorePage() {
 
   const fetchApps = async () => {
     try {
-      const res = await fetch('/api/app-store/apps');
-      const data = await res.json();
+      const data = await appStoreApi.listApps();
       if (data.success) setApps(data.apps);
     } catch {
       // silently fail
@@ -134,8 +134,7 @@ export default function AppStorePage() {
   const handleInstall = async (id: string) => {
     setInstalling(id);
     try {
-      const res = await fetch(`/api/app-store/install/${id}`, { method: 'POST' });
-      const data = await res.json();
+      const data = await appStoreApi.installApp(id);
       if (data.success) {
         setSnackbar({ open: true, message: `${apps.find((a) => a.id === id)?.name} installed successfully!`, severity: 'success' });
         await fetchApps();
@@ -152,8 +151,7 @@ export default function AppStorePage() {
   const handleUninstall = async (id: string) => {
     setUninstalling(id);
     try {
-      const res = await fetch(`/api/app-store/uninstall/${id}`, { method: 'DELETE' });
-      const data = await res.json();
+      const data = await appStoreApi.uninstallApp(id);
       if (data.success) {
         setSnackbar({ open: true, message: `${apps.find((a) => a.id === id)?.name} uninstalled`, severity: 'success' });
         await fetchApps();
@@ -175,8 +173,7 @@ export default function AppStorePage() {
     setDiagnoseOpen(true);
     setDiagnoseChecks([]);
     try {
-      const res = await fetch(`/api/app-store/diagnose/${appId}`);
-      const data = await res.json();
+      const data = await appStoreApi.diagnoseApp(appId);
       if (data.success) setDiagnoseChecks(data.checks);
     } catch {
       setDiagnoseChecks([{ name: 'API Error', status: 'error', detail: 'Could not reach the diagnose endpoint' }]);
@@ -188,8 +185,7 @@ export default function AppStorePage() {
   const handleFix = async () => {
     setFixing(true);
     try {
-      const res = await fetch('/api/app-store/reconfigure/phpmyadmin', { method: 'POST' });
-      const data = await res.json();
+      const data = await appStoreApi.reconfigure('phpmyadmin');
       if (data.success) {
         setSnackbar({ open: true, message: data.message || 'phpMyAdmin reconfigured', severity: 'success' });
         await handleDiagnose('phpmyadmin');

@@ -30,6 +30,9 @@ import {
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { domainsApi } from '../api/domains';
+import { sslApi } from '../api/ssl';
+import { serverApi } from '../api/server';
 
 interface StatCard {
   title: string;
@@ -60,12 +63,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     // Load domains count
-    fetch('/api/domains').then(r => r.json()).then(data => {
+    domainsApi.list().then(data => {
       setDomainCount(Array.isArray(data) ? data.length : 0);
     }).catch(() => {});
 
     // Load SSL certificates
-    fetch('/api/ssl/certificates').then(r => r.json()).then(data => {
+    sslApi.certificates().then(data => {
       setSslCount(Array.isArray(data) ? data.filter((c: any) => c.status === 'active').length : 0);
     }).catch(() => {});
 
@@ -81,7 +84,7 @@ export default function DashboardPage() {
     }).catch(() => {});
 
     // Load server info
-    fetch('/api/server/nameservers').then(r => r.json()).then(data => {
+    serverApi.getNameservers().then(data => {
       setServerInfo({
         primaryDomain: data.settings?.primaryDomain || '-',
         serverIp: data.settings?.serverIp || '-',
@@ -90,7 +93,7 @@ export default function DashboardPage() {
     }).catch(() => {});
 
     // Load hostname if not in settings
-    fetch('/api/server/hostname').then(r => r.json()).then(data => {
+    serverApi.getHostname().then(data => {
       setServerInfo(prev => ({ ...prev, hostname: prev.hostname || data.hostname || data.systemHostname }));
     }).catch(() => {});
   }, []);

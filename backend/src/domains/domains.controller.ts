@@ -1,11 +1,14 @@
-import { Body, Controller, Get, Post, Put, Delete, Param, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Delete, Param, Req, UseGuards } from '@nestjs/common';
 import { DomainsService } from './domains.service';
 import { DnsService } from '../dns/dns.service';
 import { WebServerService } from '../webserver/webserver.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
 import { ServerSettingsService } from '../server/server-settings.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { AddDomainDto, UpdateDomainPathDto, UpdateDomainSettingsDto, SaveVhostDto } from './dto/domain.dto';
 
 @Controller('domains')
+@UseGuards(AuthGuard)
 export class DomainsController {
   constructor(
     private readonly domainsService: DomainsService,
@@ -16,7 +19,7 @@ export class DomainsController {
   ) { }
 
   @Post()
-  async addDomain(@Body() body: { name: string; folderPath?: string; pathMode?: string; nameservers?: string[]; phpVersion?: string }, @Req() req: any) {
+  async addDomain(@Body() body: AddDomainDto, @Req() req: any) {
     const username = req.session.username;
     const { domain, logs, mailDomain, mailAutomationLogs } = await this.domainsService.addDomain(
       username,
@@ -79,7 +82,7 @@ export class DomainsController {
   }
 
   @Put(':id/vhost')
-  async saveVhostConfig(@Param('id') id: string, @Body() body: { config: string }) {
+  async saveVhostConfig(@Param('id') id: string, @Body() body: SaveVhostDto) {
     const domains = await this.domainsService.listDomains();
     const domain = domains.find(d => d.id === id);
     if (!domain) {
@@ -89,14 +92,14 @@ export class DomainsController {
   }
 
   @Put(':id/path')
-  async updateDomainPath(@Param('id') id: string, @Body() body: { folderPath: string }) {
+  async updateDomainPath(@Param('id') id: string, @Body() body: UpdateDomainPathDto) {
     return this.domainsService.updateDomainPath(id, body.folderPath);
   }
 
   @Put(':id/settings')
   async updateDomain(
     @Param('id') id: string,
-    @Body() body: { folderPath?: string; nameservers?: string[]; phpVersion?: string },
+    @Body() body: UpdateDomainSettingsDto,
   ) {
     const result = await this.domainsService.updateDomain(id, body);
     if (!result) {

@@ -26,20 +26,21 @@ ufw allow 53/udp
 ufw reload
 
 # Enable and start BIND9
-systemctl enable bind9
-systemctl start bind9
+# Use 'named' service name to avoid alias issues
+systemctl enable named
+systemctl start named
 
 # Verify installation
-if systemctl is-active --quiet bind9; then
+if systemctl is-active --quiet named; then
     echo "✅ BIND9 installed and running successfully!"
     echo ""
     echo "You can now create DNS zones through the clearPanel interface."
     echo ""
-    echo "Check status: sudo systemctl status bind9"
-    echo "View logs: sudo journalctl -u bind9 -f"
+    echo "Check status: sudo systemctl status named"
+    echo "View logs: sudo journalctl -u named -f"
 else
     echo "❌ BIND9 installation failed. Check logs:"
-    journalctl -u bind9 -n 50 --no-pager
+    journalctl -u named -n 50 --no-pager
     exit 1
 fi
 

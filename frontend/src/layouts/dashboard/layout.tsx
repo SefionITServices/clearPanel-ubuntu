@@ -39,6 +39,7 @@ import {
   Email as EmailIcon,
   Article as LogsIcon,
   Star as StarIcon,
+  Cloud as CloudIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -63,7 +64,30 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: '',
     items: [
       { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-      { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
+    ],
+  },
+  {
+    title: 'Hosting',
+    items: [
+      { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
+      { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
+      { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
+      { title: 'Web Server', path: '/webserver', icon: <CloudIcon /> },
+      { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
+      { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
+    ],
+  },
+  {
+    title: 'Email',
+    items: [
+      { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
+    ],
+  },
+  {
+    title: 'Software',
+    items: [
+      { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
+      { title: 'App Store', path: '/app-store', icon: <BuildIcon /> },
     ],
   },
   {
@@ -197,7 +221,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             )}
             <List disablePadding>
               {section.items.map((item) => {
-                const isActive = location.pathname === item.path;
+                const isActive = location.pathname === item.path
+                  || (item.path !== '/dashboard' && location.pathname.startsWith(item.path + '/'))
+                  || (item.path === '/domains' && (location.pathname.startsWith('/domain-create') || location.pathname.startsWith('/nameserver-setup')))
+                  || (item.path === '/mail-domains' && (location.pathname.startsWith('/email-accounts') || location.pathname.startsWith('/forwarders') || location.pathname.startsWith('/email-filters')));
                 return (
                   <ListItem key={item.title} disablePadding sx={{ mb: 0.25 }}>
                     <ListItemButton

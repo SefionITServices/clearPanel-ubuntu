@@ -1,25 +1,18 @@
-import { Controller, Get, Post, Query, Body, Req, Res, HttpStatus, UseInterceptors } from '@nestjs/common';
+﻿import { Controller, Get, Post, Query, Body, Req, Res, HttpStatus, UseInterceptors, UseGuards } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { FilesService } from './files.service';
+import { AuthGuard } from '../auth/auth.guard';
 import multer from 'multer';
 import path from 'path';
 
 @Controller('files')
+@UseGuards(AuthGuard)
 export class FilesController {
   constructor(private readonly files: FilesService) { }
 
-  private ensureAuth(req: Request, res: Response) {
-    if (!(req.session as any)?.isAuthenticated) {
-      res.status(HttpStatus.UNAUTHORIZED).json({ error: 'Unauthorized' });
-      return false;
-    }
-    return true;
-  }
-
   @Get('list')
   async list(@Query('path') path: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const username = (req.session as any).username;
       const data = await this.files.list(username, path || '');
@@ -31,7 +24,6 @@ export class FilesController {
 
   @Post('mkdir')
   async mkdir(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     try {
       const username = (req.session as any).username;
       const data = await this.files.mkdir(username, body.path || '', body.name);
@@ -47,7 +39,6 @@ export class FilesController {
     limits: { fileSize: Number(process.env.MAX_FILE_SIZE || 104857600) },
   }))
   async upload(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const dest: string = body.path || '';
     const files: Express.Multer.File[] = (req as any).files || [];
     if (!Array.isArray(files) || files.length === 0) {
@@ -69,7 +60,6 @@ export class FilesController {
 
   @Get('download')
   async download(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
       const username = (req.session as any).username;
@@ -85,7 +75,6 @@ export class FilesController {
 
   @Post('archive')
   async archive(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const paths: string[] = body.paths || [];
     const name: string = body.name || 'archive.zip';
     if (!Array.isArray(paths) || paths.length === 0) {
@@ -109,7 +98,6 @@ export class FilesController {
   }
   @Post('delete')
   async delete(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const targets: string[] = body.paths || [];
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({ success: false, error: 'paths array required' });
@@ -129,7 +117,6 @@ export class FilesController {
 
   @Post('rename')
   async rename(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.path || !body.newName) {
       return res.status(400).json({ success: false, error: 'path and newName required' });
     }
@@ -144,7 +131,6 @@ export class FilesController {
 
   @Post('move')
   async move(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const targets: string[] = body.paths || [];
     const dest: string = body.dest;
     if (!Array.isArray(targets) || targets.length === 0 || !dest) {
@@ -161,7 +147,6 @@ export class FilesController {
 
   @Post('copy')
   async copy(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const sources: string[] = body.sources || [];
     const destination: string = body.destination;
     if (!Array.isArray(sources) || sources.length === 0 || !destination) {
@@ -178,7 +163,6 @@ export class FilesController {
 
   @Post('chmod')
   async chmod(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.path || !body.mode) {
       return res.status(400).json({ success: false, error: 'path and mode required' });
     }
@@ -193,7 +177,6 @@ export class FilesController {
 
   @Post('chown')
   async chown(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.path || !body.owner) {
       return res.status(400).json({ success: false, error: 'path and owner required' });
     }
@@ -208,7 +191,6 @@ export class FilesController {
 
   @Post('symlink')
   async symlink(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.target || !body.linkPath) {
       return res.status(400).json({ success: false, error: 'target and linkPath required' });
     }
@@ -223,7 +205,6 @@ export class FilesController {
 
   @Get('readlink')
   async readlink(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
       const username = (req.session as any).username;
@@ -236,7 +217,6 @@ export class FilesController {
 
   @Get('read')
   async read(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
       const username = (req.session as any).username;
@@ -249,7 +229,6 @@ export class FilesController {
 
   @Get('raw')
   async raw(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
       const username = (req.session as any).username;
@@ -262,7 +241,6 @@ export class FilesController {
 
   @Get('disk-usage')
   async getDiskUsage(@Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const username = (req.session as any).username;
     const usage = await this.files.getDiskUsage(username);
     return res.json({ success: true, ...usage });
@@ -270,7 +248,6 @@ export class FilesController {
 
   @Post('write')
   async write(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.path || body.content === undefined) {
       return res.status(400).json({ success: false, error: 'path and content required' });
     }
@@ -285,7 +262,6 @@ export class FilesController {
 
   @Post('create')
   async create(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.path) {
       return res.status(400).json({ success: false, error: 'path required' });
     }
@@ -300,7 +276,6 @@ export class FilesController {
 
   @Get('info')
   async info(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!p) return res.status(400).json({ success: false, error: 'path required' });
     try {
       const username = (req.session as any).username;
@@ -324,7 +299,6 @@ export class FilesController {
 
   @Post('extract')
   async extract(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!body.archive || !body.destination) {
       return res.status(400).json({ success: false, error: 'archive and destination required' });
     }
@@ -339,7 +313,6 @@ export class FilesController {
 
   @Get('search')
   async search(@Query('path') p: string, @Query('query') query: string, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     if (!query) return res.status(400).json({ success: false, error: 'query required' });
     try {
       const username = (req.session as any).username;
@@ -352,7 +325,6 @@ export class FilesController {
 
   @Post('compress')
   async compress(@Body() body: any, @Req() req: Request, @Res() res: Response) {
-    if (!this.ensureAuth(req, res)) return;
     const sources: string[] = body.sources || [];
     const destination: string = body.destination;
     const format: string = body.format || 'zip';

@@ -384,7 +384,113 @@ zone "${domain}" {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    const seq = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+    // Use HHMMSS to derive a 2-digit sequence so serials always increment
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+    const ss = now.getSeconds();
+    const seq = String(Math.floor((hh * 3600 + mm * 60 + ss) / 864)).padStart(2, '0'); // 0-99 mapped from seconds-of-day
     return `${year}${month}${day}${seq}`;
+  }
+
+  /**
+   * Sync a BIND9 zone file from the canonical DNS records stored in dns.json.
+   * Called whenever records are added, updated, or deleted via the DNS module.
+   */
+  async syncZoneFromRecords(
+    domain: string,
+    records: Array<{ type: string; name: string; value: string; ttl: number; priority?: number }>,
+  ): Promise<{ success: boolean; message: string }> {
+    const status = await this.getStatus();
+    if (!status.installed) {
+      return { success: false, message: 'BIND9 is not installed — zone file not synced' };
+    }
+
+    const zoneFile = path.join(this.zonesPath, `db.${domain}`);
+
+    // Check if zone file exists — only sync if BIND9 is managing this domain
+    try {
+      await fs.access(zoneFile);
+    } catch {
+      return { success: false, message: `No BIND9 zone file for ${domain} — skipping sync` };
+    }
+
+    const serial = this.generateSerial();
+
+    // Extract NS records and determine SOA primary
+    const nsRecords = records.filter(r => r.type === 'NS' && r.name === '@');
+    const soaNs = nsRecords.length > 0
+      ? (nsRecords[0].value.endsWith('.') ? nsRecords[0].value : `${nsRecords[0].value}.`)
+      : `ns1.${domain}.`;
+
+    // Build zone content from records
+    let zoneContent = `; Zone file for ${domain} — auto-synced from clearPanel
+; Last synced: ${new Date().toISOString()}
+$TTL 86400
+@   IN  SOA ${soaNs} admin.${domain}. (
+        ${serial}   ; Serial
+        3600        ; Refresh
+        1800        ; Retry
+        604800      ; Expire
+        86400 )     ; Minimum TTL
+
+`;
+
+    for (const rec of records) {
+      const name = rec.name === '@' ? '@' : rec.name;
+      const padName = name.padEnd(8);
+      const ttl = rec.ttl || 3600;
+
+      switch (rec.type) {
+        case 'A':
+        case 'AAAA':
+          zoneContent += `${padName} ${ttl}  IN  ${rec.type.padEnd(6)}  ${rec.value}\n`;
+          break;
+        case 'CNAME': {
+          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          zoneContent += `${padName} ${ttl}  IN  CNAME   ${val}\n`;
+          break;
+        }
+        case 'MX': {
+          const priority = rec.priority ?? 10;
+          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          zoneContent += `${padName} ${ttl}  IN  MX      ${priority} ${val}\n`;
+          break;
+        }
+        case 'TXT':
+          zoneContent += `${padName} ${ttl}  IN  TXT     "${rec.value.replace(/"/g, '\\"')}"\n`;
+          break;
+        case 'NS': {
+          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          zoneContent += `${padName} ${ttl}  IN  NS      ${val}\n`;
+          break;
+        }
+        case 'SRV': {
+          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          zoneContent += `${padName} ${ttl}  IN  SRV     ${rec.priority ?? 0} ${val}\n`;
+          break;
+        }
+        case 'CAA':
+          zoneContent += `${padName} ${ttl}  IN  CAA     ${rec.value}\n`;
+          break;
+        default:
+          zoneContent += `; Unsupported record type: ${rec.type} ${rec.name} ${rec.value}\n`;
+      }
+    }
+
+    try {
+      await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+
+      // Try to set ownership
+      try {
+        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
+      } catch { /* ignore */ }
+
+      await this.reload();
+      this.logger.log(`BIND9 zone synced for ${domain} (${records.length} records)`);
+      return { success: true, message: `Zone file synced for ${domain}` };
+    } catch (error: any) {
+      this.logger.error(`Failed to sync BIND9 zone for ${domain}`, error);
+      return { success: false, message: `Failed to sync zone: ${error?.message || 'Unknown error'}` };
+    }
   }
 }

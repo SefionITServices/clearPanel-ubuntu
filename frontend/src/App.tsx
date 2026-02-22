@@ -26,6 +26,7 @@ const ForwardersPage = lazy(() => import('./pages/Forwarders'));
 const EmailFiltersPage = lazy(() => import('./pages/EmailFilters'));
 const LogsPage = lazy(() => import('./pages/Logs'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
+const WebserverPage = lazy(() => import('./pages/Webserver'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -200,6 +201,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/webserver"
+              element={
+                <ProtectedRoute>
+                  <WebserverPage />
                 </ProtectedRoute>
               }
             />

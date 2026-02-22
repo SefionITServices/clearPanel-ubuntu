@@ -40,6 +40,8 @@ import {
   Security as SecurityIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { sslApi } from '../api/ssl';
+import { domainsApi } from '../api/domains';
 
 interface SslCertificate {
   domain: string;
@@ -93,9 +95,9 @@ export default function SslPage() {
     setError(null);
     try {
       const [statusRes, certsRes, domainsRes] = await Promise.all([
-        api('/api/ssl/status'),
-        api('/api/ssl/certificates'),
-        api('/api/domains'),
+        sslApi.status(),
+        sslApi.certificates(),
+        domainsApi.list(),
       ]);
       setStatus(statusRes);
       setCertificates(Array.isArray(certsRes) ? certsRes : []);
@@ -114,7 +116,7 @@ export default function SslPage() {
   const handleInstallCertbot = async () => {
     setInstalling('certbot');
     try {
-      const res = await api('/api/ssl/install-certbot', { method: 'POST' });
+      const res = await sslApi.installCertbot();
       if (res.success) {
         await refresh();
       } else {

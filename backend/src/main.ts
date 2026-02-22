@@ -1,21 +1,44 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import session from 'express-session';
 import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { randomBytes } from 'crypto';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
+  // Enable global DTO validation with class-validator
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,           // Strip properties not in DTO
+    forbidNonWhitelisted: false, // Don't error on extra props (backward compat)
+    transform: true,           // Auto-transform payloads to DTO instances
+    transformOptions: {
+      enableImplicitConversion: true,
+    },
+  }));
+
   // When behind Cloudflare/NGINX/etc., trust the proxy to get correct protocol/IP
   app.set('trust proxy', 1);
 
+  // Auto-generate a session secret if none is configured (persists for this process lifetime)
+  let sessionSecret = config.get<string>('SESSION_SECRET');
+  if (!sessionSecret || sessionSecret === 'change-this-to-a-random-secure-string') {
+    sessionSecret = randomBytes(32).toString('hex');
+    Logger.warn(
+      'SESSION_SECRET is not configured — generated an ephemeral secret. '
+      + 'Sessions will not survive server restarts. Set SESSION_SECRET in .env for persistence.',
+      'Bootstrap',
+    );
+  }
+
   app.use(session({
-    secret: config.get<string>('SESSION_SECRET') || 'change-me',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: { 

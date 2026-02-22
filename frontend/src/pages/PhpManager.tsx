@@ -55,24 +55,7 @@ interface LogEntry {
 
 // ─── API ──────────────────────────────────────────────────────────────
 
-const phpAPI = {
-  versions: () => fetch('/api/php/versions').then(r => r.json()),
-  install: (v: string) => fetch(`/api/php/versions/${v}/install`, { method: 'POST' }).then(r => r.json()),
-  uninstall: (v: string) => fetch(`/api/php/versions/${v}`, { method: 'DELETE' }).then(r => r.json()),
-  setDefault: (v: string) => fetch(`/api/php/versions/${v}/default`, { method: 'POST' }).then(r => r.json()),
-  fpmAction: (v: string, action: string) => fetch(`/api/php/versions/${v}/fpm/${action}`, { method: 'POST' }).then(r => r.json()),
-  getConfig: (v: string) => fetch(`/api/php/config/${v}`).then(r => r.json()),
-  setConfig: (v: string, directives: Record<string, string>) =>
-    fetch(`/api/php/config/${v}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directives }),
-    }).then(r => r.json()),
-  extensions: (v: string) => fetch(`/api/php/extensions/${v}`).then(r => r.json()),
-  installExt: (v: string, ext: string) => fetch(`/api/php/extensions/${v}/${ext}`, { method: 'POST' }).then(r => r.json()),
-  removeExt: (v: string, ext: string) => fetch(`/api/php/extensions/${v}/${ext}`, { method: 'DELETE' }).then(r => r.json()),
-  logs: (v: string, lines = 100) => fetch(`/api/php/logs/${v}?lines=${lines}`).then(r => r.json()),
-};
+import { phpApi as phpAPI } from '../api/php';
 
 // ─── Color helpers ────────────────────────────────────────────────────
 

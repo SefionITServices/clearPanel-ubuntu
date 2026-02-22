@@ -41,6 +41,8 @@ import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { appStoreApi } from '../api/app-store';
+import { serverApi } from '../api/server';
 
 // Tool card matching the design reference - centered icon with hover lift
 function ToolCard({
@@ -140,7 +142,7 @@ export default function ToolsPage() {
   const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
-    fetch('/api/server/nameservers').then(r => r.json()).then(data => {
+    serverApi.getNameservers().then(data => {
       setServerInfo({
         primaryDomain: data.settings?.primaryDomain || '-',
         serverIp: data.settings?.serverIp || '-',
@@ -150,8 +152,7 @@ export default function ToolsPage() {
       if (data.used && data.total) setDiskUsage(`${formatBytes(data.used)} / ${formatBytes(data.total)}`);
       else if (data.used) setDiskUsage(formatBytes(data.used));
     }).catch(() => setDiskUsage('-'));
-    fetch('/api/app-store/apps')
-      .then(r => r.json())
+    appStoreApi.listApps()
       .then(data => {
         if (Array.isArray(data.apps)) {
           const php = data.apps.find((a: any) => a.id === 'phpmyadmin');

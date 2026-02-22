@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Param, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Param, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { DnsServerService } from './dns-server.service';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('dns-server')
+@UseGuards(AuthGuard)
 export class DnsServerController {
   constructor(private readonly dnsServerService: DnsServerService) {}
 

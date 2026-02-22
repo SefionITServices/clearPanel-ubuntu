@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Box, Paper, Typography, CircularProgress, IconButton } from '@mui/material';
 import { DashboardLayout } from '../../layouts/dashboard/layout';
+import { terminalApi } from '../../api/terminal';
 import ClearIcon from '@mui/icons-material/Clear';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 
@@ -17,8 +18,7 @@ export default function TerminalPage() {
 
   const loadInfo = async () => {
     try {
-      const res = await fetch('/api/terminal/info', { credentials: 'include' });
-      const data = await res.json();
+      const data = await terminalApi.getInfo();
       setCwd(data?.cwd || '~');
       setUserHost(`${data?.user || 'server'}@${data?.host || 'localhost'}`);
     } catch {}
@@ -41,13 +41,7 @@ export default function TerminalPage() {
     const prompt = `${userHost || 'server@localhost'}:${cwd || '~'}$`;
     pushHistory(`${prompt} ${c}`);
     try {
-      const res = await fetch('/api/terminal/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: c.toLowerCase() === 'dir' ? 'ls -la' : c }),
-        credentials: 'include',
-      });
-      const data = await res.json();
+      const data = await terminalApi.exec(c.toLowerCase() === 'dir' ? 'ls -la' : c);
       if (data.stdout) data.stdout.split(/\n/).forEach((l: string) => l && pushHistory(l));
       if (data.stderr) data.stderr.split(/\n/).forEach((l: string) => l && pushHistory(l, true));
       if (data.cwd) setCwd(data.cwd);

@@ -197,10 +197,42 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-available
 chown -R "$SERVICE_USER":"$SERVICE_USER" /etc/nginx/sites-enabled
 
 # Allow clearpanel user to manage nginx without password (used by domain automation)
-# Single unified sudoers entry for all panel operations
+# Scoped sudoers entry — only specific commands the panel needs
 cat > /etc/sudoers.d/clearpanel << 'EOF'
-# ClearPanel — allow clearpanel user to manage system services, packages, etc.
-clearpanel ALL=(ALL) NOPASSWD: ALL
+# ClearPanel — scoped sudo permissions
+# Package management
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt, /usr/bin/apt-cache, /usr/bin/dpkg, /usr/bin/add-apt-repository
+
+# Service management
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/journalctl
+
+# Web server
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx
+
+# SSL / Certbot
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot, /snap/bin/certbot
+
+# DNS (BIND9)
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mkdir, /usr/bin/chown, /usr/bin/chmod
+
+# Database engines
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/mysql, /usr/bin/mysqladmin, /usr/bin/mysqldump
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/bin/pg_dump
+clearpanel ALL=(root) NOPASSWD: /usr/bin/sudo -u postgres *
+
+# System configuration
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl, /usr/sbin/postconf
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tee, /usr/bin/sed, /usr/bin/cat, /usr/bin/grep, /usr/bin/tail, /usr/bin/find, /usr/bin/ls, /usr/bin/rm, /usr/bin/mv, /usr/bin/ln, /usr/bin/test, /usr/bin/echo, /usr/bin/bash, /usr/bin/curl, /usr/bin/ss
+
+# PHP management
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/update-alternatives, /usr/bin/php*
+
+# App store utilities
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/redis-cli, /usr/bin/fail2ban-client, /usr/bin/crontab, /usr/bin/python3
+clearpanel ALL=(ALL) NOPASSWD: /usr/pgadmin4/bin/setup-web.sh
+
+# User management
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd
 EOF
 chmod 440 /etc/sudoers.d/clearpanel
 

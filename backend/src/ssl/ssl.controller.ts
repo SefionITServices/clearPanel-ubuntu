@@ -7,10 +7,14 @@ import {
   Body,
   HttpException,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { SslService } from './ssl.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { InstallCertificateDto, RenewCertificateDto } from './dto/ssl.dto';
 
 @Controller('ssl')
+@UseGuards(AuthGuard)
 export class SslController {
   constructor(private readonly sslService: SslService) {}
 
@@ -35,14 +39,8 @@ export class SslController {
   /** POST /api/ssl/install — install SSL for a domain */
   @Post('install')
   async installCertificate(
-    @Body() body: { domain: string; email: string; includeWww?: boolean },
+    @Body() body: InstallCertificateDto,
   ) {
-    if (!body.domain || !body.email) {
-      throw new HttpException(
-        'domain and email are required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
     return this.sslService.installCertificate(
       body.domain,
       body.email,
@@ -52,7 +50,7 @@ export class SslController {
 
   /** POST /api/ssl/renew — renew a specific certificate or all */
   @Post('renew')
-  async renewCertificate(@Body() body: { domain?: string }) {
+  async renewCertificate(@Body() body: RenewCertificateDto) {
     return this.sslService.renewCertificate(body.domain);
   }
 

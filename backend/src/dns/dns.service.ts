@@ -1,12 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getDataFilePath } from '../common/paths';
+import { DnsServerService } from '../dns-server/dns-server.service';
 
 export interface DnsRecord {
   id: string;
-  type: 'A' | 'CNAME' | 'MX' | 'TXT' | 'NS';
+  type: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'NS' | 'SRV' | 'CAA';
   name: string; // '@', 'www', etc.
   value: string;
   ttl: number;
@@ -20,9 +21,13 @@ export interface DnsZone {
 
 @Injectable()
 export class DnsService {
+  private readonly logger = new Logger(DnsService.name);
+
   /** In-memory cache for dns.json */
   private zonesCache: { data: DnsZone[]; ts: number } | null = null;
   private static readonly CACHE_TTL = 5000; // 5s
+
+  constructor(private readonly dnsServerService: DnsServerService) {}
 
   private async readZones(): Promise<DnsZone[]> {
     const now = Date.now();
@@ -197,6 +202,7 @@ export class DnsService {
     const newRecord: DnsRecord = { id: randomUUID(), ...record };
     zone.records.push(newRecord);
     await this.writeZones(zones);
+    await this.syncToBind9(domain, zone.records);
     return newRecord;
   }
 
@@ -208,6 +214,7 @@ export class DnsService {
     if (!rec) return null;
     Object.assign(rec, patch);
     await this.writeZones(zones);
+    await this.syncToBind9(domain, zone.records);
     return rec;
   }
 
@@ -218,6 +225,9 @@ export class DnsService {
     const before = zone.records.length;
     zone.records = zone.records.filter(r => r.id !== id);
     await this.writeZones(zones);
+    if (zone.records.length !== before) {
+      await this.syncToBind9(domain, zone.records);
+    }
     return zone.records.length !== before;
   }
 
@@ -227,5 +237,22 @@ export class DnsService {
     const filtered = zones.filter(z => z.domain !== domain);
     await this.writeZones(filtered);
     return filtered.length !== before;
+  }
+
+  /**
+   * Sync the current DNS records for a domain to the BIND9 zone file.
+   * Non-blocking — failures are logged but don't prevent the JSON update.
+   */
+  private async syncToBind9(domain: string, records: DnsRecord[]): Promise<void> {
+    try {
+      const result = await this.dnsServerService.syncZoneFromRecords(domain, records);
+      if (result.success) {
+        this.logger.log(`BIND9 sync OK for ${domain}`);
+      } else {
+        this.logger.warn(`BIND9 sync skipped for ${domain}: ${result.message}`);
+      }
+    } catch (err: any) {
+      this.logger.error(`BIND9 sync failed for ${domain}: ${err.message}`);
+    }
   }
 }

@@ -28,6 +28,7 @@ import {
     Person,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { setupApi } from '../api/setup';
 
 interface SetupConfig {
     adminUsername: string;
@@ -77,8 +78,7 @@ export default function SetupPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/setup/status');
-                const data = await res.json();
+                const data = await setupApi.getStatus();
                 if (data.completed) {
                     navigate('/login', { replace: true });
                     return;
@@ -108,11 +108,8 @@ export default function SetupPage() {
 
         // Method 1: Ask backend to detect public IP
         try {
-            const res = await fetch('/api/setup/detect-ip');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.ip) detectedIp = data.ip;
-            }
+            const data = await setupApi.detectIp();
+            if (data.ip) detectedIp = data.ip;
         } catch {
             // Backend might not be ready yet
         }
@@ -204,14 +201,9 @@ export default function SetupPage() {
                 maxFileSize: config.maxFileSize,
             };
 
-            const res = await fetch('/api/setup/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const result = await res.json();
+            const result = await setupApi.complete(payload);
 
-            if (!res.ok || !result.success) throw new Error(result.message || 'Setup failed');
+            if (!result.success) throw new Error(result.message || 'Setup failed');
             setSuccess(true);
 
             // The server auto-restarts after setup; wait a moment then redirect to dashboard

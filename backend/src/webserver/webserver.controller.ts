@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { WebServerService } from './webserver.service';
 import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '../auth/auth.guard';
+import { CreateVhostDto } from './dto/webserver.dto';
 
 @Controller('webserver')
+@UseGuards(AuthGuard)
 export class WebServerController {
   constructor(
     private readonly webServerService: WebServerService,
@@ -20,7 +23,7 @@ export class WebServerController {
   }
 
   @Post('vhost/:domain')
-  async createVirtualHost(@Param('domain') domain: string, @Body() body: { documentRoot: string; phpVersion?: string }) {
+  async createVirtualHost(@Param('domain') domain: string, @Body() body: CreateVhostDto) {
     return this.webServerService.createVirtualHost(domain, body.documentRoot, body.phpVersion);
   }
 

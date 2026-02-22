@@ -5,6 +5,7 @@ uploads/
 .DS_Store
 backend/dist/
 data/
+backups/
 
 # Runtime data files (stored in /home/<username>/etc/clearpanel/ in production)
 backend/dns.json

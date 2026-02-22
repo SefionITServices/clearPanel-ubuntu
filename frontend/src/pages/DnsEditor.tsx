@@ -12,6 +12,8 @@ import DnsIcon from '@mui/icons-material/Dns';
 import WarningIcon from '@mui/icons-material/Warning';
 import InfoIcon from '@mui/icons-material/Info';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { dnsApi } from '../api/dns';
+import { domainsApi } from '../api/domains';
 
 interface DnsRecord { id: string; type: string; name: string; value: string; ttl: number; priority?: number; }
 interface Zone { domain: string; records: DnsRecord[]; }
@@ -58,12 +60,10 @@ export default function DnsEditorPage() {
 
   const loadZones = async () => {
     try {
-      const [zonesRes, domainsRes] = await Promise.all([
-        fetch('/api/dns/zones'),
-        fetch('/api/domains')
+      const [zonesData, domainsData] = await Promise.all([
+        dnsApi.listZones(),
+        domainsApi.list().catch(() => [])
       ]);
-      if (!zonesRes.ok) return;
-      const [zonesData, domainsData] = await Promise.all([zonesRes.json(), domainsRes.ok ? domainsRes.json() : Promise.resolve([])]);
       setDomainsList(domainsData || []);
       const domainNames: string[] = (domainsData || []).map((d: any) => d.name);
       const filtered = (zonesData || []).filter((z: any) => domainNames.includes(z.domain));
@@ -81,13 +81,13 @@ export default function DnsEditorPage() {
 
   useEffect(() => {
     if (selectedDomain) {
-      fetch(`/api/dns/zones/${selectedDomain}`).then(r => r.json()).then(setZone);
+      dnsApi.getZone(selectedDomain).then(setZone);
     }
   }, [selectedDomain]);
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/dns/zones/${selectedDomain}/records/${id}`, { method: 'DELETE' });
-    fetch(`/api/dns/zones/${selectedDomain}`).then(r => r.json()).then(setZone);
+    await dnsApi.deleteRecord(selectedDomain, id);
+    dnsApi.getZone(selectedDomain).then(setZone);
   };
 
   const markDirty = (id: string, patch: Partial<DnsRecord>) => {
@@ -99,22 +99,18 @@ export default function DnsEditorPage() {
     if (!dirty[id]) return;
     const patch = dirty[id];
     if (patch.ttl && (patch.ttl < 60 || patch.ttl > 86400)) { alert('TTL must be between 60 and 86400'); return; }
-    await fetch(`/api/dns/zones/${selectedDomain}/records/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch)
-    });
+    await dnsApi.updateRecord(selectedDomain, id, patch);
     setDirty(d => { const copy = { ...d }; delete copy[id]; return copy; });
-    fetch(`/api/dns/zones/${selectedDomain}`).then(r => r.json()).then(setZone);
+    dnsApi.getZone(selectedDomain).then(setZone);
   };
 
   const handleAdd = async () => {
     const payload: any = { type: form.type, name: form.name, value: form.value, ttl: form.ttl };
     if (form.type === 'MX' && form.priority) payload.priority = Number(form.priority);
-    await fetch(`/api/dns/zones/${selectedDomain}/records`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
+    await dnsApi.addRecord(selectedDomain, payload);
     setOpenAdd(false);
     setForm({ type: 'A', name: '', value: '', ttl: 14400, priority: '' });
-    fetch(`/api/dns/zones/${selectedDomain}`).then(r => r.json()).then(setZone);
+    dnsApi.getZone(selectedDomain).then(setZone);
   };
 
   const TAB_TYPES = ['All', 'A', 'MX', 'CNAME', 'TXT', 'NS'];
@@ -151,7 +147,7 @@ export default function DnsEditorPage() {
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}
-              onClick={() => selectedDomain && fetch(`/api/dns/zones/${selectedDomain}`).then(r => r.json()).then(setZone)}
+              onClick={() => selectedDomain && dnsApi.getZone(selectedDomain).then(setZone)}
               disabled={!selectedDomain}
             >
               Refresh

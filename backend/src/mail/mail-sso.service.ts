@@ -40,12 +40,18 @@ export class MailSsoService {
     private readonly mailService: MailService,
     private readonly serverSettings: ServerSettingsService,
   ) {
-    this.secret = this.config.get<string>('SSO_SECRET')
-      || this.config.get<string>('SESSION_SECRET')
-      || 'change-me-sso';
+    const configured = this.config.get<string>('SSO_SECRET')
+      || this.config.get<string>('SESSION_SECRET');
 
-    if (this.secret === 'change-me-sso') {
-      this.logger.warn('SSO_SECRET is not configured — using insecure fallback');
+    if (configured && configured !== 'change-this-to-a-random-secure-string') {
+      this.secret = configured;
+    } else {
+      // Generate an ephemeral secret so we never fall back to a well-known string
+      this.secret = randomBytes(32).toString('hex');
+      this.logger.warn(
+        'SSO_SECRET is not configured — generated an ephemeral secret. '
+        + 'SSO tokens will not survive server restarts. Set SSO_SECRET in .env for persistence.',
+      );
     }
   }
 

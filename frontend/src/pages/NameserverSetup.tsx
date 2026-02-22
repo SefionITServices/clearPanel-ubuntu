@@ -16,6 +16,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { serverApi } from '../api/server';
 
 interface ServerSettingsResponse {
   settings: ServerSettings;
@@ -72,11 +73,7 @@ export default function NameserverSetupPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/server/nameservers');
-      if (!response.ok) {
-        throw new Error(`Failed to load settings (${response.status})`);
-      }
-      const data: ServerSettingsResponse = await response.json();
+      const data: ServerSettingsResponse = await serverApi.getNameservers();
       setSettings(data.settings);
       setNameserverInfo(data.nameserverInfo);
       setAutomationLogs([]);
