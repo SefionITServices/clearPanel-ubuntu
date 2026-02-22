@@ -31,25 +31,18 @@ server {
     }
 
     # Roundcube webmail
-    location /roundcube {
+    location /roundcube/ {
         alias /usr/share/roundcube/;
         index index.php;
 
-        location ~ ^/roundcube/(.*\.php)$ {
-            alias /usr/share/roundcube/$1;
+        location ~ \.php$ {
             fastcgi_pass unix:/var/run/php/__PHP_FPM_SOCK__-fpm.sock;
             fastcgi_index index.php;
             include fastcgi_params;
             fastcgi_param SCRIPT_FILENAME $request_filename;
-            fastcgi_param PATH_INFO $fastcgi_path_info;
-        }
-
-        location ~ ^/roundcube/(.+\.(jpg|jpeg|gif|png|ico|svg|css|js|woff|woff2|ttf|eot|map))$ {
-            alias /usr/share/roundcube/$1;
-            expires 30d;
-            access_log off;
         }
     }
+    location = /roundcube { return 301 /roundcube/; }
 
     # Static files - served by nginx
     location / {
@@ -103,25 +96,18 @@ server {
 #     }
 #
 #     # Roundcube webmail
-#     location /roundcube {
+#     location /roundcube/ {
 #         alias /usr/share/roundcube/;
 #         index index.php;
 #
-#         location ~ ^/roundcube/(.*\.php)$ {
-#             alias /usr/share/roundcube/$1;
+#         location ~ \.php$ {
 #             fastcgi_pass unix:/var/run/php/__PHP_FPM_SOCK__-fpm.sock;
 #             fastcgi_index index.php;
 #             include fastcgi_params;
 #             fastcgi_param SCRIPT_FILENAME $request_filename;
-#             fastcgi_param PATH_INFO $fastcgi_path_info;
-#         }
-#
-#         location ~ ^/roundcube/(.+\.(jpg|jpeg|gif|png|ico|svg|css|js|woff|woff2|ttf|eot|map))$ {
-#             alias /usr/share/roundcube/$1;
-#             expires 30d;
-#             access_log off;
 #         }
 #     }
+#     location = /roundcube { return 301 /roundcube/; }
 #
 #     # Static files
 #     location / {
