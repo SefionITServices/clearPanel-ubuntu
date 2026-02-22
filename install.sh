@@ -375,7 +375,22 @@ systemctl enable "php${PHP_VER}-fpm" 2>/dev/null || true
 systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
 chown -R www-data:www-data /var/lib/roundcube 2>/dev/null || true
 chown -R www-data:www-data /var/log/roundcube 2>/dev/null || true
-echo -e "${GREEN}✓ Roundcube packages installed (nginx vhost created when domain is set up)${NC}"
+
+# Patch Nginx config with the correct PHP-FPM socket for Roundcube
+NGINX_CONF=""
+if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
+    NGINX_CONF="/etc/nginx/sites-available/clearpanel"
+elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
+    NGINX_CONF="/etc/nginx/conf.d/clearpanel.conf"
+fi
+if [ -n "$NGINX_CONF" ]; then
+    sed -i "s|__PHP_FPM_SOCK__|php${PHP_VER}|g" "$NGINX_CONF"
+    nginx -t > /dev/null 2>&1 && systemctl reload nginx 2>/dev/null || \
+        echo -e "${YELLOW}⚠ Nginx config test failed after Roundcube patch — run: sudo nginx -t${NC}"
+    echo -e "${GREEN}✓ Nginx Roundcube location configured (PHP $PHP_VER)${NC}"
+fi
+
+echo -e "${GREEN}✓ Roundcube packages installed${NC}"
 
 # ── Install Roundcube SSO Plugin ──────────────────────────────────
 echo -e "${YELLOW}🔐 Installing Roundcube SSO plugin...${NC}"

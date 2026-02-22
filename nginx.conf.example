@@ -30,6 +30,27 @@ server {
         send_timeout 600;
     }
 
+    # Roundcube webmail
+    location /roundcube {
+        alias /usr/share/roundcube/;
+        index index.php;
+
+        location ~ ^/roundcube/(.*\.php)$ {
+            alias /usr/share/roundcube/$1;
+            fastcgi_pass unix:/var/run/php/__PHP_FPM_SOCK__-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $request_filename;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+
+        location ~ ^/roundcube/(.+\.(jpg|jpeg|gif|png|ico|svg|css|js|woff|woff2|ttf|eot|map))$ {
+            alias /usr/share/roundcube/$1;
+            expires 30d;
+            access_log off;
+        }
+    }
+
     # Static files - served by nginx
     location / {
         try_files $uri $uri/ /index.html;
@@ -79,6 +100,27 @@ server {
 #         proxy_send_timeout 600;
 #         proxy_read_timeout 600;
 #         send_timeout 600;
+#     }
+#
+#     # Roundcube webmail
+#     location /roundcube {
+#         alias /usr/share/roundcube/;
+#         index index.php;
+#
+#         location ~ ^/roundcube/(.*\.php)$ {
+#             alias /usr/share/roundcube/$1;
+#             fastcgi_pass unix:/var/run/php/__PHP_FPM_SOCK__-fpm.sock;
+#             fastcgi_index index.php;
+#             include fastcgi_params;
+#             fastcgi_param SCRIPT_FILENAME $request_filename;
+#             fastcgi_param PATH_INFO $fastcgi_path_info;
+#         }
+#
+#         location ~ ^/roundcube/(.+\.(jpg|jpeg|gif|png|ico|svg|css|js|woff|woff2|ttf|eot|map))$ {
+#             alias /usr/share/roundcube/$1;
+#             expires 30d;
+#             access_log off;
+#         }
 #     }
 #
 #     # Static files
