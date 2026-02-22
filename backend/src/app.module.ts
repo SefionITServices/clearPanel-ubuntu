@@ -20,6 +20,12 @@ import { MailModule } from './mail/mail.module';
 import { LogsModule } from './logs/logs.module';
 import { SshKeysModule } from './ssh-keys/ssh-keys.module';
 import { LicenseModule } from './license/license.module';
+import { CronModule } from './cron/cron.module';
+import { FirewallModule } from './firewall/firewall.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
+import { BackupModule } from './backup/backup.module';
+import { TwoFactorModule } from './two-factor/two-factor.module';
+import { ProcessModule } from './process/process.module';
 
 @Module({
   imports: [
@@ -47,6 +53,12 @@ import { LicenseModule } from './license/license.module';
     LogsModule,
     SshKeysModule,
     LicenseModule,
+    CronModule,
+    FirewallModule,
+    MonitoringModule,
+    BackupModule,
+    TwoFactorModule,
+    ProcessModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -40,6 +40,12 @@ import {
   Article as LogsIcon,
   Star as StarIcon,
   Cloud as CloudIcon,
+  Schedule as ScheduleIcon,
+  Shield as ShieldIcon,
+  MonitorHeart as MonitorIcon,
+  Backup as BackupIcon,
+  Security as SecurityIcon,
+  Memory as MemoryIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -115,6 +121,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/app-store': { title: 'App Store', path: '/app-store', icon: <BuildIcon /> },
         '/settings': { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
         '/ssh-keys': { title: 'SSH Keys', path: '/ssh-keys', icon: <TerminalIcon /> },
+        '/cron-jobs': { title: 'Cron Jobs', path: '/cron-jobs', icon: <ScheduleIcon /> },
+        '/firewall': { title: 'Firewall', path: '/firewall', icon: <ShieldIcon /> },
+        '/monitoring': { title: 'Monitoring', path: '/monitoring', icon: <MonitorIcon /> },
+        '/backup': { title: 'Backup', path: '/backup', icon: <BackupIcon /> },
+        '/two-factor': { title: '2FA Security', path: '/two-factor', icon: <SecurityIcon /> },
+        '/processes': { title: 'Processes', path: '/processes', icon: <MemoryIcon /> },
       };
       const items = paths
         .map((p) => map[p])

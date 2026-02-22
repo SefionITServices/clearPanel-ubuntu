@@ -29,6 +29,12 @@ const LogsPage = lazy(() => import('./pages/Logs'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const WebserverPage = lazy(() => import('./pages/Webserver'));
 const SshKeysPage = lazy(() => import('./pages/SshKeys'));
+const CronJobsPage = lazy(() => import('./pages/CronJobs'));
+const FirewallPage = lazy(() => import('./pages/Firewall'));
+const MonitoringPage = lazy(() => import('./pages/Monitoring'));
+const BackupPage = lazy(() => import('./pages/Backup'));
+const TwoFactorPage = lazy(() => import('./pages/TwoFactor'));
+const ProcessesPage = lazy(() => import('./pages/Processes'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -227,6 +233,54 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <SshKeysPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cron-jobs"
+              element={
+                <ProtectedRoute>
+                  <CronJobsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/firewall"
+              element={
+                <ProtectedRoute>
+                  <FirewallPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/monitoring"
+              element={
+                <ProtectedRoute>
+                  <MonitoringPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/backup"
+              element={
+                <ProtectedRoute>
+                  <BackupPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/two-factor"
+              element={
+                <ProtectedRoute>
+                  <TwoFactorPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/processes"
+              element={
+                <ProtectedRoute>
+                  <ProcessesPage />
                 </ProtectedRoute>
               }
             />

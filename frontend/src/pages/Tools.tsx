@@ -41,6 +41,11 @@ import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ArticleIcon from '@mui/icons-material/Article';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import ShieldIcon from '@mui/icons-material/Shield';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import SecurityIcon from '@mui/icons-material/Security';
+import MemoryIcon from '@mui/icons-material/Memory';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -229,9 +234,9 @@ export default function ToolsPage() {
           label: 'Backup',
           icon: <BackupIcon sx={{ fontSize: 28 }} />,
           description: 'Create and restore backups',
-          onClick: () => navigate('/files'),
+          onClick: () => navigate('/backup'),
           color: '#FBBC04',
-          favoritePath: '/files',
+          favoritePath: '/backup',
         },
         {
           label: 'Images',
@@ -406,6 +411,54 @@ export default function ToolsPage() {
           onClick: () => navigate('/ssh-keys'),
           color: '#FF6B35',
           favoritePath: '/ssh-keys',
+        },
+        {
+          label: 'Cron Jobs',
+          icon: <ScheduleIcon sx={{ fontSize: 28 }} />,
+          description: 'Schedule automated tasks',
+          onClick: () => navigate('/cron-jobs'),
+          color: '#009688',
+          favoritePath: '/cron-jobs',
+        },
+        {
+          label: 'Firewall',
+          icon: <ShieldIcon sx={{ fontSize: 28 }} />,
+          description: 'UFW firewall rules & presets',
+          onClick: () => navigate('/firewall'),
+          color: '#E53935',
+          favoritePath: '/firewall',
+        },
+        {
+          label: 'Monitoring',
+          icon: <MonitorHeartIcon sx={{ fontSize: 28 }} />,
+          description: 'CPU, memory, disk & services',
+          onClick: () => navigate('/monitoring'),
+          color: '#43A047',
+          favoritePath: '/monitoring',
+        },
+        {
+          label: 'Backup & Restore',
+          icon: <BackupIcon sx={{ fontSize: 28 }} />,
+          description: 'Server backups & scheduling',
+          onClick: () => navigate('/backup'),
+          color: '#FB8C00',
+          favoritePath: '/backup',
+        },
+        {
+          label: '2FA Security',
+          icon: <SecurityIcon sx={{ fontSize: 28 }} />,
+          description: 'Two-factor authentication',
+          onClick: () => navigate('/two-factor'),
+          color: '#6A1B9A',
+          favoritePath: '/two-factor',
+        },
+        {
+          label: 'Processes',
+          icon: <MemoryIcon sx={{ fontSize: 28 }} />,
+          description: 'Process & service manager',
+          onClick: () => navigate('/processes'),
+          color: '#0277BD',
+          favoritePath: '/processes',
         },
         ...(phpMyAdminInstalled
           ? [
