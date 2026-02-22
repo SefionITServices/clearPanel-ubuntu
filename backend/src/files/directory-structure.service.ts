@@ -72,50 +72,35 @@ export class DirectoryStructureService {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to ${domainName}</title>
+    <title>${domainName} - Coming Soon</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 600px;
-            margin: 100px auto;
-            text-align: center;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        .container {
+        .card {
             background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 48px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 480px;
+            width: 90%;
         }
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 20px;
-        }
-        p {
-            color: #7f8c8d;
-            line-height: 1.6;
-        }
-        .domain {
-            color: #667eea;
-            font-weight: bold;
-        }
-        .emoji {
-            font-size: 3em;
-            margin-bottom: 20px;
-        }
+        h1 { color: #1a1a2e; font-size: 2em; margin-bottom: 12px; }
+        .domain { color: #667eea; font-weight: 700; }
+        p { color: #666; line-height: 1.7; font-size: 1.05em; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="emoji">🚀</div>
-        <h1>Website Coming Soon!</h1>
-        <p>The domain <span class="domain">${domainName}</span> is successfully configured.</p>
-        <p>Upload your website files using the File Manager in clearPanel to get started.</p>
+    <div class="card">
+        <h1>Coming Soon</h1>
+        <p>The website <span class="domain">${domainName}</span> is under construction.</p>
     </div>
 </body>
 </html>`;

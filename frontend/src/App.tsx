@@ -24,6 +24,7 @@ const MailDomainsPage = lazy(() => import('./pages/MailDomains'));
 const EmailAccountsPage = lazy(() => import('./pages/EmailAccounts'));
 const ForwardersPage = lazy(() => import('./pages/Forwarders'));
 const EmailFiltersPage = lazy(() => import('./pages/EmailFilters'));
+const EmailPage = lazy(() => import('./pages/Email'));
 const LogsPage = lazy(() => import('./pages/Logs'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const WebserverPage = lazy(() => import('./pages/Webserver'));
@@ -177,6 +178,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <ForwardersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/email"
+              element={
+                <ProtectedRoute>
+                  <EmailPage />
                 </ProtectedRoute>
               }
             />

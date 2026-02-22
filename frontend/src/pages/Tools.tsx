@@ -36,6 +36,8 @@ import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
 import LockIcon from '@mui/icons-material/Lock';
 import LanIcon from '@mui/icons-material/Lan';
 import LanguageIcon from '@mui/icons-material/Language';
+import CloudIcon from '@mui/icons-material/Cloud';
+import ArticleIcon from '@mui/icons-material/Article';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { DashboardLayout } from '../layouts/dashboard/layout';
@@ -140,6 +142,7 @@ export default function ToolsPage() {
   const [phpMyAdminInstalled, setPhpMyAdminInstalled] = useState(false);
   const [roundcubeInstalled, setRoundcubeInstalled] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
 
   useEffect(() => {
     serverApi.getNameservers().then(data => {
@@ -173,16 +176,17 @@ export default function ToolsPage() {
         // ignore
       }
     }
+    setFavoritesLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (!username) return;
+    if (!username || !favoritesLoaded) return;
     try {
       localStorage.setItem(`clearpanel:favorites:${username}`, JSON.stringify(favorites));
     } catch {
       // ignore
     }
-  }, [favorites, username]);
+  }, [favorites, username, favoritesLoaded]);
 
   const toggleFavorite = (path: string) => {
     setFavorites((prev) =>
@@ -294,6 +298,14 @@ export default function ToolsPage() {
       title: 'Email',
       items: [
         {
+          label: 'Email',
+          icon: <EmailIcon sx={{ fontSize: 28 }} />,
+          description: 'Email hub — accounts, webmail & more',
+          onClick: () => navigate('/email'),
+          color: '#1A73E8',
+          favoritePath: '/email',
+        },
+        {
           label: 'Email Accounts',
           icon: <EmailIcon sx={{ fontSize: 28 }} />,
           description: 'Manage email accounts',
@@ -325,17 +337,6 @@ export default function ToolsPage() {
           color: '#FF6B35',
           favoritePath: '/email-filters',
         },
-        ...(roundcubeInstalled
-          ? [
-              {
-                label: 'Roundcube Webmail',
-                icon: <EmailIcon sx={{ fontSize: 28 }} />,
-                description: 'Open webmail client',
-                onClick: () => window.open('/roundcube/', '_blank', 'noopener,noreferrer'),
-                color: '#34A853',
-              },
-            ]
-          : []),
       ],
     },
     {
@@ -347,6 +348,7 @@ export default function ToolsPage() {
           description: 'Open shell access',
           onClick: () => navigate('/terminal'),
           color: '#34A853',
+          favoritePath: '/terminal',
         },
         {
           label: 'Databases',
@@ -357,6 +359,22 @@ export default function ToolsPage() {
           favoritePath: '/databases',
         },
         {
+          label: 'Web Server',
+          icon: <CloudIcon sx={{ fontSize: 28 }} />,
+          description: 'Nginx web server management',
+          onClick: () => navigate('/webserver'),
+          color: '#00ACC1',
+          favoritePath: '/webserver',
+        },
+        {
+          label: 'Logs',
+          icon: <ArticleIcon sx={{ fontSize: 28 }} />,
+          description: 'View system and access logs',
+          onClick: () => navigate('/logs'),
+          color: '#607D8B',
+          favoritePath: '/logs',
+        },
+        {
           label: 'Settings',
           icon: <SettingsIcon sx={{ fontSize: 28 }} />,
           description: 'System configuration',
@@ -365,17 +383,12 @@ export default function ToolsPage() {
           favoritePath: '/settings',
         },
         {
-          label: 'Processes',
-          icon: <DataObjectIcon sx={{ fontSize: 28 }} />,
-          description: 'View running processes',
-          color: '#EA4335',
-        },
-        {
           label: 'App Store',
           icon: <StoreIcon sx={{ fontSize: 28 }} />,
           description: 'Install server tools & apps',
           onClick: () => navigate('/app-store'),
           color: '#7B1FA2',
+          favoritePath: '/app-store',
         },
         {
           label: 'PHP Manager',
@@ -383,16 +396,16 @@ export default function ToolsPage() {
           description: 'PHP versions, extensions & config',
           onClick: () => navigate('/php'),
           color: '#777BB3',
+          favoritePath: '/php',
         },
         ...(phpMyAdminInstalled
           ? [
               {
                 label: 'phpMyAdmin',
                 icon: <StorageIcon sx={{ fontSize: 28 }} />,
-                description: 'MySQL/MariaDB web interface',
+                description: 'MySQL web interface',
                 onClick: () => window.open('/phpmyadmin/', '_blank', 'noopener,noreferrer'),
                 color: '#F89C0E',
-                favoritePath: '/databases',
               },
             ]
           : []),

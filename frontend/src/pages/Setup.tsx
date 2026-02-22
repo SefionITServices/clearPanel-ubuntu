@@ -206,11 +206,26 @@ export default function SetupPage() {
             if (!result.success) throw new Error(result.message || 'Setup failed');
             setSuccess(true);
 
-            // The server auto-restarts after setup; wait a moment then redirect to dashboard
-            // The session is already authenticated (server auto-logged us in)
-            setTimeout(() => {
+            // The server auto-restarts after setup.
+            // Poll until the backend is back up, then redirect to dashboard.
+            const pollUntilReady = async () => {
+                const maxAttempts = 30;
+                for (let i = 0; i < maxAttempts; i++) {
+                    await new Promise((r) => setTimeout(r, 2000));
+                    try {
+                        const resp = await fetch('/api/setup/status', { method: 'GET' });
+                        if (resp.ok) {
+                            window.location.href = '/';
+                            return;
+                        }
+                    } catch {
+                        // server still restarting
+                    }
+                }
+                // Fallback: redirect anyway after max wait
                 window.location.href = '/';
-            }, 8000);
+            };
+            pollUntilReady();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Setup failed');
         } finally {

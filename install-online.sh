@@ -396,6 +396,29 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════
+#  PHASE 11b — MySQL database server
+# ══════════════════════════════════════════════════════════════════
+step "Installing MySQL database server..."
+
+if command -v mysql >/dev/null 2>&1 && ! mysql --version 2>/dev/null | grep -qi mariadb; then
+    success "MySQL already installed: $(mysql --version 2>/dev/null | head -1)"
+elif command -v mariadb >/dev/null 2>&1 || (command -v mysql >/dev/null 2>&1 && mysql --version 2>/dev/null | grep -qi mariadb); then
+    info "MariaDB detected — skipping MySQL install (you can switch in the panel)"
+else
+    if apt-get install -y -qq mysql-server mysql-client > /dev/null 2>&1; then
+        systemctl enable mysql > /dev/null 2>&1 || true
+        systemctl start mysql > /dev/null 2>&1 || true
+        if mysqladmin ping > /dev/null 2>&1; then
+            success "MySQL installed and running"
+        else
+            add_warn "MySQL installed but not responding — may need manual start"
+        fi
+    else
+        add_warn "MySQL install failed — you can install it from the panel later"
+    fi
+fi
+
+# ══════════════════════════════════════════════════════════════════
 #  PHASE 12 — Mail stack
 # ══════════════════════════════════════════════════════════════════
 step "Installing mail stack (Postfix, Dovecot, Rspamd, ClamAV, OpenDKIM)..."

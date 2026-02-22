@@ -289,7 +289,7 @@ export default function DatabasesPage() {
     setError(null);
     try {
       await dbAPI.install();
-      setSuccess('MariaDB installed successfully');
+      setSuccess('MySQL installed successfully');
       await loadStatus();
     } catch (e: any) { setError(e.message); }
     setInstalling(false);

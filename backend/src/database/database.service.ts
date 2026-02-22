@@ -253,10 +253,10 @@ export class DatabaseService {
   }
 
   /**
-   * Backward-compatible install (MariaDB)
+   * Backward-compatible install (MySQL)
    */
   async installMySQL(): Promise<{ success: boolean; message: string; logs?: string[] }> {
-    return this.installEngine('mariadb');
+    return this.installEngine('mysql');
   }
 
   // ========================

@@ -64,37 +64,22 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: '',
     items: [
       { title: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
+      { title: 'Tools', path: '/tools', icon: <BuildIcon /> },
     ],
   },
   {
-    title: 'Hosting',
+    title: 'Quick Access',
     items: [
-      { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
       { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
+      { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
+      { title: 'Email', path: '/email', icon: <EmailIcon /> },
       { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
-      { title: 'Web Server', path: '/webserver', icon: <CloudIcon /> },
-      { title: 'DNS Zones', path: '/dns', icon: <DnsIcon /> },
-      { title: 'SSL Certificates', path: '/ssl', icon: <LockIcon /> },
-    ],
-  },
-  {
-    title: 'Email',
-    items: [
-      { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
-    ],
-  },
-  {
-    title: 'Software',
-    items: [
-      { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
-      { title: 'App Store', path: '/app-store', icon: <BuildIcon /> },
+      { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
     ],
   },
   {
     title: 'System',
     items: [
-      { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
-      { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
       { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
     ],
   },
@@ -108,11 +93,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [favoriteNavItems, setFavoriteNavItems] = React.useState<NavItem[]>([]);
 
-  React.useEffect(() => {
+  const loadFavorites = React.useCallback(() => {
     if (!username) return;
     try {
       const raw = localStorage.getItem(`clearpanel:favorites:${username}`);
-      if (!raw) return;
+      if (!raw) { setFavoriteNavItems([]); return; }
       const paths: string[] = JSON.parse(raw);
       const map: Record<string, NavItem> = {
         '/files': { title: 'File Manager', path: '/files', icon: <FolderIcon /> },
@@ -122,9 +107,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/databases': { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
         '/php': { title: 'PHP Manager', path: '/php', icon: <CodeIcon /> },
         '/email-accounts': { title: 'Email Accounts', path: '/email-accounts', icon: <EmailIcon /> },
+        '/email': { title: 'Email', path: '/email', icon: <EmailIcon /> },
         '/mail-domains': { title: 'Mail Domains', path: '/mail-domains', icon: <EmailIcon /> },
         '/terminal': { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
+        '/webserver': { title: 'Web Server', path: '/webserver', icon: <CloudIcon /> },
         '/logs': { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
+        '/app-store': { title: 'App Store', path: '/app-store', icon: <BuildIcon /> },
         '/settings': { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
       };
       const items = paths
@@ -135,6 +123,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       // ignore parse errors
     }
   }, [username]);
+
+  React.useEffect(() => {
+    loadFavorites();
+  }, [loadFavorites]);
+
+  // Re-read favorites when another component updates localStorage
+  React.useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === `clearpanel:favorites:${username}`) loadFavorites();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [username, loadFavorites]);
 
   const handleDrawerToggle = () => setMobileOpen((p) => !p);
   const handleLogout = async () => {
@@ -224,7 +225,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 const isActive = location.pathname === item.path
                   || (item.path !== '/dashboard' && location.pathname.startsWith(item.path + '/'))
                   || (item.path === '/domains' && (location.pathname.startsWith('/domain-create') || location.pathname.startsWith('/nameserver-setup')))
-                  || (item.path === '/mail-domains' && (location.pathname.startsWith('/email-accounts') || location.pathname.startsWith('/forwarders') || location.pathname.startsWith('/email-filters')));
+                  || (item.path === '/email' && (location.pathname.startsWith('/email-accounts') || location.pathname.startsWith('/mail-domains') || location.pathname.startsWith('/forwarders') || location.pathname.startsWith('/email-filters')));
                 return (
                   <ListItem key={item.title} disablePadding sx={{ mb: 0.25 }}>
                     <ListItemButton
