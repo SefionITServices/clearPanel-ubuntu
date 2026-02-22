@@ -60,6 +60,7 @@ import { phpApi as phpAPI } from '../api/php';
 // ─── Color helpers ────────────────────────────────────────────────────
 
 const KNOWN_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+const RECOMMENDED_VERSION = '8.3';
 
 const VERSION_COLORS: Record<string, string> = {
   '7.4': '#8892BF', '8.0': '#777BB3', '8.1': '#4F5B93',
@@ -297,6 +298,9 @@ function VersionsTab({
                         )}
                         {v.active && (
                           <Chip size="small" label="Default" icon={<StarIcon sx={{ fontSize: '12px !important' }} />} sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#FEF7E0', color: '#F9AB00' }} />
+                        )}
+                        {v.version === RECOMMENDED_VERSION && (
+                          <Chip size="small" label="Recommended" icon={<CheckCircleIcon sx={{ fontSize: '12px !important' }} />} sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600, bgcolor: '#E8F0FE', color: '#1A73E8' }} />
                         )}
                       </Stack>
                     </Box>

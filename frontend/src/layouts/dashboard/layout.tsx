@@ -114,6 +114,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/logs': { title: 'Logs', path: '/logs', icon: <LogsIcon /> },
         '/app-store': { title: 'App Store', path: '/app-store', icon: <BuildIcon /> },
         '/settings': { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+        '/ssh-keys': { title: 'SSH Keys', path: '/ssh-keys', icon: <TerminalIcon /> },
       };
       const items = paths
         .map((p) => map[p])

@@ -28,6 +28,7 @@ const EmailPage = lazy(() => import('./pages/Email'));
 const LogsPage = lazy(() => import('./pages/Logs'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const WebserverPage = lazy(() => import('./pages/Webserver'));
+const SshKeysPage = lazy(() => import('./pages/SshKeys'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -218,6 +219,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <WebserverPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ssh-keys"
+              element={
+                <ProtectedRoute>
+                  <SshKeysPage />
                 </ProtectedRoute>
               }
             />

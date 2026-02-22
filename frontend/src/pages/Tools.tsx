@@ -37,6 +37,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import LanIcon from '@mui/icons-material/Lan';
 import LanguageIcon from '@mui/icons-material/Language';
 import CloudIcon from '@mui/icons-material/Cloud';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ArticleIcon from '@mui/icons-material/Article';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
@@ -397,6 +398,14 @@ export default function ToolsPage() {
           onClick: () => navigate('/php'),
           color: '#777BB3',
           favoritePath: '/php',
+        },
+        {
+          label: 'SSH Keys',
+          icon: <VpnKeyIcon sx={{ fontSize: 28 }} />,
+          description: 'Generate & manage SSH keys',
+          onClick: () => navigate('/ssh-keys'),
+          color: '#FF6B35',
+          favoritePath: '/ssh-keys',
         },
         ...(phpMyAdminInstalled
           ? [
