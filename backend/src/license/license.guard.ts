@@ -30,7 +30,7 @@ export class LicenseGuard implements CanActivate {
       const req = context.switchToHttp().getRequest();
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         throw new ForbiddenException(
-          'License expired — panel is in read-only mode. Renew at clearpanel.io',
+          'License expired — panel is in read-only mode. Renew at clearpanel.net',
         );
       }
     }

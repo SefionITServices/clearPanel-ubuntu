@@ -44,7 +44,7 @@ interface UpdateInfo {
 
 // ─── Constants ────────────────────────────────────────────────────────
 
-const API_BASE = 'https://api.clearpanel.io/v1';
+const API_BASE = 'https://api.clearpanel.net/v1';
 const HEARTBEAT_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 const GRACE_PERIOD_DAYS = 7;                     // offline grace period
 const EXPIRY_GRACE_DAYS = 30;                    // after license expires
@@ -419,9 +419,9 @@ export class LicenseService implements OnModuleInit {
         const grace = this.getGraceDaysRemaining();
         return grace !== null && grace > 0
           ? `License expired — ${grace} days remaining before read-only mode`
-          : 'License expired — panel in read-only mode. Renew at clearpanel.io';
+          : 'License expired — panel in read-only mode. Renew at clearpanel.net';
       }
-      case 'invalid': return 'License key is invalid. Contact support@clearpanel.io';
+      case 'invalid': return 'License key is invalid. Contact support@clearpanel.net';
       default: return 'License status unknown';
     }
   }
