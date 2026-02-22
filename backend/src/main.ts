@@ -8,8 +8,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
+import { runPendingMigrations } from './migrations/migration-runner';
 
 async function bootstrap() {
+  // Run data migrations before creating the Nest app (schema must be current)
+  await runPendingMigrations();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 

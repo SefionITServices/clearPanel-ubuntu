@@ -15,3 +15,7 @@ backend/mail-domains.json
 backend/mail-automation-history.json
 backend/mail-state/
 backend/mail-policies/
+
+# Release artifacts (never commit private key or built tarballs)
+release/clearpanel-release.key
+release/dist/

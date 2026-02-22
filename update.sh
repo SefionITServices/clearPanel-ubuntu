@@ -24,6 +24,13 @@
 # ─────────────────────────────────────────────────────────────────────
 set -e
 
+# ── Delegate to CLI if available ─────────────────────────────────────
+if [ -x "/usr/local/bin/clearpanel" ] || [ -x "/opt/clearpanel/bin/clearpanel" ]; then
+    CLI="${CLEARPANEL_CLI:-$(command -v clearpanel 2>/dev/null || echo /opt/clearpanel/bin/clearpanel)}"
+    echo "Delegating to ClearPanel CLI: $CLI update"
+    exec "$CLI" update
+fi
+
 # ── Configuration ────────────────────────────────────────────────────
 INSTALL_DIR="/opt/clearpanel"
 BACKEND_DIR="$INSTALL_DIR/backend"

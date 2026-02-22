@@ -29,9 +29,14 @@ import {
   Security as SecurityIcon,
   Dns as DnsIcon,
   Info as InfoIcon,
+  VpnKey as VpnKeyIcon,
+  SystemUpdateAlt as UpdateIcon,
+  Verified as VerifiedIcon,
+  ContentCopy as ContentCopyIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { serverApi } from '../api/server';
+import { licenseApi } from '../api/license';
 
 interface AutomationLog {
   task: string;
@@ -201,6 +206,7 @@ export default function SettingsPage() {
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 0, borderBottom: 1, borderColor: 'divider' }}>
           <Tab icon={<ComputerIcon />} iconPosition="start" label="General" />
           <Tab icon={<DnsIcon />} iconPosition="start" label="Nameservers" />
+          <Tab icon={<VpnKeyIcon />} iconPosition="start" label="License & Updates" />
           <Tab icon={<InfoIcon />} iconPosition="start" label="Panel Info" />
         </Tabs>
 
@@ -480,8 +486,13 @@ export default function SettingsPage() {
           </Card>
         </TabPanel>
 
-        {/* ═══════════ TAB 2: Panel Info ═══════════ */}
+        {/* ═══════════ TAB 2: License & Updates ═══════════ */}
         <TabPanel value={tab} index={2}>
+          <LicenseAndUpdatesTab />
+        </TabPanel>
+
+        {/* ═══════════ TAB 3: Panel Info ═══════════ */}
+        <TabPanel value={tab} index={3}>
           <Card>
             <CardContent sx={{ p: 3 }}>
               <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2.5 }}>
@@ -555,6 +566,283 @@ export default function SettingsPage() {
         </TabPanel>
       </Box>
     </DashboardLayout>
+  );
+}
+
+/* ── License & Updates Tab ── */
+function LicenseAndUpdatesTab() {
+  const [license, setLicense] = useState<any>(null);
+  const [update, setUpdate] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activateKey, setActivateKey] = useState('');
+  const [activating, setActivating] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; severity: 'success' | 'error' | 'info' } | null>(null);
+
+  useEffect(() => {
+    licenseApi.getStatus()
+      .then(setLicense)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleActivate = async () => {
+    if (!activateKey.trim()) return;
+    setActivating(true);
+    setMsg(null);
+    try {
+      const res = await licenseApi.activate(activateKey.trim());
+      setMsg({ text: res.message, severity: res.success ? 'success' : 'error' });
+      if (res.success) {
+        setActivateKey('');
+        const fresh = await licenseApi.getStatus();
+        setLicense(fresh);
+      }
+    } catch (e: any) {
+      setMsg({ text: e.message, severity: 'error' });
+    }
+    setActivating(false);
+  };
+
+  const handleDeactivate = async () => {
+    if (!confirm('Deactivate your license? You can re-activate later.')) return;
+    try {
+      const res = await licenseApi.deactivate();
+      setMsg({ text: res.message, severity: res.success ? 'success' : 'error' });
+      const fresh = await licenseApi.getStatus();
+      setLicense(fresh);
+    } catch (e: any) {
+      setMsg({ text: e.message, severity: 'error' });
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await licenseApi.checkUpdate();
+      setUpdate(res);
+    } catch {
+      setMsg({ text: 'Could not check for updates', severity: 'error' });
+    }
+    setCheckingUpdate(false);
+  };
+
+  const copyFingerprint = async () => {
+    if (license?.fingerprint) {
+      try {
+        await navigator.clipboard.writeText(license.fingerprint);
+        setMsg({ text: 'Fingerprint copied', severity: 'info' });
+      } catch {}
+    }
+  };
+
+  const statusColor: Record<string, string> = {
+    active: '#34A853', expired: '#EA4335', invalid: '#EA4335',
+    grace: '#F9AB00', unactivated: '#9E9E9E',
+  };
+
+  if (loading) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>;
+  }
+
+  return (
+    <Stack spacing={3}>
+      {/* License Status Card */}
+      <Card>
+        <CardContent sx={{ p: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2.5 }}>
+            <VpnKeyIcon sx={{ color: statusColor[license?.status] || '#9E9E9E' }} />
+            <Typography variant="h6" fontWeight={600}>License</Typography>
+            {license?.status && (
+              <Chip
+                size="small"
+                label={license.status.toUpperCase()}
+                sx={{
+                  fontWeight: 700,
+                  bgcolor: `${statusColor[license.status] || '#9E9E9E'}18`,
+                  color: statusColor[license.status] || '#9E9E9E',
+                }}
+              />
+            )}
+            {license?.plan && license.plan !== 'unknown' && (
+              <Chip size="small" label={license.plan.toUpperCase()} variant="outlined" sx={{ fontWeight: 600 }} />
+            )}
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {license?.message || 'License information unavailable'}
+          </Typography>
+
+          {/* Details */}
+          <List dense sx={{ mb: 2 }}>
+            <ListItem disableGutters>
+              <ListItemText
+                primary="Panel Version"
+                secondary={license?.panelVersion || '-'}
+                primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
+                secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
+              />
+            </ListItem>
+            <Divider component="li" />
+            {license?.key && (
+              <>
+                <ListItem disableGutters>
+                  <ListItemText
+                    primary="License Key"
+                    secondary={license.key}
+                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
+                    secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
+                  />
+                </ListItem>
+                <Divider component="li" />
+              </>
+            )}
+            {license?.expiresAt && (
+              <>
+                <ListItem disableGutters>
+                  <ListItemText
+                    primary="Expires"
+                    secondary={new Date(license.expiresAt).toLocaleDateString()}
+                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
+                    secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
+                  />
+                </ListItem>
+                <Divider component="li" />
+              </>
+            )}
+            <ListItem disableGutters>
+              <ListItemText
+                primary="Server Fingerprint"
+                secondary={
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                      {license?.fingerprint || '-'}
+                    </Typography>
+                    <Button size="small" onClick={copyFingerprint} startIcon={<ContentCopyIcon />}
+                      sx={{ textTransform: 'none', fontSize: '0.7rem', minWidth: 'auto' }}>
+                      Copy
+                    </Button>
+                  </Stack>
+                }
+                primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
+              />
+            </ListItem>
+            {license?.lastChecked && (
+              <>
+                <Divider component="li" />
+                <ListItem disableGutters>
+                  <ListItemText
+                    primary="Last Verified"
+                    secondary={new Date(license.lastChecked).toLocaleString()}
+                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
+                    secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
+                  />
+                </ListItem>
+              </>
+            )}
+          </List>
+
+          {/* Activate form */}
+          {(!license?.key || license?.status === 'unactivated' || license?.status === 'invalid') && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
+              <TextField
+                size="small"
+                label="License Key"
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                value={activateKey}
+                onChange={e => setActivateKey(e.target.value)}
+                sx={{ flex: 1, maxWidth: 360, '& input': { fontFamily: 'monospace' } }}
+              />
+              <Button
+                variant="contained"
+                onClick={handleActivate}
+                disabled={activating || !activateKey.trim()}
+                startIcon={activating ? <CircularProgress size={16} color="inherit" /> : <VerifiedIcon />}
+                sx={{ minWidth: 120, height: 40, textTransform: 'none' }}
+              >
+                {activating ? 'Activating...' : 'Activate'}
+              </Button>
+            </Stack>
+          )}
+
+          {/* Deactivate button (for active licenses) */}
+          {license?.status === 'active' && (
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={handleDeactivate}
+              sx={{ mt: 2, textTransform: 'none' }}
+            >
+              Deactivate License
+            </Button>
+          )}
+
+          {msg && (
+            <Alert severity={msg.severity} sx={{ mt: 2 }} onClose={() => setMsg(null)}>
+              {msg.text}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Updates Card */}
+      <Card>
+        <CardContent sx={{ p: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+            <UpdateIcon color="primary" />
+            <Typography variant="h6" fontWeight={600}>Updates</Typography>
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Check for new ClearPanel releases. Updates preserve all your data, domains, email, and SSL certificates.
+          </Typography>
+
+          <Button
+            variant="outlined"
+            onClick={handleCheckUpdate}
+            disabled={checkingUpdate}
+            startIcon={checkingUpdate ? <CircularProgress size={16} /> : <UpdateIcon />}
+            sx={{ textTransform: 'none', mb: 2 }}
+          >
+            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+          </Button>
+
+          {update && (
+            <Paper variant="outlined" sx={{ p: 2.5, mt: 1 }}>
+              {update.available ? (
+                <>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                    <Chip label="Update Available" size="small" color="primary" sx={{ fontWeight: 700 }} />
+                    <Typography variant="subtitle2">v{update.latestVersion}</Typography>
+                  </Stack>
+                  {update.releaseDate && (
+                    <Typography variant="caption" color="text.secondary">
+                      Released: {new Date(update.releaseDate).toLocaleDateString()}
+                    </Typography>
+                  )}
+                  {update.changelog && (
+                    <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', fontSize: '0.82rem' }}>
+                      {update.changelog}
+                    </Typography>
+                  )}
+                  <Alert severity="info" sx={{ mt: 2, fontSize: 12 }}>
+                    Run <code>sudo clearpanel update</code> on your server to apply the update.
+                  </Alert>
+                </>
+              ) : (
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <CheckIcon color="success" fontSize="small" />
+                  <Typography variant="body2">
+                    You're running the latest version (v{update.currentVersion})
+                  </Typography>
+                </Stack>
+              )}
+            </Paper>
+          )}
+        </CardContent>
+      </Card>
+    </Stack>
   );
 }
 

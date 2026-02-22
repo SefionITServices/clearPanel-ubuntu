@@ -243,6 +243,14 @@ rm -f /etc/sudoers.d/clearpanel-ssl 2>/dev/null || true
 rm -f /etc/sudoers.d/clearpanel-mysql 2>/dev/null || true
 rm -f /etc/sudoers.d/clearpanel-database 2>/dev/null || true
 
+# Install CLI wrapper
+echo -e "${YELLOW}🔧 Installing clearpanel CLI...${NC}"
+if [ -f "$INSTALL_DIR/bin/clearpanel" ]; then
+    chmod +x "$INSTALL_DIR/bin/clearpanel"
+    ln -sf "$INSTALL_DIR/bin/clearpanel" /usr/local/bin/clearpanel
+    echo "  CLI installed: clearpanel --help"
+fi
+
 # Configure BIND9 DNS server
 echo -e "${YELLOW}🌐 Configuring BIND9 DNS server...${NC}"
 # Create zones directory

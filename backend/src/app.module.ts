@@ -19,6 +19,7 @@ import { PhpModule } from './php/php.module';
 import { MailModule } from './mail/mail.module';
 import { LogsModule } from './logs/logs.module';
 import { SshKeysModule } from './ssh-keys/ssh-keys.module';
+import { LicenseModule } from './license/license.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SshKeysModule } from './ssh-keys/ssh-keys.module';
     MailModule,
     LogsModule,
     SshKeysModule,
+    LicenseModule,
   ],
 })
 export class AppModule implements NestModule {
