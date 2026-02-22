@@ -19,7 +19,10 @@
 #   • PHP-FPM (latest available)
 #
 # ══════════════════════════════════════════════════════════════════════
-set -euo pipefail
+# NOTE: We intentionally do NOT use `set -e` so that non-critical failures
+# (mail stack, roundcube, BIND9) don't kill the entire installer silently.
+# Each phase handles its own errors and the script always reaches the
+# final status report.
 
 # ── Colors & helpers ──────────────────────────────────────────────
 RED='\033[0;31m'
@@ -35,6 +38,10 @@ step()    { echo -e "\n${BOLD}${YELLOW}▶  $*${NC}"; }
 success() { echo -e "${GREEN}✓  $*${NC}"; }
 warn()    { echo -e "${YELLOW}⚠  $*${NC}"; }
 fail()    { echo -e "${RED}✗  $*${NC}"; exit 1; }
+
+# Track warnings for final summary
+WARNINGS=()
+add_warn() { warn "$*"; WARNINGS+=("$*"); }
 
 # ── Configuration ─────────────────────────────────────────────────
 REPO_URL="https://github.com/SefionITServices/clearPanel-ubuntu.git"
@@ -121,23 +128,30 @@ fi
 step "Installing system packages..."
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq software-properties-common ca-certificates gnupg curl git ufw acl > /dev/null 2>&1
+apt-get update -qq || fail "apt-get update failed — check your network/DNS"
+apt-get install -y -qq software-properties-common ca-certificates gnupg curl git ufw acl > /dev/null 2>&1 || fail "Failed to install base packages"
 success "Base packages"
 
 # Node.js 20
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
 if [ "$NODE_VERSION" -lt 20 ]; then
     info "Installing Node.js 20 LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs > /dev/null 2>&1
+    if ! curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1; then
+        fail "Failed to add NodeSource repository"
+    fi
+    if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
+        fail "Failed to install Node.js"
+    fi
 fi
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-[[ "$NODE_VERSION" -ge 20 ]] || fail "Node.js 20+ required but got $(node -v 2>/dev/null || echo 'none')"
+if [ "$NODE_VERSION" -lt 20 ]; then
+    fail "Node.js 20+ required but got $(node -v 2>/dev/null || echo 'none')"
+fi
 success "Node.js $(node -v)"
 
 # Nginx, BIND9, Certbot
-apt-get install -y -qq nginx bind9 bind9utils bind9-doc certbot python3-certbot-nginx > /dev/null 2>&1
+apt-get install -y -qq nginx bind9 bind9utils bind9-doc certbot python3-certbot-nginx > /dev/null 2>&1 || \
+    add_warn "Some packages failed to install (nginx/bind9/certbot) — may need manual install"
 success "Nginx, BIND9, Certbot"
 
 # ══════════════════════════════════════════════════════════════════
@@ -145,9 +159,9 @@ success "Nginx, BIND9, Certbot"
 # ══════════════════════════════════════════════════════════════════
 step "Configuring firewall (UFW)..."
 
-ufw --force enable > /dev/null 2>&1
+ufw --force enable > /dev/null 2>&1 || add_warn "UFW failed to enable"
 for port in OpenSSH 80/tcp 443/tcp 3334/tcp 53/tcp 53/udp 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp; do
-    ufw allow "$port" > /dev/null 2>&1
+    ufw allow "$port" > /dev/null 2>&1 || true
 done
 success "Firewall active — SSH, HTTP/S, DNS, mail, panel ports open"
 
@@ -179,14 +193,16 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     info "Updating existing repository..."
     cd "$INSTALL_DIR"
     git stash 2>/dev/null || true
-    git pull origin main --ff-only 2>/dev/null || git reset --hard origin/main
+    git pull origin main --ff-only 2>/dev/null || git reset --hard origin/main || fail "Failed to update repository"
     success "Repository updated"
 else
     if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
         warn "Backing up existing $INSTALL_DIR"
         mv "$INSTALL_DIR" "${INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
     fi
-    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    if ! git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"; then
+        fail "Failed to clone repository from $REPO_URL"
+    fi
     success "Repository cloned to $INSTALL_DIR"
 fi
 
@@ -205,20 +221,36 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 # ══════════════════════════════════════════════════════════════════
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -1
+if ! sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -5; then
+    fail "Backend npm install failed. Check: sudo -u $SERVICE_USER npm install --legacy-peer-deps (in $INSTALL_DIR/backend)"
+fi
 success "Backend dependencies installed"
 
 step "Building backend..."
-sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -3
-success "Backend built"
+if ! sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -5; then
+    fail "Backend build failed. Check: sudo -u $SERVICE_USER npm run build (in $INSTALL_DIR/backend)"
+fi
+# Verify dist/main.js exists (the file systemd runs)
+if [ ! -f "$INSTALL_DIR/backend/dist/main.js" ]; then
+    fail "Backend build did not produce dist/main.js — build may have silently failed"
+fi
+success "Backend built (dist/main.js verified)"
 
 step "Installing frontend dependencies..."
 cd "$INSTALL_DIR/frontend"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -1
+if ! sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -5; then
+    fail "Frontend npm install failed"
+fi
 success "Frontend dependencies installed"
 
 step "Building frontend..."
-sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -3
+if ! sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -5; then
+    fail "Frontend build failed. Check: sudo -u $SERVICE_USER npm run build (in $INSTALL_DIR/frontend)"
+fi
+# Verify the frontend built into backend/public
+if [ ! -f "$INSTALL_DIR/backend/public/index.html" ]; then
+    add_warn "Frontend build did not produce backend/public/index.html — UI may not load"
+fi
 success "Frontend built"
 
 # ══════════════════════════════════════════════════════════════════
@@ -279,8 +311,13 @@ fi
 # Allow IP access (replace domain placeholder with catch-all)
 sed -i 's/server_name your-domain.com www.your-domain.com;/server_name _;/' "$NGINX_DEST"
 
-nginx -t > /dev/null 2>&1 && systemctl enable nginx > /dev/null 2>&1 && systemctl restart nginx
-success "Nginx configured as reverse proxy"
+if nginx -t > /dev/null 2>&1; then
+    systemctl enable nginx > /dev/null 2>&1
+    systemctl restart nginx
+    success "Nginx configured as reverse proxy"
+else
+    add_warn "Nginx config test failed — run: sudo nginx -t"
+fi
 
 # Give panel user ownership of vhost dirs
 chown -R "$SERVICE_USER:$SERVICE_USER" /etc/nginx/sites-available 2>/dev/null || true
@@ -363,9 +400,13 @@ fi
 # ══════════════════════════════════════════════════════════════════
 step "Installing mail stack (Postfix, Dovecot, Rspamd, ClamAV, OpenDKIM)..."
 
-MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" 2>&1 | tail -5 && \
-    success "Mail stack installed" || \
-    warn "Mail stack had issues — can retry from the panel"
+if [ -f "$INSTALL_DIR/scripts/email/install-stack.sh" ]; then
+    MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" 2>&1 | tail -10 && \
+        success "Mail stack installed" || \
+        add_warn "Mail stack had issues — can retry from the panel later"
+else
+    add_warn "Mail install script not found — skipping"
+fi
 
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 13 — Roundcube webmail
@@ -373,7 +414,7 @@ MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" 2>&1 | t
 step "Installing Roundcube webmail..."
 
 # Pre-seed debconf
-debconf-set-selections <<RCEOF
+debconf-set-selections <<RCEOF 2>/dev/null || true
 roundcube-core roundcube/dbconfig-install boolean true
 roundcube-core roundcube/database-type select sqlite
 roundcube-core roundcube/reconfigure-webserver multiselect
@@ -386,14 +427,18 @@ for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
         PHP_VER="$ver"; break
     fi
 done
-[[ -z "$PHP_VER" ]] && PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.2")
+if [ -z "$PHP_VER" ]; then
+    PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.2")
+fi
 info "Using PHP $PHP_VER"
 
-apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra > /dev/null 2>&1
+apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra > /dev/null 2>&1 || \
+    add_warn "Roundcube packages failed to install"
 apt-get install -y -qq \
     "php${PHP_VER}-cli" "php${PHP_VER}-fpm" "php${PHP_VER}-mbstring" \
     "php${PHP_VER}-xml" "php${PHP_VER}-intl" "php${PHP_VER}-zip" \
-    "php${PHP_VER}-gd" "php${PHP_VER}-curl" "php${PHP_VER}-ldap" > /dev/null 2>&1
+    "php${PHP_VER}-gd" "php${PHP_VER}-curl" "php${PHP_VER}-ldap" > /dev/null 2>&1 || \
+    add_warn "Some PHP extensions failed to install"
 apt-get install -y -qq "php${PHP_VER}-imagick" > /dev/null 2>&1 || \
     apt-get install -y -qq php-imagick > /dev/null 2>&1 || true
 phpenmod -v "${PHP_VER}" intl mbstring xml zip gd curl ldap > /dev/null 2>&1 || true
@@ -437,36 +482,68 @@ success "Roundcube installed"
 
 # SSO plugin
 info "Installing Roundcube SSO plugin..."
-MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-roundcube-sso.sh" "http://localhost:3334" 2>/dev/null && \
-    success "SSO plugin installed" || \
-    warn "SSO plugin skipped — can configure later"
+if [ -f "$INSTALL_DIR/scripts/email/setup-roundcube-sso.sh" ]; then
+    MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-roundcube-sso.sh" "http://localhost:3334" 2>/dev/null && \
+        success "SSO plugin installed" || \
+        add_warn "SSO plugin skipped — can configure later"
+else
+    add_warn "SSO plugin script not found — skipping"
+fi
 
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 14 — Mail security (Postscreen, DMARC)
 # ══════════════════════════════════════════════════════════════════
 step "Configuring mail security..."
 
-MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-postscreen.sh" 2>/dev/null && \
-    success "Postscreen configured" || warn "Postscreen skipped"
-MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-dmarc.sh" 2>/dev/null && \
-    success "DMARC configured" || warn "DMARC skipped"
+if [ -f "$INSTALL_DIR/scripts/email/setup-postscreen.sh" ]; then
+    MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-postscreen.sh" 2>/dev/null && \
+        success "Postscreen configured" || add_warn "Postscreen skipped"
+else
+    info "Postscreen script not found — skipping"
+fi
+if [ -f "$INSTALL_DIR/scripts/email/setup-dmarc.sh" ]; then
+    MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-dmarc.sh" 2>/dev/null && \
+        success "DMARC configured" || add_warn "DMARC skipped"
+else
+    info "DMARC script not found — skipping"
+fi
 
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 15 — Start ClearPanel
 # ══════════════════════════════════════════════════════════════════
 step "Starting ClearPanel..."
 
-systemctl start clearpanel
+# Reload systemd in case unit file was just installed
+systemctl daemon-reload 2>/dev/null || true
 
-# Wait for backend
+# Enable service so it starts on boot
+systemctl enable clearpanel 2>/dev/null || true
+
+# Start the service
+if ! systemctl start clearpanel 2>/dev/null; then
+    add_warn "systemctl start clearpanel returned non-zero"
+fi
+
+# Wait for backend to become responsive
 BACKEND_READY=false
-for i in $(seq 1 15); do
+for i in $(seq 1 20); do
     if curl -s --max-time 2 "http://localhost:3334/api/setup/status" > /dev/null 2>&1; then
-        BACKEND_READY=true; break
+        BACKEND_READY=true
+        break
     fi
     sleep 2
 done
-[[ "$BACKEND_READY" = true ]] && success "Backend API responding" || warn "Backend still starting — check logs"
+
+if [ "$BACKEND_READY" = true ]; then
+    success "Backend API responding on port 3334"
+else
+    add_warn "Backend not responding yet after 40s — may still be starting"
+    info "Checking service status..."
+    systemctl status clearpanel --no-pager -l 2>/dev/null || true
+    echo ""
+    info "Last 15 log lines:"
+    journalctl -u clearpanel -n 15 --no-pager 2>/dev/null || true
+fi
 
 # ══════════════════════════════════════════════════════════════════
 #  DONE
@@ -479,19 +556,32 @@ SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 echo ""
 echo "══════════════════════════════════════════════════════════"
 
-if systemctl is-active --quiet clearpanel; then
+# Show warnings summary if any
+if [ ${#WARNINGS[@]} -gt 0 ]; then
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}⚠  Warnings during installation (${#WARNINGS[@]}):${NC}"
+    for w in "${WARNINGS[@]}"; do
+        echo -e "    ${YELLOW}• $w${NC}"
+    done
+    echo ""
+    echo "══════════════════════════════════════════════════════════"
+fi
+
+# Determine which services are actually running
+check_svc() { systemctl is-active --quiet "$1" 2>/dev/null; }
+
+if check_svc clearpanel || [ "$BACKEND_READY" = true ]; then
     echo ""
     echo -e "${GREEN}${BOLD}  ✅  ClearPanel installed successfully!  ${NC}"
     echo -e "  ${DIM}Completed in ${MINUTES}m ${SECONDS_REM}s${NC}"
     echo ""
-    echo "  What's running:"
-    echo -e "    ${GREEN}✓${NC}  ClearPanel    (port 3334, proxied via Nginx)"
-    echo -e "    ${GREEN}✓${NC}  Nginx         (ports 80/443)"
-    echo -e "    ${GREEN}✓${NC}  BIND9         (port 53)"
-    echo -e "    ${GREEN}✓${NC}  Postfix       (ports 25/587)"
-    echo -e "    ${GREEN}✓${NC}  Dovecot       (ports 143/993)"
-    echo -e "    ${GREEN}✓${NC}  Roundcube     (webmail with SSO)"
-    echo -e "    ${GREEN}✓${NC}  UFW Firewall  (all ports configured)"
+    echo "  Services:"
+    check_svc clearpanel && echo -e "    ${GREEN}✓${NC}  ClearPanel    (port 3334)" || echo -e "    ${YELLOW}⚠${NC}  ClearPanel    (starting...)"
+    check_svc nginx      && echo -e "    ${GREEN}✓${NC}  Nginx         (ports 80/443)" || echo -e "    ${YELLOW}⚠${NC}  Nginx         (not running)"
+    check_svc named      && echo -e "    ${GREEN}✓${NC}  BIND9         (port 53)" || echo -e "    ${YELLOW}─${NC}  BIND9         (not running)"
+    check_svc postfix    && echo -e "    ${GREEN}✓${NC}  Postfix       (ports 25/587)" || echo -e "    ${YELLOW}─${NC}  Postfix       (not running)"
+    check_svc dovecot    && echo -e "    ${GREEN}✓${NC}  Dovecot       (ports 143/993)" || echo -e "    ${YELLOW}─${NC}  Dovecot       (not running)"
+    check_svc ufw        && echo -e "    ${GREEN}✓${NC}  UFW Firewall  (active)" || echo -e "    ${YELLOW}─${NC}  UFW Firewall  (inactive)"
     echo ""
     echo "══════════════════════════════════════════════════════════"
     echo ""
@@ -519,12 +609,36 @@ if systemctl is-active --quiet clearpanel; then
     echo ""
 else
     echo ""
-    echo -e "${RED}${BOLD}  ❌  Service failed to start${NC}"
+    echo -e "${RED}${BOLD}  ❌  ClearPanel service did not start${NC}"
+    echo -e "  ${DIM}Completed in ${MINUTES}m ${SECONDS_REM}s${NC}"
     echo ""
-    echo "  Debug:"
-    echo "    sudo systemctl status clearpanel"
-    echo "    sudo journalctl -u clearpanel -n 50"
+    echo "  Debug steps:"
+    echo "    1. sudo systemctl status clearpanel"
+    echo "    2. sudo journalctl -u clearpanel -n 50"
+    echo "    3. sudo node /opt/clearpanel/backend/dist/main.js  (run manually)"
     echo ""
-    journalctl -u clearpanel -n 20 --no-pager 2>/dev/null || true
-    exit 1
+    echo "  Recent service logs:"
+    journalctl -u clearpanel -n 25 --no-pager 2>/dev/null || true
+    echo ""
+    echo "  Check if port 3334 is in use:"
+    ss -tlnp | grep 3334 2>/dev/null || echo "    Port 3334 not in use"
+    echo ""
+    echo "  Check if dist/main.js exists:"
+    if [ -f "$INSTALL_DIR/backend/dist/main.js" ]; then
+        echo -e "    ${GREEN}✓${NC}  $INSTALL_DIR/backend/dist/main.js exists"
+    else
+        echo -e "    ${RED}✗${NC}  $INSTALL_DIR/backend/dist/main.js NOT found — build may have failed"
+    fi
+    echo ""
+    echo "══════════════════════════════════════════════════════════"
+    echo ""
+    echo -e "  ${BOLD}You can try starting manually:${NC}"
+    echo "    sudo systemctl restart clearpanel"
+    echo "    sudo journalctl -u clearpanel -f"
+    echo ""
+    echo -e "  ${BOLD}Or open the panel at:${NC}"
+    echo -e "    ${CYAN}http://${SERVER_IP}${NC}"
+    echo ""
+    echo "══════════════════════════════════════════════════════════"
+    echo ""
 fi

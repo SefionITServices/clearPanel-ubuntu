@@ -52,12 +52,23 @@ export class SetupController {
         (req.session as any).isAuthenticated = true;
         (req.session as any).username = config.adminUsername;
 
+        // Save session explicitly before scheduling restart
+        await new Promise<void>((resolve, reject) => {
+            req.session.save((err) => {
+                if (err) {
+                    console.warn('[Setup] Session save warning:', err);
+                }
+                resolve();
+            });
+        });
+
         // Schedule a graceful restart so ConfigModule re-reads the new .env
-        // (delay to let the HTTP response finish first)
+        // Use a longer delay (5s) to ensure the HTTP response fully reaches
+        // the client through Nginx reverse proxy before the process exits.
         setTimeout(() => {
             console.log('[Setup] Restarting process to apply new environment...');
             process.exit(0); // systemd will restart us automatically
-        }, 2000);
+        }, 5000);
 
         return result;
     }
