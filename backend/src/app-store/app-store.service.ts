@@ -1422,6 +1422,57 @@ location /pgadmin {
 
       const { stdout, stderr } = await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 300_000 });
 
+      // Verify nginx vhost was created; create inline if the script missed it
+      const vhostPath = `/etc/nginx/sites-available/${webmailDomain}`;
+      try {
+        await exec(`test -f ${vhostPath}`, { timeout: 5_000 });
+      } catch {
+        // Vhost missing — create it directly
+        this.logger.warn(`Roundcube vhost not found after install, creating inline: ${vhostPath}`);
+        const phpVer = await this.detectPhpFpmVersion();
+        const vhostContent = [
+          '# ClearPanel — Roundcube webmail vhost',
+          'server {',
+          '    listen 80;',
+          '    listen [::]:80;',
+          `    server_name ${webmailDomain};`,
+          '',
+          '    root /usr/share/roundcube;',
+          '    index index.php;',
+          '',
+          '    add_header X-Content-Type-Options nosniff;',
+          '    add_header X-Frame-Options SAMEORIGIN;',
+          '    add_header X-XSS-Protection "1; mode=block";',
+          '',
+          '    location ~ /\\. { deny all; }',
+          '    location ~ ^/(config|temp|logs)/ { deny all; }',
+          '',
+          '    location / {',
+          '        try_files $uri $uri/ /index.php?$args;',
+          '    }',
+          '',
+          '    location ~ \\.php$ {',
+          '        include snippets/fastcgi-php.conf;',
+          `        fastcgi_pass unix:/var/run/php/php${phpVer}-fpm.sock;`,
+          '        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;',
+          '        include fastcgi_params;',
+          '    }',
+          '',
+          '    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {',
+          '        expires 30d;',
+          '        add_header Cache-Control "public, immutable";',
+          '    }',
+          '}',
+        ].join('\n');
+        await this.sudo(`bash -c 'cat > ${vhostPath} << "VHOSTEOF"\n${vhostContent}\nVHOSTEOF'`);
+        await this.sudo(`ln -sf ${vhostPath} /etc/nginx/sites-enabled/`);
+        try {
+          await this.sudo('nginx -t && systemctl reload nginx');
+        } catch (e: any) {
+          this.logger.warn(`Nginx reload after vhost creation: ${e.message}`);
+        }
+      }
+
       // Auto-configure Roundcube SSO plugin and Dovecot master-user
       const ssoScript = path.join(scriptsDir, 'setup-roundcube-sso.sh');
       const apiUrl = 'http://localhost:3334';
@@ -1494,19 +1545,43 @@ location /pgadmin {
       detail: nginxRunning ? 'Nginx is running' : 'Nginx is NOT running',
     });
 
-    // Check if any Roundcube vhost exists
+    // Check if any Roundcube vhost exists (-R follows symlinks in sites-enabled/)
     let vhostFound = false;
     let vhostPath = '';
     try {
-      const out = await this.sudo(`grep -rl 'roundcube' /etc/nginx/sites-enabled/ 2>/dev/null | head -1`);
+      const out = await this.sudo(`grep -Rl 'roundcube' /etc/nginx/sites-enabled/ 2>/dev/null | head -1`);
       vhostFound = out.length > 0;
-      vhostPath = out;
+      vhostPath = out.trim();
     } catch {}
-    checks.push({
-      name: 'Nginx Vhost',
-      status: vhostFound ? 'ok' : 'warn',
-      detail: vhostFound ? `Roundcube nginx vhost found: ${vhostPath}` : 'No Roundcube nginx vhost configured',
-    });
+    // Fallback: also check sites-available if symlink grep missed it
+    if (!vhostFound) {
+      try {
+        const out = await this.sudo(`grep -Rl 'roundcube' /etc/nginx/sites-available/ 2>/dev/null | head -1`);
+        if (out.trim()) {
+          vhostPath = out.trim();
+          vhostFound = true;
+          // The vhost exists but isn't enabled — note this
+          checks.push({
+            name: 'Nginx Vhost',
+            status: 'warn',
+            detail: `Roundcube vhost found at ${vhostPath} but NOT enabled in sites-enabled/`,
+          });
+        }
+      } catch {}
+    }
+    if (!vhostFound) {
+      checks.push({
+        name: 'Nginx Vhost',
+        status: 'warn',
+        detail: 'No Roundcube nginx vhost configured',
+      });
+    } else if (!checks.find(c => c.name === 'Nginx Vhost')) {
+      checks.push({
+        name: 'Nginx Vhost',
+        status: 'ok',
+        detail: `Roundcube nginx vhost found: ${vhostPath}`,
+      });
+    }
 
     // Check which PHP-FPM version this vhost uses and verify intl support.
     let phpFpmVersion = '';
@@ -1517,10 +1592,14 @@ location /pgadmin {
         if (match) phpFpmVersion = match[1];
       } catch {}
     }
+    // Fallback: detect PHP-FPM from the system if vhost parse failed
+    if (!phpFpmVersion) {
+      phpFpmVersion = await this.detectPhpFpmVersion();
+    }
     checks.push({
       name: 'Webmail PHP-FPM',
       status: phpFpmVersion ? 'ok' : 'warn',
-      detail: phpFpmVersion ? `Vhost uses php${phpFpmVersion}-fpm` : 'Could not detect PHP-FPM socket version from Roundcube vhost',
+      detail: phpFpmVersion ? `Vhost uses php${phpFpmVersion}-fpm` : 'Could not detect PHP-FPM socket version',
     });
 
     if (phpFpmVersion) {
