@@ -955,6 +955,30 @@ location /pgadmin {
     return this.diagnoseApp('phpmyadmin');
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  GENERIC REPAIR DISPATCHER
+  // ═══════════════════════════════════════════════════════════════════
+
+  async repairApp(id: string): Promise<{ success: boolean; output: string }> {
+    const map: Record<string, () => Promise<string>> = {
+      roundcube: () => this.repairRoundcube(),
+    };
+    const fn = map[id];
+    if (!fn) return { success: false, output: `No repair script available for: ${id}` };
+    try {
+      const output = await fn();
+      return { success: true, output };
+    } catch (e: any) {
+      return { success: false, output: e.message };
+    }
+  }
+
+  private async repairRoundcube(): Promise<string> {
+    const scriptPath = path.join(process.cwd(), 'scripts/email/repair-roundcube.sh');
+    const { stdout, stderr } = await this.sudo(`bash ${scriptPath}`);
+    return (stdout + '\n' + stderr).trim();
+  }
+
   // ─── per-app diagnose implementations ──────────────────────────────
 
   private async diagnosePhpMyAdminChecks(): Promise<DiagnoseCheck[]> {

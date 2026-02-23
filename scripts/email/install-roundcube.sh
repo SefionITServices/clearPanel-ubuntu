@@ -83,6 +83,29 @@ echo "[✓] Roundcube packages installed"
 # --- Configure Roundcube ---
 ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
 if [[ -f "$ROUNDCUBE_CONF" ]]; then
+  # Generate a secure 24-character des_key if not already set or still placeholder
+  CURRENT_KEY=$(grep -oP "\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
+  if [[ -z "$CURRENT_KEY" || "$CURRENT_KEY" == *"put_some_random"* || ${#CURRENT_KEY} -lt 24 ]]; then
+    DES_KEY=$(head -c 24 /dev/urandom | base64 | head -c 24)
+    if grep -q "\$config\['des_key'\]" "$ROUNDCUBE_CONF"; then
+      sed -i "s|\$config\['des_key'\].*|\$config['des_key'] = '${DES_KEY}';|" "$ROUNDCUBE_CONF"
+    else
+      printf "\n\$config['des_key'] = '%s';\n" "$DES_KEY" >> "$ROUNDCUBE_CONF"
+    fi
+    echo "[✓] Generated encryption key (des_key)"
+  fi
+
+  # Enable error logging so problems are visible
+  if ! grep -q "\$config\['log_driver'\]" "$ROUNDCUBE_CONF"; then
+    printf "\n\$config['log_driver'] = 'file';\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['enable_logging'\]" "$ROUNDCUBE_CONF"; then
+    printf "\$config['enable_logging'] = true;\n" >> "$ROUNDCUBE_CONF"
+  fi
+  if ! grep -q "\$config\['debug_level'\]" "$ROUNDCUBE_CONF"; then
+    printf "\$config['debug_level'] = 1;\n" >> "$ROUNDCUBE_CONF"
+  fi
+
   # Set defaults for local IMAP/SMTP submission via Postfix.
   sed -i "s|\$config\['imap_host'\].*|\$config['imap_host'] = ['localhost:143'];|" "$ROUNDCUBE_CONF" 2>/dev/null || true
   sed -i "s|\$config\['default_host'\].*|\$config['default_host'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
@@ -121,7 +144,51 @@ EOF
   echo "[✓] Roundcube configuration updated"
 fi
 
-# --- Create nginx vhost ---
+# --- Ensure database backend PHP extension is installed ---
+if [[ "$DB_TYPE" == "sqlite" ]]; then
+  apt-get install -y -qq "php${PHP_VER}-sqlite3" 2>/dev/null || true
+elif [[ "$DB_TYPE" == "mysql" ]]; then
+  apt-get install -y -qq "php${PHP_VER}-mysql" 2>/dev/null || true
+fi
+
+# --- Ensure Roundcube database is initialized ---
+RC_DB_DIR="/var/lib/roundcube/db"
+RC_DB_FILE="${RC_DB_DIR}/sqlite.db"
+if [[ "$DB_TYPE" == "sqlite" ]]; then
+  mkdir -p "$RC_DB_DIR"
+  if [[ ! -f "$RC_DB_FILE" ]] || [[ ! -s "$RC_DB_FILE" ]]; then
+    echo "Initializing Roundcube SQLite database..."
+    # Try dbconfig-common reconfigure first
+    if dpkg-reconfigure -f noninteractive roundcube-core 2>/dev/null; then
+      echo "[✓] Database initialized via dbconfig-common"
+    fi
+    # If DB still missing, initialize from Roundcube SQL schema
+    if [[ ! -f "$RC_DB_FILE" ]] || [[ ! -s "$RC_DB_FILE" ]]; then
+      SCHEMA_FILE="/usr/share/roundcube/SQL/sqlite.initial.sql"
+      if [[ -f "$SCHEMA_FILE" ]]; then
+        sqlite3 "$RC_DB_FILE" < "$SCHEMA_FILE"
+        echo "[✓] Database initialized from schema"
+      else
+        echo "WARN: Could not find Roundcube SQLite schema at ${SCHEMA_FILE}" >&2
+      fi
+    fi
+    chown www-data:www-data "$RC_DB_DIR" "$RC_DB_FILE" 2>/dev/null || true
+    chmod 660 "$RC_DB_FILE" 2>/dev/null || true
+  fi
+fi
+
+# --- Set permissions (temp, logs, db) ---
+for dir in /var/lib/roundcube /var/lib/roundcube/temp /var/log/roundcube "$RC_DB_DIR"; do
+  mkdir -p "$dir" 2>/dev/null || true
+  chown -R www-data:www-data "$dir" 2>/dev/null || true
+done
+chmod -R 770 /var/lib/roundcube/temp 2>/dev/null || true
+chmod -R 770 /var/log/roundcube 2>/dev/null || true
+
+# Ensure temp_dir is set in config
+if [[ -f "$ROUNDCUBE_CONF" ]] && ! grep -q "\$config\['temp_dir'\]" "$ROUNDCUBE_CONF"; then
+  printf "\n\$config['temp_dir'] = '/var/lib/roundcube/temp';\n" >> "$ROUNDCUBE_CONF"
+fi
 NGINX_CONF="/etc/nginx/sites-available/${WEBMAIL_DOMAIN}"
 cat >"$NGINX_CONF" <<NGINX
 # ClearPanel — Roundcube webmail vhost
@@ -177,10 +244,6 @@ fi
 # Ensure PHP-FPM is running
 systemctl enable "php${PHP_VER}-fpm" 2>/dev/null || true
 systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
-
-# --- Set permissions ---
-chown -R www-data:www-data /var/lib/roundcube 2>/dev/null || true
-chown -R www-data:www-data /var/log/roundcube 2>/dev/null || true
 
 echo ""
 echo "=== Roundcube installation complete ==="

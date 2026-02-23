@@ -84,4 +84,15 @@ export class AppStoreController {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+
+  /** Repair an app — run auto-fix script */
+  @Post('repair/:id')
+  async repairApp(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      const result = await this.appStore.repairApp(id);
+      return res.json(result);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
 }
