@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 420" width="512" height="420">
+  <defs>
+    <linearGradient id="cloudGrad" x1="0" y1="0" x2="512" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7ED4F5"/>
+      <stop offset="35%" stop-color="#4DB8E8"/>
+      <stop offset="70%" stop-color="#2D9CDB"/>
+      <stop offset="100%" stop-color="#2185D0"/>
+    </linearGradient>
+  </defs>
+  <!-- Cloud body -->
+  <path d="
+    M 125,340
+    C 60,340 20,305 20,265
+    C 20,225 55,195 90,190
+    C 85,140 120,90 175,90
+    C 210,90 238,108 252,132
+    C 272,80 320,48 375,48
+    C 445,48 500,108 500,178
+    C 500,185 499,192 498,198
+    C 510,215 520,240 520,265
+    C 520,310 485,340 435,340
+    Z
+  " fill="url(#cloudGrad)" />
+  <!-- Terminal chevron > -->
+  <polygon points="170,190 250,240 170,290" fill="white" stroke="white" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Terminal cursor _ -->
+  <rect x="275" y="270" width="80" height="18" rx="4" fill="white"/>
+</svg>

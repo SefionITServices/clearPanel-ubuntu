@@ -191,21 +191,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       {/* Brand */}
       <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Box
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: 1.5,
-            background: 'linear-gradient(135deg, #4285F4 0%, #1A73E8 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontWeight: 700,
-            fontSize: '1rem',
-          }}
-        >
-          CP
-        </Box>
+          component="img"
+          src="/logo.svg"
+          alt="ClearPanel"
+          sx={{ width: 36, height: 30 }}
+        />
         <Typography variant="h6" fontWeight={700} noWrap sx={{ color: '#202124' }}>
           clearPanel
         </Typography>
