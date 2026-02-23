@@ -222,7 +222,7 @@ clearpanel ALL=(root) NOPASSWD: /usr/bin/sudo -u postgres *
 
 # System configuration
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl, /usr/sbin/postconf
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tee, /usr/bin/sed, /usr/bin/cat, /usr/bin/grep, /usr/bin/tail, /usr/bin/find, /usr/bin/ls, /usr/bin/rm, /usr/bin/mv, /usr/bin/ln, /usr/bin/test, /usr/bin/echo, /usr/bin/bash, /usr/bin/curl, /usr/bin/ss
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/tee, /usr/bin/sed, /usr/bin/cat, /usr/bin/grep, /usr/bin/tail, /usr/bin/find, /usr/bin/ls, /usr/bin/rm, /usr/bin/mv, /usr/bin/ln, /usr/bin/test, /usr/bin/echo, /usr/bin/bash, /usr/bin/curl, /usr/bin/ss, /usr/bin/env
 
 # PHP management
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/update-alternatives, /usr/bin/php*
