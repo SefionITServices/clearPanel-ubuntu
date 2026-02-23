@@ -191,11 +191,11 @@ export class DatabaseService {
 
     try {
       logs.push('Updating package list...');
-      await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq', { timeout: 60000 });
+      await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq', { timeout: 60000 });
 
       if (engine === 'mariadb') {
         logs.push('Installing MariaDB server and client...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
 
         logs.push('Enabling MariaDB service...');
         await exec('sudo systemctl enable mariadb', { timeout: 10000 });
@@ -212,7 +212,7 @@ export class DatabaseService {
 
       } else if (engine === 'mysql') {
         logs.push('Installing MySQL server and client...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client', { timeout: 300000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client', { timeout: 300000 });
 
         logs.push('Enabling MySQL service...');
         await exec('sudo systemctl enable mysql', { timeout: 10000 });
@@ -228,7 +228,7 @@ export class DatabaseService {
 
       } else if (engine === 'postgresql') {
         logs.push('Installing PostgreSQL server and client...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib', { timeout: 300000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib', { timeout: 300000 });
 
         logs.push('Enabling PostgreSQL service...');
         await exec('sudo systemctl enable postgresql', { timeout: 10000 });
