@@ -172,7 +172,7 @@ for f in /etc/nginx/sites-enabled/*phpmyadmin* /etc/nginx/sites-enabled/*pma*; d
 done
 # Also check if it's included inside another config
 if [[ -z "$PMA_CONF" ]]; then
-  PMA_HIT=$(grep -rl "phpmyadmin\|phpMyAdmin" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
+  PMA_HIT=$(grep -Rl "phpmyadmin\|phpMyAdmin" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
   [[ -n "$PMA_HIT" ]] && PMA_CONF="$PMA_HIT"
 fi
 if [[ -n "$PMA_CONF" ]]; then
@@ -327,7 +327,7 @@ else
 fi
 
 # Check Roundcube nginx vhost
-RC_CONF=$(grep -rl "roundcube" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
+RC_CONF=$(grep -Rl "roundcube" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
 if [[ -n "$RC_CONF" ]]; then
   ok "Roundcube nginx config: $RC_CONF"
 else
