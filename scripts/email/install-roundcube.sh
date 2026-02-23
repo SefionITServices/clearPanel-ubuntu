@@ -43,13 +43,6 @@ echo "[✓] PHP-FPM version: ${PHP_VER}"
 echo "Installing Roundcube and PHP ${PHP_VER} dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 
-# Pre-seed debconf to skip interactive prompts
-debconf-set-selections <<EOF
-roundcube-core roundcube/dbconfig-install boolean true
-roundcube-core roundcube/database-type select ${DB_TYPE}
-roundcube-core roundcube/reconfigure-webserver multiselect
-EOF
-
 apt-get update -qq
 apt-get install -y -qq \
   roundcube \
