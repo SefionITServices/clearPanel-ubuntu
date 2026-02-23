@@ -23,13 +23,12 @@ export function AuthCenteredLayout({ title, description, children, footer }: Aut
         <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Logo */}
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
-            <Box sx={{
-              width: 48, height: 48, borderRadius: 2,
-              background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 20 }}>CP</Typography>
-            </Box>
+            <Box
+              component="img"
+              src="/logo.svg"
+              alt="ClearPanel"
+              sx={{ width: 48, height: 40 }}
+            />
           </Box>
           {title && (
             <Typography variant="h5" fontWeight={700} component="h1" textAlign="center">
