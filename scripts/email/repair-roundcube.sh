@@ -56,6 +56,9 @@ else
   FIXES=$((FIXES + 1))
 fi
 
+# Temporarily disable nounset — grep/sed patterns use literal $config
+set +u
+
 # ── 4. Check des_key ──
 if [[ -f "$ROUNDCUBE_CONF" ]]; then
   CURRENT_KEY=$(grep -oP "\\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
@@ -174,6 +177,8 @@ elif [[ "$DB_DSN" == *mysql* ]]; then
 else
   warn "Could not detect database type from config (db_dsnw: ${DB_DSN:-not set})"
 fi
+
+set -u
 
 # ── 9. Check /var/lib/roundcube ownership ──
 RC_OWNER=$(stat -c '%U' /var/lib/roundcube 2>/dev/null || true)

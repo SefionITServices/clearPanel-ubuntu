@@ -76,8 +76,12 @@ echo "[✓] Roundcube packages installed"
 # --- Configure Roundcube ---
 ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
 if [[ -f "$ROUNDCUBE_CONF" ]]; then
+  # Temporarily disable nounset — grep/sed patterns use literal $config
+  # which bash would otherwise treat as an unbound variable reference
+  set +u
+
   # Generate a secure 24-character des_key if not already set or still placeholder
-  CURRENT_KEY=$(grep -oP "\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
+  CURRENT_KEY=$(grep -oP "\\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
   if [[ -z "$CURRENT_KEY" || "$CURRENT_KEY" == *"put_some_random"* || ${#CURRENT_KEY} -lt 24 ]]; then
     DES_KEY=$(head -c 24 /dev/urandom | base64 | head -c 24)
     if grep -q "\$config\['des_key'\]" "$ROUNDCUBE_CONF"; then
@@ -134,6 +138,8 @@ EOF
   if ! grep -q "'managesieve'" "$ROUNDCUBE_CONF"; then
     sed -i "s|\$config\['plugins'\] = array(|\$config['plugins'] = array(\n  'managesieve',\n  'archive',\n  'zipdownload',\n  'newmail_notifier',|" "$ROUNDCUBE_CONF" 2>/dev/null || true
   fi
+
+  set -u
   echo "[✓] Roundcube configuration updated"
 fi
 
