@@ -1056,8 +1056,8 @@ export class DatabaseService {
         logs.push('Stopping MariaDB...');
         try { await exec('sudo systemctl stop mariadb', { timeout: 15000 }); } catch {}
         logs.push('Removing MariaDB packages...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mariadb-server mariadb-client mariadb-common', { timeout: 120000 });
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mariadb-server mariadb-client mariadb-common', { timeout: 120000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
         logs.push('MariaDB removed successfully');
         return { success: true, message: 'MariaDB uninstalled', logs };
       } else if (engine === 'mysql') {
@@ -1065,16 +1065,16 @@ export class DatabaseService {
         try { await exec('sudo systemctl stop mysql', { timeout: 15000 }); } catch {}
         try { await exec('sudo systemctl stop mysqld', { timeout: 15000 }); } catch {}
         logs.push('Removing MySQL packages...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mysql-server mysql-client mysql-common', { timeout: 120000 });
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mysql-server mysql-client mysql-common', { timeout: 120000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
         logs.push('MySQL removed successfully');
         return { success: true, message: 'MySQL uninstalled', logs };
       } else if (engine === 'postgresql') {
         logs.push('Stopping PostgreSQL...');
         try { await exec('sudo systemctl stop postgresql', { timeout: 15000 }); } catch {}
         logs.push('Removing PostgreSQL packages...');
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y postgresql postgresql-client postgresql-contrib', { timeout: 120000 });
-        await exec('sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y postgresql postgresql-client postgresql-contrib', { timeout: 120000 });
+        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get autoremove -y', { timeout: 60000 });
         logs.push('PostgreSQL removed successfully');
         return { success: true, message: 'PostgreSQL uninstalled', logs };
       }

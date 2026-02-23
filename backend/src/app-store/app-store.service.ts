@@ -431,10 +431,10 @@ export class AppStoreService {
       // Install PHP + phpMyAdmin non-interactively
       // Pre-seed debconf so phpmyadmin doesn't try to configure a DB interactively
       const cmds = [
-        'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        'env DEBIAN_FRONTEND=noninteractive apt-get update -qq',
         `bash -c 'echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections'`,
         `bash -c 'echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect" | debconf-set-selections'`,
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq phpmyadmin php-mbstring php-zip php-gd php-json php-curl php-fpm',
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq phpmyadmin php-mbstring php-zip php-gd php-json php-curl php-fpm',
       ];
       let logs = '';
       for (const cmd of cmds) {
@@ -670,7 +670,7 @@ p.write_text(txt)
 
   private async uninstallPhpMyAdmin(): Promise<{ success: boolean; message: string }> {
     try {
-      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y phpmyadmin');
+      await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get purge -y phpmyadmin');
       await this.sudo('rm -f /etc/nginx/snippets/phpmyadmin.conf');
       // Remove include lines from nginx configs
       try {
@@ -693,7 +693,7 @@ p.write_text(txt)
   private async installNodejs(): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const logs = await this.sudo(
-        'bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs"',
+        'bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs"',
         180_000,
       );
       return { success: true, message: 'Node.js 20.x installed', logs };
@@ -704,7 +704,7 @@ p.write_text(txt)
 
   private async uninstallNodejs(): Promise<{ success: boolean; message: string }> {
     try {
-      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y nodejs');
+      await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get purge -y nodejs');
       return { success: true, message: 'Node.js uninstalled' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -716,7 +716,7 @@ p.write_text(txt)
   private async installComposer(): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const cmds = [
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq php-cli php-zip unzip',
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq php-cli php-zip unzip',
         'curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer',
       ];
       let logs = '';
@@ -743,7 +743,7 @@ p.write_text(txt)
   private async installCertbot(): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const logs = await this.sudo(
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
         120_000,
       );
       return { success: true, message: 'Certbot installed', logs };
@@ -789,8 +789,8 @@ p.write_text(txt)
         'bash -c "curl -fsS https://www.pgadmin.org/static/packages_pgadmin_org.pub | gpg --dearmor -o /usr/share/keyrings/packages-pgadmin-org.gpg 2>/dev/null || true"',
         // Create the repository configuration file
         'bash -c \'echo "deb [signed-by=/usr/share/keyrings/packages-pgadmin-org.gpg] https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/$(lsb_release -cs) pgadmin4 main" > /etc/apt/sources.list.d/pgadmin4.list\'',
-        'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y pgadmin4-web',
+        'env DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y pgadmin4-web',
       ];
       let logs = '';
       for (const cmd of cmds) {
@@ -853,7 +853,7 @@ location /pgadmin {
 
   private async uninstallPgAdmin(): Promise<{ success: boolean; message: string }> {
     try {
-      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get purge -y pgadmin4-web pgadmin4');
+      await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get purge -y pgadmin4-web pgadmin4');
       await this.sudo('rm -f /etc/nginx/snippets/pgadmin.conf');
       try {
         const sites = await this.sudo('ls /etc/nginx/sites-available/');
@@ -877,7 +877,7 @@ location /pgadmin {
   ): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const logs = await this.sudo(
-        `DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkg}`,
+        `env DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkg}`,
         120_000,
       );
       try { await this.sudo(`systemctl enable ${service}`); } catch {}
@@ -890,7 +890,7 @@ location /pgadmin {
 
   private async uninstallGenericApt(pkg: string, label: string): Promise<{ success: boolean; message: string }> {
     try {
-      await this.sudo(`DEBIAN_FRONTEND=noninteractive apt-get purge -y ${pkg}`);
+      await this.sudo(`env DEBIAN_FRONTEND=noninteractive apt-get purge -y ${pkg}`);
       return { success: true, message: `${label} uninstalled` };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -1608,8 +1608,8 @@ location /pgadmin {
   private async installMailman(): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const cmds = [
-        'DEBIAN_FRONTEND=noninteractive apt-get update -qq',
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mailman3-full',
+        'env DEBIAN_FRONTEND=noninteractive apt-get update -qq',
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mailman3-full',
       ];
       let logs = '';
       for (const cmd of cmds) {
@@ -1633,8 +1633,8 @@ location /pgadmin {
     try {
       await this.sudo('systemctl stop mailman3 2>/dev/null || true');
       await this.sudo('systemctl stop mailman3-web 2>/dev/null || true');
-      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get remove -y mailman3-full 2>/dev/null || true');
-      await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true');
+      await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get remove -y mailman3-full 2>/dev/null || true');
+      await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true');
       return { success: true, message: 'Mailman 3 uninstalled' };
     } catch (e: any) {
       this.logger.error(`Mailman uninstall failed: ${e.message}`);

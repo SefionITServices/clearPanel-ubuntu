@@ -189,7 +189,7 @@ export class PhpService {
     } catch {}
     // Add PPA
     this.logger.log('Adding ondrej/php PPA...');
-    await this.sudo('DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common', 60_000);
+    await this.sudo('env DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common', 60_000);
     await this.sudo('add-apt-repository -y ppa:ondrej/php', 60_000);
     await this.sudo('apt-get update -qq', 60_000);
   }
@@ -219,7 +219,7 @@ export class PhpService {
         `php${version}-opcache`,
       ].join(' ');
       const logs = await this.sudo(
-        `DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkgs}`,
+        `env DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkgs}`,
         180_000,
       );
       // Enable and start FPM
@@ -240,7 +240,7 @@ export class PhpService {
     try {
       await this.sudo(`systemctl stop php${version}-fpm 2>/dev/null || true`);
       await this.sudo(
-        `DEBIAN_FRONTEND=noninteractive apt-get purge -y 'php${version}-*'`,
+        `env DEBIAN_FRONTEND=noninteractive apt-get purge -y 'php${version}-*'`,
         120_000,
       );
       await this.sudo('apt-get autoremove -y', 60_000);
@@ -393,7 +393,7 @@ export class PhpService {
   async installExtension(version: string, ext: string): Promise<{ success: boolean; message: string }> {
     try {
       await this.sudo(
-        `DEBIAN_FRONTEND=noninteractive apt-get install -y php${version}-${ext}`,
+        `env DEBIAN_FRONTEND=noninteractive apt-get install -y php${version}-${ext}`,
         120_000,
       );
       // Restart FPM so it picks up the new extension
@@ -408,7 +408,7 @@ export class PhpService {
   async removeExtension(version: string, ext: string): Promise<{ success: boolean; message: string }> {
     try {
       await this.sudo(
-        `DEBIAN_FRONTEND=noninteractive apt-get purge -y php${version}-${ext}`,
+        `env DEBIAN_FRONTEND=noninteractive apt-get purge -y php${version}-${ext}`,
         60_000,
       );
       try { await this.sudo(`systemctl restart php${version}-fpm`); } catch {}
