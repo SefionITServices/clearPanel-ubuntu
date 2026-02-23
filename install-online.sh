@@ -436,13 +436,6 @@ fi
 # ══════════════════════════════════════════════════════════════════
 step "Installing Roundcube webmail..."
 
-# Pre-seed debconf
-debconf-set-selections <<RCEOF 2>/dev/null || true
-roundcube-core roundcube/dbconfig-install boolean true
-roundcube-core roundcube/database-type select sqlite
-roundcube-core roundcube/reconfigure-webserver multiselect
-RCEOF
-
 # Detect PHP version
 PHP_VER=""
 for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do

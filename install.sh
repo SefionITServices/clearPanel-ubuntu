@@ -298,12 +298,6 @@ MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" && \
 # ── Pre-install Roundcube Webmail ─────────────────────────────────
 echo -e "${YELLOW}📬 Installing Roundcube webmail packages...${NC}"
 export DEBIAN_FRONTEND=noninteractive
-# Pre-seed debconf for non-interactive install
-debconf-set-selections <<RCEOF
-roundcube-core roundcube/dbconfig-install boolean true
-roundcube-core roundcube/database-type select sqlite
-roundcube-core roundcube/reconfigure-webserver multiselect
-RCEOF
 
 PHP_VER=""
 for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
