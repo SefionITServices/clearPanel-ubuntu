@@ -975,8 +975,7 @@ location /pgadmin {
 
   private async repairRoundcube(): Promise<string> {
     const scriptPath = path.join(process.cwd(), 'scripts/email/repair-roundcube.sh');
-    const { stdout, stderr } = await this.sudo(`bash ${scriptPath}`);
-    return (stdout + '\n' + stderr).trim();
+    return this.sudo(`bash ${scriptPath}`);
   }
 
   // ─── per-app diagnose implementations ──────────────────────────────
