@@ -563,22 +563,26 @@ location /phpmyadmin {
 
   /**
    * Create the phpMyAdmin configuration storage database, import tables,
-   * create the control user, and update config.inc.php so that the
-   * "configuration storage is not completely configured" warning goes away.
+   * create the control user, and write a clean config.inc.php.
+   *
+   * NOTE: File is written via base64-decode pipe so that PHP dollar-sign
+   * variables in the content are never interpreted by bash.
    */
   private async setupPhpMyAdminConfigStorage(): Promise<void> {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const rand = (n: number) =>
+      Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
     const controlUser = 'pma';
-    // Generate a random password for the pma control user
-    const controlPass = Array.from({ length: 24 }, () =>
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 62)),
-    ).join('');
+    const controlPass = rand(24);
+    const blowfishSecret = rand(32);
 
     // 1. Create the phpmyadmin database and control user
     const setupSql = [
-      "CREATE DATABASE IF NOT EXISTS phpmyadmin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+      'CREATE DATABASE IF NOT EXISTS phpmyadmin DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
       `CREATE USER IF NOT EXISTS '${controlUser}'@'localhost' IDENTIFIED BY '${controlPass}';`,
       `GRANT ALL PRIVILEGES ON phpmyadmin.* TO '${controlUser}'@'localhost';`,
-      "FLUSH PRIVILEGES;",
+      'FLUSH PRIVILEGES;',
     ].join(' ');
     await this.sudo(`mysql -e "${setupSql.replace(/"/g, '\\"')}"`, 30_000);
 
@@ -591,58 +595,77 @@ location /phpmyadmin {
       this.logger.warn('create_tables.sql not found — skipping table import');
     }
 
-    // 3. Write or update config.inc.php with the control user settings
+    // 3. Build and write config.inc.php entirely in Node.js, then pipe via base64.
+    //    This avoids bash interpreting PHP variables like $cfg, $i as shell variables.
     const configPath = '/etc/phpmyadmin/config.inc.php';
-    const marker = '/* clearPanel: phpMyAdmin config-storage settings */';
 
-    const configBlock = [
-      marker,
-      `$cfg['Servers'][$i]['controluser'] = '${controlUser}';`,
-      `$cfg['Servers'][$i]['controlpass'] = '${controlPass}';`,
-      `$cfg['Servers'][$i]['pmadb']       = 'phpmyadmin';`,
-      `$cfg['Servers'][$i]['bookmarktable']    = 'pma__bookmark';`,
-      `$cfg['Servers'][$i]['relation']         = 'pma__relation';`,
-      `$cfg['Servers'][$i]['table_info']       = 'pma__table_info';`,
-      `$cfg['Servers'][$i]['table_coords']     = 'pma__table_coords';`,
-      `$cfg['Servers'][$i]['pdf_pages']        = 'pma__pdf_pages';`,
-      `$cfg['Servers'][$i]['column_info']      = 'pma__column_info';`,
-      `$cfg['Servers'][$i]['history']          = 'pma__history';`,
-      `$cfg['Servers'][$i]['tracking']         = 'pma__tracking';`,
-      `$cfg['Servers'][$i]['userconfig']       = 'pma__userconfig';`,
-      `$cfg['Servers'][$i]['recent']           = 'pma__recent';`,
-      `$cfg['Servers'][$i]['favorite']         = 'pma__favorite';`,
-      `$cfg['Servers'][$i]['users']            = 'pma__users';`,
-      `$cfg['Servers'][$i]['usergroups']       = 'pma__usergroups';`,
-      `$cfg['Servers'][$i]['navigationhiding'] = 'pma__navigationhiding';`,
-      `$cfg['Servers'][$i]['savedsearches']    = 'pma__savedsearches';`,
-      `$cfg['Servers'][$i]['central_columns']  = 'pma__central_columns';`,
-      `$cfg['Servers'][$i]['designer_settings']= 'pma__designer_settings';`,
-      `$cfg['Servers'][$i]['export_templates'] = 'pma__export_templates';`,
+    // Read existing config (ignore error if file doesn't exist)
+    let existing = '';
+    try { existing = await this.sudo(`cat ${configPath} 2>/dev/null`); } catch {}
+
+    // Strip any previously-written clearPanel block (old format and new format)
+    existing = existing
+      .replace(/\/\* clearPanel-managed \*\/[\s\S]*?\/\* end clearPanel-managed \*\//g, '')
+      .replace(/\/\* clearPanel: phpMyAdmin config-storage settings \*\/[\s\S]*?(?=\n\n|\?>|$)/g, '');
+
+    // Remove trailing ?> so we can safely append before it
+    existing = existing.replace(/\n?\?>\s*$/, '').trimEnd();
+
+    // If the file is empty or missing the PHP opening tag, bootstrap a minimal config
+    if (!existing.trim().startsWith('<?php')) {
+      existing = [
+        '<?php',
+        '/* phpMyAdmin configuration — managed by clearPanel */',
+        '$i = 1;',
+        "$cfg['Servers'][$i]['auth_type']     = 'cookie';",
+        "$cfg['Servers'][$i]['host']          = '127.0.0.1';",
+        "$cfg['Servers'][$i]['compress']      = false;",
+        "$cfg['Servers'][$i]['AllowNoPassword'] = false;",
+      ].join('\n');
+    }
+
+    // Build the clearPanel-managed block with all required settings
+    const block = [
+      '',
+      '/* clearPanel-managed */',
+      `$cfg['blowfish_secret'] = '${blowfishSecret}';`,
+      `$cfg['Servers'][$i]['controluser']       = '${controlUser}';`,
+      `$cfg['Servers'][$i]['controlpass']       = '${controlPass}';`,
+      `$cfg['Servers'][$i]['pmadb']             = 'phpmyadmin';`,
+      `$cfg['Servers'][$i]['bookmarktable']     = 'pma__bookmark';`,
+      `$cfg['Servers'][$i]['relation']          = 'pma__relation';`,
+      `$cfg['Servers'][$i]['table_info']        = 'pma__table_info';`,
+      `$cfg['Servers'][$i]['table_coords']      = 'pma__table_coords';`,
+      `$cfg['Servers'][$i]['pdf_pages']         = 'pma__pdf_pages';`,
+      `$cfg['Servers'][$i]['column_info']       = 'pma__column_info';`,
+      `$cfg['Servers'][$i]['history']           = 'pma__history';`,
+      `$cfg['Servers'][$i]['tracking']          = 'pma__tracking';`,
+      `$cfg['Servers'][$i]['userconfig']        = 'pma__userconfig';`,
+      `$cfg['Servers'][$i]['recent']            = 'pma__recent';`,
+      `$cfg['Servers'][$i]['favorite']          = 'pma__favorite';`,
+      `$cfg['Servers'][$i]['users']             = 'pma__users';`,
+      `$cfg['Servers'][$i]['usergroups']        = 'pma__usergroups';`,
+      `$cfg['Servers'][$i]['navigationhiding']  = 'pma__navigationhiding';`,
+      `$cfg['Servers'][$i]['savedsearches']     = 'pma__savedsearches';`,
+      `$cfg['Servers'][$i]['central_columns']   = 'pma__central_columns';`,
+      `$cfg['Servers'][$i]['designer_settings'] = 'pma__designer_settings';`,
+      `$cfg['Servers'][$i]['export_templates']  = 'pma__export_templates';`,
+      '/* end clearPanel-managed */',
     ].join('\n');
 
+    const finalContent = existing + '\n' + block + '\n';
+
+    // Write via base64 to prevent any bash variable expansion of PHP dollar signs
+    const b64 = Buffer.from(finalContent, 'utf8').toString('base64');
+    await this.sudo(`bash -c 'echo "${b64}" | base64 -d > ${configPath}'`);
+    await this.sudo(`chown www-data:www-data ${configPath} 2>/dev/null || true`);
+    await this.sudo(`chmod 640 ${configPath}`);
+
+    // Validate PHP syntax — catch bad writes early
     try {
-      const existing = await this.sudo(`cat ${configPath}`);
-      if (existing.includes(marker)) {
-        // Replace existing block (between marker and next blank line or EOF)
-        const escapedBlock = configBlock.replace(/'/g, "'\\''");
-        await this.sudo(`bash -c 'python3 -c "
-import re, pathlib
-p = pathlib.Path(\"${configPath}\")
-txt = p.read_text()
-# Remove old clearPanel block
-txt = re.sub(r\"/\\\\* clearPanel.*?(?=\\\\n\\\\n|\\\\Z)\", \"\", txt, flags=re.DOTALL)
-p.write_text(txt)
-"'`);
-      }
-      // Append the config block before the closing ?>
-      if (existing.includes('?>')) {
-        await this.sudo(`sed -i '/^\\?>$/d' ${configPath}`);
-      }
-      await this.sudo(`bash -c 'cat >> ${configPath} << "HEREDOC"\n\n${configBlock}\nHEREDOC'`);
-    } catch {
-      // Config file doesn't exist — create it
-      const fullConfig = `<?php\n$i = 1;\n\n${configBlock}\n`;
-      await this.sudo(`bash -c 'cat > ${configPath} << "HEREDOC"\n${fullConfig}\nHEREDOC'`);
+      await this.sudo(`php -l ${configPath}`);
+    } catch (e: any) {
+      throw new Error(`config.inc.php has PHP syntax error after writing: ${e.message}`);
     }
 
     this.logger.log('phpMyAdmin configuration storage set up successfully');
