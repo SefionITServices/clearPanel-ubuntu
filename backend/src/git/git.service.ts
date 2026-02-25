@@ -2,11 +2,26 @@ import { Injectable } from '@nestjs/common';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
-import { execFile as execFileCb } from 'child_process';
+import { execFile as execFileCb, execSync } from 'child_process';
 import { promisify } from 'util';
 import { getDataFilePath } from '../common/paths';
 
 const execFile = promisify(execFileCb);
+
+// Resolve git binary once at startup — handles cases where /usr/bin is not in PATH
+function resolveGitBin(): string {
+  const candidates = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git'];
+  for (const c of candidates) {
+    if (fsSync.existsSync(c)) return c;
+  }
+  try {
+    return execSync('which git', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'git'; // last resort — let OS resolve it
+  }
+}
+
+const GIT_BIN = resolveGitBin();
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +95,7 @@ export class GitService {
 
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
+      PATH: `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${process.env.PATH ?? ''}`,
       HOME: this.getRootPath(username),
       GIT_TERMINAL_PROMPT: '0',
       GIT_AUTHOR_NAME: username,
@@ -88,7 +104,7 @@ export class GitService {
       ...extraEnv,
     };
 
-    const { stdout } = await execFile('git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await execFile(GIT_BIN, args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
     return stdout.trim();
   }
 
