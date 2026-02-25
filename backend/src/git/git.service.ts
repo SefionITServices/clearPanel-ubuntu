@@ -2,16 +2,11 @@ import { Injectable } from '@nestjs/common';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
-import { exec as execCb } from 'child_process';
+import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
+import { getDataFilePath } from '../common/paths';
 
-const exec = promisify(execCb);
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function escapeShell(arg: string): string {
-  return `'${arg.replace(/'/g, `'\\''`)}'`;
-}
+const execFile = promisify(execFileCb);
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -89,12 +84,11 @@ export class GitService {
       GIT_TERMINAL_PROMPT: '0',
       GIT_AUTHOR_NAME: username,
       GIT_COMMITTER_NAME: username,
-      GIT_SSH_COMMAND: `ssh -i ${escapeShell(keyFile)} -o StrictHostKeyChecking=no -o BatchMode=yes`,
+      GIT_SSH_COMMAND: `ssh -i "${keyFile}" -o StrictHostKeyChecking=no -o BatchMode=yes`,
       ...extraEnv,
     };
 
-    const cmd = ['git', ...args.map(escapeShell)].join(' ');
-    const { stdout } = await exec(cmd, { cwd, env, maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await execFile('git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
     return stdout.trim();
   }
 
@@ -451,5 +445,36 @@ export class GitService {
     await this.runGit(['config', 'user.name', name], abs, username);
     await this.runGit(['config', 'user.email', email], abs, username);
     return { success: true };
+  }
+
+  // ── Path discovery ────────────────────────────────────────────────────────
+
+  async listPaths(username: string) {
+    const root = this.getRootPath(username);
+    const results: Array<{ label: string; path: string; kind: 'home' | 'domain' }> = [];
+
+    // Subdirectories of the user home root
+    try {
+      const entries = await fs.readdir(root, { withFileTypes: true });
+      results.push({ label: '~ (home root)', path: root, kind: 'home' });
+      for (const e of entries) {
+        if (e.isDirectory() && !e.name.startsWith('.')) {
+          results.push({ label: e.name, path: path.join(root, e.name), kind: 'home' });
+        }
+      }
+    } catch { /* home doesn't exist yet */ }
+
+    // Domain document roots from domains.json
+    try {
+      const raw = await fs.readFile(getDataFilePath('domains.json'), 'utf-8');
+      const domains: Array<{ name: string; folderPath: string }> = JSON.parse(raw);
+      for (const d of domains) {
+        if (d.folderPath) {
+          results.push({ label: d.name, path: d.folderPath, kind: 'domain' });
+        }
+      }
+    } catch { /* no domains yet */ }
+
+    return { success: true, paths: results };
   }
 }

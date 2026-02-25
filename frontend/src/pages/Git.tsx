@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -47,6 +48,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import HistoryIcon from '@mui/icons-material/History';
 import KeyIcon from '@mui/icons-material/Key';
+import LanguageIcon from '@mui/icons-material/Language';
 import MergeIcon from '@mui/icons-material/Merge';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
@@ -54,7 +56,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import UndoIcon from '@mui/icons-material/Undo';
-import { gitApi, Commit, GitStatus } from '../api/git';
+import { gitApi, Commit, GitStatus, PathOption } from '../api/git';
 
 // ─── Diff Viewer ─────────────────────────────────────────────────────────────
 
@@ -347,6 +349,7 @@ export default function GitPage() {
   const [repoPath, setRepoPath] = useState('');
   const [repoPathInput, setRepoPathInput] = useState('');
   const [isRepo, setIsRepo] = useState(false);
+  const [pathOptions, setPathOptions] = useState<PathOption[]>([]);
 
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
@@ -357,6 +360,11 @@ export default function GitPage() {
   const [diffContent, setDiffContent] = useState('');
   const [diffTitle, setDiffTitle] = useState('');
   const [commitMsg, setCommitMsg] = useState('');
+
+  // Load path suggestions once on mount
+  useEffect(() => {
+    gitApi.listPaths().then(r => setPathOptions(r.paths)).catch(() => {});
+  }, []);
 
   const [tab, setTab] = useState(0); // 0 = Changes, 1 = History, 2 = Stash
   const [loading, setLoading] = useState(false);
@@ -585,16 +593,45 @@ export default function GitPage() {
         <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0 }}>
           <GitHubIcon sx={{ color: 'text.secondary' }} />
           <Typography variant="h6" fontWeight={600} sx={{ mr: 1 }}>Git</Typography>
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            placeholder="Repository path, e.g. myproject"
-            value={repoPathInput}
-            onChange={e => setRepoPathInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && openRepo()}
-            sx={{ width: 340 }}
-            InputProps={{
-              startAdornment: <InputAdornment position="start"><FolderOpenIcon sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
+            options={pathOptions}
+            getOptionLabel={o => (typeof o === 'string' ? o : o.path)}
+            groupBy={o => (typeof o === 'string' ? '' : o.kind === 'domain' ? 'Domains' : 'Home')}
+            inputValue={repoPathInput}
+            onInputChange={(_, v) => setRepoPathInput(v)}
+            onChange={(_, v) => {
+              if (v && typeof v !== 'string') {
+                setRepoPathInput(v.path);
+                openRepo(v.path);
+              }
             }}
+            renderOption={(props, o) => (
+              <li {...props} key={typeof o === 'string' ? o : o.path}>
+                {typeof o === 'string' ? o : (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {o.kind === 'domain' ? <LanguageIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
+                    <Box>
+                      <Typography variant="body2">{o.label}</Typography>
+                      <Typography variant="caption" color="text.disabled" sx={{ fontFamily: 'monospace' }}>{o.path}</Typography>
+                    </Box>
+                  </Stack>
+                )}
+              </li>
+            )}
+            renderInput={params => (
+              <TextField
+                {...params}
+                placeholder="Repository path or pick from list"
+                onKeyDown={e => e.key === 'Enter' && openRepo()}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: <InputAdornment position="start"><FolderOpenIcon sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment>,
+                }}
+              />
+            )}
+            sx={{ width: 380 }}
           />
           <Button variant="contained" size="small" onClick={() => openRepo()} disabled={loading || !repoPathInput.trim()}>Open</Button>
           <Button variant="outlined" size="small" startIcon={<CloudDownloadIcon />} onClick={() => setCloneOpen(true)}>Clone</Button>

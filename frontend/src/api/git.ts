@@ -59,9 +59,20 @@ export interface StashEntry {
   date: string;
 }
 
+export interface PathOption {
+  label: string;
+  path: string;
+  kind: 'home' | 'domain';
+}
+
 // ─── API Object ───────────────────────────────────────────────────────────────
 
 export const gitApi = {
+  // ── Path discovery ────────────────────────────────────────────────────────
+
+  listPaths: () =>
+    fetchJSON<{ success: boolean; paths: PathOption[] }>(`${API_BASE}/paths`),
+
   // ── Repo ──────────────────────────────────────────────────────────────────
 
   isRepo: (path: string) =>

@@ -14,6 +14,16 @@ export class GitController {
 
   // ── Repo status ──────────────────────────────────────────────────────────
 
+  @Get('paths')
+  async listPaths(@Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.listPaths(this.user(req));
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
   @Get('is-repo')
   async isRepo(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
     try {
