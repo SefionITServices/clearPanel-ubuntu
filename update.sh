@@ -115,12 +115,12 @@ echo -e "${GREEN}✓ Backup complete${NC}"
 echo ""
 echo -e "${YELLOW}📥 Pulling latest code from remote...${NC}"
 cd "$INSTALL_DIR"
-# Mark repo as safe for both root and service user
-git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+# Ensure the service user owns the repo before git operations
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 sudo -u "$SERVICE_USER" git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-git stash 2>/dev/null || true
-git pull origin main
-# Restore ownership after pull
+sudo -u "$SERVICE_USER" git stash 2>/dev/null || true
+sudo -u "$SERVICE_USER" git pull origin main
+# Re-apply ownership for any newly created files
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 echo -e "${GREEN}✓ Code updated${NC}"
 
