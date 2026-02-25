@@ -47,6 +47,7 @@ import {
   Security as SecurityIcon,
   Memory as MemoryIcon,
 } from '@mui/icons-material';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { DashboardContent } from './content';
@@ -80,6 +81,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
       { title: 'Domains', path: '/domains', icon: <LanguageIcon /> },
       { title: 'Email', path: '/email', icon: <EmailIcon /> },
       { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
+      { title: 'Git', path: '/git', icon: <AccountTreeIcon /> },
       { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
     ],
   },
@@ -127,6 +129,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/backup': { title: 'Backup', path: '/backup', icon: <BackupIcon /> },
         '/two-factor': { title: '2FA Security', path: '/two-factor', icon: <SecurityIcon /> },
         '/processes': { title: 'Processes', path: '/processes', icon: <MemoryIcon /> },
+        '/git': { title: 'Git', path: '/git', icon: <AccountTreeIcon /> },
       };
       const items = paths
         .map((p) => map[p])

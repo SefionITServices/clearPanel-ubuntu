@@ -35,6 +35,7 @@ const MonitoringPage = lazy(() => import('./pages/Monitoring'));
 const BackupPage = lazy(() => import('./pages/Backup'));
 const TwoFactorPage = lazy(() => import('./pages/TwoFactor'));
 const ProcessesPage = lazy(() => import('./pages/Processes'));
+const GitPage = lazy(() => import('./pages/Git'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -281,6 +282,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <ProcessesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/git"
+              element={
+                <ProtectedRoute>
+                  <GitPage />
                 </ProtectedRoute>
               }
             />

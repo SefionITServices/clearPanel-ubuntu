@@ -26,6 +26,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 import { BackupModule } from './backup/backup.module';
 import { TwoFactorModule } from './two-factor/two-factor.module';
 import { ProcessModule } from './process/process.module';
+import { GitModule } from './git/git.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { ProcessModule } from './process/process.module';
     MonitoringModule,
     BackupModule,
     TwoFactorModule,
+    GitModule,
     ProcessModule,
   ],
 })
