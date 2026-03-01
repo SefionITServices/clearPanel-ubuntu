@@ -154,7 +154,6 @@ export default function TerminalPage() {
               minHeight: 0,
               p: '4px 8px',
               '& .xterm':          { height: '100%' },
-              '& .xterm-viewport': { overflowY: 'hidden !important' },
               '& .xterm-screen':   { width: '100% !important' },
             }}
           />

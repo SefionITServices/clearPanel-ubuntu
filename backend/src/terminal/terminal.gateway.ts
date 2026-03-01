@@ -65,12 +65,24 @@ export class TerminalGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     try {
-      const term = pty.spawn(shell, [], {
+      // Provide a clean environment for interactive apps like vi, nano, top
+      const env = { 
+        ...process.env, 
+        HOME: home,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        LANG: process.env.LANG || 'en_US.UTF-8' 
+      } as { [key: string]: string };
+
+      // Spawn as a login shell so .bashrc / .profile are loaded properly 
+      const args = shell.includes('bash') ? ['-l'] : [];
+
+      const term = pty.spawn(shell, args, {
         name:  'xterm-256color',
         cols:  80,
         rows:  24,
         cwd:   home,
-        env:   { ...process.env, HOME: home } as { [key: string]: string },
+        env:   env,
       });
 
       this.ptys.set(client.id, term);
