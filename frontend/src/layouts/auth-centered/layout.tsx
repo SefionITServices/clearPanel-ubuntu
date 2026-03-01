@@ -25,9 +25,9 @@ export function AuthCenteredLayout({ title, description, children, footer }: Aut
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
             <Box
               component="img"
-              src="/logo.svg"
+              src="/logo.png"
               alt="ClearPanel"
-              sx={{ width: 48, height: 40 }}
+              sx={{ width: 60, height: 40, objectFit: 'contain' }}
             />
           </Box>
           {title && (

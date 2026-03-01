@@ -200,9 +200,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Box
           component="img"
-          src="/logo.svg"
+          src="/logo.png"
           alt="ClearPanel"
-          sx={{ width: 36, height: 30 }}
+          sx={{ width: 36, height: 30, objectFit: 'contain' }}
         />
         <Typography variant="h6" fontWeight={700} noWrap sx={{ color: '#202124' }}>
           clearPanel

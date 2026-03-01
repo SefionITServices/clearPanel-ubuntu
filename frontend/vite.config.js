@@ -5,6 +5,16 @@ export default defineConfig({
     build: {
         outDir: '../backend/public',
         emptyOutDir: true,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    // Split heavy vendor libs into separate cached chunks
+                    'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+                    'vendor-mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+                    'vendor-monaco': ['@monaco-editor/react'],
+                },
+            },
+        },
     },
     server: {
         port: 4000,
@@ -25,7 +35,18 @@ export default defineConfig({
                     });
                 },
             },
+            // Proxy Socket.IO (xterm.js terminal WebSocket) to the backend.
+            // ws: true is required so that WebSocket upgrade requests are forwarded.
+            '/socket.io': {
+                target: 'http://127.0.0.1:3000',
+                changeOrigin: true,
+                secure: false,
+                ws: true,
+            },
         },
+    },
+    esbuild: {
+        drop: ['console', 'debugger'],
     },
     plugins: [react()],
 });
