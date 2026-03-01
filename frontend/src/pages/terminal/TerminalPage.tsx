@@ -108,8 +108,12 @@ export default function TerminalPage() {
     });
 
     // Re-fit whenever the container's CSS size changes (sidebar open/close, etc.)
+    let resizeTimeout: any;
     const ro = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch { /* container may briefly be 0×0 */ }
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        try { fitAddon.fit(); } catch { /* container may briefly be 0x0 */ }
+      }, 50); // Debounce to prevent vi SIGWINCH freeze loops
     });
     ro.observe(containerRef.current!);
 
@@ -153,8 +157,7 @@ export default function TerminalPage() {
               flexGrow: 1,
               minHeight: 0,
               p: '4px 8px',
-              '& .xterm':          { height: '100%' },
-              '& .xterm-screen':   { width: '100% !important' },
+              overflow: 'hidden', // Let fitAddon manage internal xterm sizing correctly without CSS stretching
             }}
           />
         </Paper>
