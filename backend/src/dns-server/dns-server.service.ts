@@ -315,51 +315,77 @@ ${glue}
   }
 
   private async addZoneToConfig(domain: string, zoneFile: string): Promise<void> {
-    const zoneBlock = `
-zone "${domain}" {
-    type master;
-    file "${zoneFile}";
-    allow-transfer { any; };
-};
-`;
+    const zoneBlock = `\nzone "${domain}" {\n    type master;\n    file "${zoneFile}";\n    allow-transfer { any; };\n};\n`;
+
+    // Read existing content (or start empty)
+    let content = '';
+    try {
+      content = await fs.readFile(this.namedConfPath, 'utf8');
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        this.logger.warn(`Error reading config file: ${error.message}`);
+      }
+    }
 
     // Check if zone already exists
-    try {
-      const content = await fs.readFile(this.namedConfPath, 'utf8');
-      if (content.includes(`zone "${domain}"`)) {
-        this.logger.log(`Zone ${domain} already in config, skipping`);
-        return;
-      }
-    } catch (error: any) {
-      // File might not exist, that's okay - we'll create it
-      if (error.code !== 'ENOENT') {
-        this.logger.warn(`Error checking config file: ${error.message}`);
+    if (content.includes(`zone "${domain}"`)) {
+      this.logger.log(`Zone ${domain} already in config, skipping`);
+      return;
+    }
+
+    // Sanitize any stray closing braces before appending
+    content = this.sanitizeNamedConf(content);
+
+    // Append zone block
+    const newContent = content.trimEnd() + '\n' + zoneBlock;
+    await fs.writeFile(this.namedConfPath, newContent, 'utf8');
+  }
+
+  /**
+   * Remove orphaned `};` lines that are not part of a valid zone block.
+   * These can appear if zone removal regex partially matches.
+   */
+  private sanitizeNamedConf(content: string): string {
+    // Split into lines and remove lines that are only `};` but not inside a zone block
+    const lines = content.split('\n');
+    const result: string[] = [];
+    let insideZone = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (/^zone\s+"/.test(trimmed)) {
+        insideZone = true;
+        result.push(line);
+      } else if (insideZone && trimmed === '};') {
+        // This closes a zone block
+        result.push(line);
+        insideZone = false;
+      } else if (!insideZone && trimmed === '};') {
+        // Orphaned }; — skip it
+        this.logger.warn('Removed orphaned "};\ from named.conf.local');
+      } else {
+        result.push(line);
       }
     }
 
-    // Append zone block to config file using Node.js fs
-    try {
-      await fs.appendFile(this.namedConfPath, zoneBlock, 'utf8');
-    } catch (error: any) {
-      // If append fails, try to read and write the whole file
-      let content = '';
-      try {
-        content = await fs.readFile(this.namedConfPath, 'utf8');
-      } catch {
-        // File doesn't exist, start with empty content
-      }
-      await fs.writeFile(this.namedConfPath, content + zoneBlock, 'utf8');
-    }
+    return result.join('\n');
   }
 
   private async removeZoneFromConfig(domain: string): Promise<void> {
     // Remove zone block from named.conf.local using Node.js
     try {
-      const content = await fs.readFile(this.namedConfPath, 'utf8');
-      // Remove zone block using regex
-      const zoneRegex = new RegExp(`zone\\s+"${domain.replace(/\./g, '\\.')}"\\s+{[^}]*};\\s*`, 'gs');
-      const newContent = content.replace(zoneRegex, '');
-      await fs.writeFile(this.namedConfPath, newContent, 'utf8');
+      let content = await fs.readFile(this.namedConfPath, 'utf8');
+      // Use a regex that handles nested braces (e.g. allow-transfer { any; })
+      const escapedDomain = domain.replace(/\./g, '\\.');
+      const zoneRegex = new RegExp(
+        `\\n?zone\\s+"${escapedDomain}"\\s*\\{[\\s\\S]*?\\};\\s*`,
+        'g',
+      );
+      content = content.replace(zoneRegex, '\n');
+      // Sanitize any leftover orphaned };
+      content = this.sanitizeNamedConf(content);
+      await fs.writeFile(this.namedConfPath, content, 'utf8');
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
         this.logger.error(`Failed to remove zone from config: ${error.message}`);

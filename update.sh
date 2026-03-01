@@ -129,6 +129,60 @@ echo -e "${YELLOW}🔐 Refreshing sudoers permissions...${NC}"
 bash "$INSTALL_DIR/scripts/update-sudoers.sh"
 echo -e "${GREEN}✓ Sudoers updated${NC}"
 
+# ── Step 2c: Patch nginx config (add /socket.io block if missing) ──
+echo -e "${YELLOW}🌐 Checking nginx config for WebSocket proxy...${NC}"
+NGINX_CONF=""
+if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
+    NGINX_CONF="/etc/nginx/sites-available/clearpanel"
+elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
+    NGINX_CONF="/etc/nginx/conf.d/clearpanel.conf"
+fi
+
+if [ -n "$NGINX_CONF" ] && ! grep -q "location /socket.io" "$NGINX_CONF"; then
+    echo -e "${YELLOW}  Adding /socket.io proxy block for WebSocket terminal...${NC}"
+    # Insert the socket.io block before the first "location /api {" line
+    sed -i '/location \/api {/i \    # Socket.IO (WebSocket terminal)\n    location /socket.io {\n        proxy_pass http://127.0.0.1:3334;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_read_timeout 3600;\n        proxy_send_timeout 3600;\n    }\n' "$NGINX_CONF"
+    if nginx -t > /dev/null 2>&1; then
+        systemctl reload nginx
+        echo -e "${GREEN}✓ WebSocket proxy block added and nginx reloaded${NC}"
+    else
+        echo -e "${RED}⚠ Nginx config test failed after socket.io patch — check: sudo nginx -t${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ Nginx WebSocket proxy already configured${NC}"
+fi
+
+# ── Step 2d: Sanitize BIND9 named.conf.local (remove stray };) ─────
+if [ -f "/etc/bind/named.conf.local" ]; then
+    echo -e "${YELLOW}🔧 Checking BIND9 config for syntax errors...${NC}"
+    # Remove orphaned }; lines that are outside zone blocks
+    BIND_CONF="/etc/bind/named.conf.local"
+    if named-checkconf > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ BIND9 config is valid${NC}"
+    else
+        echo -e "${YELLOW}  Attempting to fix BIND9 config...${NC}"
+        # Use awk to remove orphaned }; (not inside a zone block)
+        awk '
+        BEGIN { in_zone = 0 }
+        /^[[:space:]]*zone[[:space:]]+"/ { in_zone = 1 }
+        /^[[:space:]]*\};/ {
+            if (in_zone) { in_zone = 0; print; next }
+            else { next }  # skip orphaned };
+        }
+        { print }
+        ' "$BIND_CONF" > "${BIND_CONF}.tmp" && mv "${BIND_CONF}.tmp" "$BIND_CONF"
+        chgrp bind "$BIND_CONF" 2>/dev/null || true
+        chmod 664 "$BIND_CONF" 2>/dev/null || true
+        if named-checkconf > /dev/null 2>&1; then
+            # Restart BIND9 (try both service names)
+            systemctl restart named 2>/dev/null || systemctl restart bind9 2>/dev/null || true
+            echo -e "${GREEN}✓ BIND9 config fixed and reloaded${NC}"
+        else
+            echo -e "${RED}⚠ BIND9 config still has errors — check: sudo named-checkconf${NC}"
+        fi
+    fi
+fi
+
 # ── Step 3: Install dependencies ────────────────────────────────────
 echo ""
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"
