@@ -54,7 +54,19 @@ export class TerminalGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
 
     const shell = process.env.SHELL || '/bin/bash';
-    const home  = process.env.HOME  || os.homedir();
+    // Resolve the logged-in user's home directory (not the service's cwd)
+    const username = session.username;
+    let home: string;
+    try {
+      home = os.userInfo().homedir || `/home/${username}`;
+    } catch {
+      home = `/home/${username}`;
+    }
+    // Fallback: if the resolved path doesn't exist, use /root for root or /home/<user>
+    const fs = require('fs');
+    if (!fs.existsSync(home)) {
+      home = username === 'root' ? '/root' : `/home/${username}`;
+    }
 
     try {
       const term = pty.spawn(shell, [], {
@@ -62,7 +74,7 @@ export class TerminalGateway implements OnGatewayConnection, OnGatewayDisconnect
         cols:  80,
         rows:  24,
         cwd:   home,
-        env:   process.env as { [key: string]: string },
+        env:   { ...process.env, HOME: home } as { [key: string]: string },
       });
 
       this.ptys.set(client.id, term);
