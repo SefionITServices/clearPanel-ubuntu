@@ -124,6 +124,11 @@ sudo -u "$SERVICE_USER" git pull origin main
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 echo -e "${GREEN}✓ Code updated${NC}"
 
+# ── Step 2b: Refresh sudoers (align with install.sh) ────────────────
+echo -e "${YELLOW}🔐 Refreshing sudoers permissions...${NC}"
+bash "$INSTALL_DIR/scripts/update-sudoers.sh"
+echo -e "${GREEN}✓ Sudoers updated${NC}"
+
 # ── Step 3: Install dependencies ────────────────────────────────────
 echo ""
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"

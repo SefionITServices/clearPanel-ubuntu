@@ -27,6 +27,7 @@ import { BackupModule } from './backup/backup.module';
 import { TwoFactorModule } from './two-factor/two-factor.module';
 import { ProcessModule } from './process/process.module';
 import { GitModule } from './git/git.module';
+import { FtpModule } from './ftp/ftp.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { GitModule } from './git/git.module';
     TwoFactorModule,
     GitModule,
     ProcessModule,
+    FtpModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -9,6 +9,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { runPendingMigrations } from './migrations/migration-runner';
+import { SessionIoAdapter } from './terminal/io-adapter';
 
 async function bootstrap() {
   // Run data migrations before creating the Nest app (schema must be current)
@@ -41,11 +42,11 @@ async function bootstrap() {
     );
   }
 
-  app.use(session({
+  const sessionMiddleware = session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { 
+    cookie: {
       maxAge: 24 * 60 * 60 * 1000,
       // Allow overriding cookie security for HTTP tunnels/port-forwarding
       // Set SESSION_SECURE=true only when serving via HTTPS end-to-end
@@ -53,8 +54,14 @@ async function bootstrap() {
         || config.get<string>('NODE_ENV') === 'production' && (config.get<string>('FORCE_SECURE') || '').toLowerCase() === 'true',
       httpOnly: true,
       sameSite: 'lax',
-    }
-  }));
+    },
+  });
+
+  app.use(sessionMiddleware);
+
+  // Share the session middleware with Socket.IO so TerminalGateway can
+  // read socket.request.session and authenticate PTY connections.
+  app.useWebSocketAdapter(new SessionIoAdapter(app, sessionMiddleware));
 
   // Compress all responses (gzip/brotli) — major speed improvement
   app.use(compression());

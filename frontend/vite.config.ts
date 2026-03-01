@@ -36,6 +36,14 @@ export default defineConfig({
           });
         },
       },
+      // Proxy Socket.IO (xterm.js terminal WebSocket) to the backend.
+      // ws: true is required so that WebSocket upgrade requests are forwarded.
+      '/socket.io': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
     },
   },
   esbuild: {

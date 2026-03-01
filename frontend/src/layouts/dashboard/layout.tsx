@@ -12,7 +12,6 @@ import {
   Toolbar,
   Typography,
   Avatar,
-  InputBase,
   alpha,
   Badge,
   Menu,
@@ -27,7 +26,6 @@ import {
   Folder as FolderIcon,
   Settings as SettingsIcon,
   Logout as LogoutIcon,
-  Search as SearchIcon,
   Notifications as NotificationsIcon,
   Build as BuildIcon,
   Language as LanguageIcon,
@@ -40,6 +38,7 @@ import {
   Article as LogsIcon,
   Star as StarIcon,
   Cloud as CloudIcon,
+  CloudUpload as CloudUploadIcon,
   Schedule as ScheduleIcon,
   Shield as ShieldIcon,
   MonitorHeart as MonitorIcon,
@@ -49,6 +48,7 @@ import {
 } from '@mui/icons-material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { GlobalSearch } from '../../components/GlobalSearch';
 import { useAuth } from '../../auth/AuthContext';
 import { DashboardContent } from './content';
 import { dashboardLayoutVars } from './css-vars';
@@ -130,6 +130,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/two-factor': { title: '2FA Security', path: '/two-factor', icon: <SecurityIcon /> },
         '/processes': { title: 'Processes', path: '/processes', icon: <MemoryIcon /> },
         '/git': { title: 'Git', path: '/git', icon: <AccountTreeIcon /> },
+        '/ftp': { title: 'FTP Manager', path: '/ftp', icon: <CloudUploadIcon /> },
       };
       const items = paths
         .map((p) => map[p])
@@ -326,51 +327,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <MenuIcon />
           </IconButton>
 
-          {/* Search Bar */}
-          <Box
-            sx={{
-              position: 'relative',
-              borderRadius: 2,
-              bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08),
-              '&:hover': {
-                bgcolor: (theme) => alpha(theme.palette.grey[500], 0.12),
-              },
-              mr: 2,
-              ml: { xs: 0, sm: 2 },
-              width: { xs: '100%', sm: 'auto' },
-              maxWidth: { sm: 400 },
-              flexGrow: { sm: 1 },
-            }}
-          >
-            <Box
-              sx={{
-                padding: (theme) => theme.spacing(0, 2),
-                height: '100%',
-                position: 'absolute',
-                pointerEvents: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <SearchIcon sx={{ color: 'text.secondary' }} />
-            </Box>
-            <InputBase
-              placeholder="Search…"
-              sx={{
-                color: 'inherit',
-                width: '100%',
-                '& .MuiInputBase-input': {
-                  padding: (theme) => theme.spacing(1.25, 1.25, 1.25, 0),
-                  paddingLeft: (theme) => `calc(1em + ${theme.spacing(4)})`,
-                  transition: (theme) => theme.transitions.create('width'),
-                  width: '100%',
-                },
-              }}
-            />
-          </Box>
-
-          <Box sx={{ flexGrow: 1, display: { xs: 'none', sm: 'block' } }} />
+          {/* Global Search */}
+          <GlobalSearch />
 
           {/* Right Side Actions */}
           <Stack direction="row" spacing={0.5} alignItems="center">

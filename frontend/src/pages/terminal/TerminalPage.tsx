@@ -1,140 +1,163 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Box, Paper, Typography, CircularProgress, IconButton } from '@mui/material';
+import React, { useEffect, useRef } from 'react';
+import { Box, Paper, Typography } from '@mui/material';
 import { DashboardLayout } from '../../layouts/dashboard/layout';
-import { terminalApi } from '../../api/terminal';
-import ClearIcon from '@mui/icons-material/Clear';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { io, Socket } from 'socket.io-client';
+import '@xterm/xterm/css/xterm.css';
 
+/**
+ * Full PTY-backed terminal using xterm.js + Socket.IO.
+ *
+ * Flow:  Browser (xterm.js) ↔ Socket.IO /terminal namespace ↔ node-pty (bash)
+ *
+ * The server session cookie is forwarded automatically (withCredentials).
+ * The backend TerminalGateway verifies the session before spawning a PTY.
+ */
 export default function TerminalPage() {
-  const [command, setCommand] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<{ line: string; isError?: boolean }[]>([]);
-  const [cwd, setCwd] = useState<string>('');
-  const [userHost, setUserHost] = useState<string>('');
-  const [cursor, setCursor] = useState<number>(-1); // for navigating history
-  const inputRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const commandsHistory = useRef<string[]>([]);
-
-  const loadInfo = async () => {
-    try {
-      const data = await terminalApi.getInfo();
-      setCwd(data?.cwd || '~');
-      setUserHost(`${data?.user || 'server'}@${data?.host || 'localhost'}`);
-    } catch {}
-  };
-
-  useEffect(() => { loadInfo(); }, []);
-
-  const pushHistory = (line: string, isError = false) => {
-    setHistory((h) => [...h, { line, isError }]);
-  };
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef      = useRef<Terminal | null>(null);
+  const fitRef       = useRef<FitAddon | null>(null);
+  const socketRef    = useRef<Socket | null>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [history, loading]);
+    if (!containerRef.current) return;
 
-  const handleExec = async (raw?: string) => {
-    const c = (raw ?? command).trim();
-    if (!c) return;
-    setLoading(true);
-    const prompt = `${userHost || 'server@localhost'}:${cwd || '~'}$`;
-    pushHistory(`${prompt} ${c}`);
-    try {
-      const data = await terminalApi.exec(c.toLowerCase() === 'dir' ? 'ls -la' : c);
-      if (data.stdout) data.stdout.split(/\n/).forEach((l: string) => l && pushHistory(l));
-      if (data.stderr) data.stderr.split(/\n/).forEach((l: string) => l && pushHistory(l, true));
-      if (data.cwd) setCwd(data.cwd);
-    } catch (e) {
-      pushHistory('Network error', true);
-    }
-    setLoading(false);
-    setCursor(-1);
-    setCommand('');
-    inputRef.current?.focus();
-  };
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // Clear screen with Ctrl+L similar to bash
-    if (e.key.toLowerCase() === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      handleClear();
-      return;
-    }
-    // Ignore formatting shortcuts
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      // Future: autocomplete stub
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const text = (inputRef.current?.innerText || '').replace(/\n/g, ' ').trim();
-      if (text) {
-        commandsHistory.current.push(text);
-        handleExec(text);
-      }
-      if (inputRef.current) inputRef.current.innerText = '';
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setCursor((cur) => {
-        const cmds = commandsHistory.current;
-        const next = cur < cmds.length - 1 ? cur + 1 : cmds.length - 1;
-        const val = cmds[cmds.length - 1 - next] || '';
-        if (inputRef.current) inputRef.current.innerText = val;
-        return next;
-      });
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setCursor((cur) => {
-        const cmds = commandsHistory.current;
-        if (cur <= 0) { if (inputRef.current) inputRef.current.innerText = ''; return -1; }
-        const next = cur - 1;
-        const val = cmds[cmds.length - 1 - next] || '';
-        if (inputRef.current) inputRef.current.innerText = val;
-        return next;
-      });
-    }
-  };
+    // ── Create xterm.js terminal ──────────────────────────────────────────
+    const term = new Terminal({
+      fontFamily:   '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace',
+      fontSize:     14,
+      lineHeight:   1.2,
+      cursorBlink:  true,
+      cursorStyle:  'block',
+      scrollback:   5000,
+      allowProposedApi: true,
+      theme: {
+        background:           '#0d1117',
+        foreground:           '#e6edf3',
+        cursor:               '#58a6ff',
+        cursorAccent:         '#0d1117',
+        selectionBackground:  '#264f78',
+        // Normal colours (matches GitHub Dark colour scheme)
+        black:   '#0d1117',  brightBlack:   '#8b949e',
+        red:     '#ff7b72',  brightRed:     '#ffa198',
+        green:   '#3fb950',  brightGreen:   '#56d364',
+        yellow:  '#d29922',  brightYellow:  '#e3b341',
+        blue:    '#58a6ff',  brightBlue:    '#79c0ff',
+        magenta: '#bc8cff',  brightMagenta: '#d2a8ff',
+        cyan:    '#39d353',  brightCyan:    '#56d364',
+        white:   '#b1bac4',  brightWhite:   '#f0f6fc',
+      },
+    });
 
-  const handleClear = () => {
-    setHistory([]);
-    setCommand('');
-    setCursor(-1);
-    inputRef.current?.focus();
-  };
+    const fitAddon      = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(webLinksAddon);
+    term.open(containerRef.current);
+    fitAddon.fit();
+
+    termRef.current = term;
+    fitRef.current  = fitAddon;
+
+    // ── Connect Socket.IO to the /terminal namespace ──────────────────────
+    const socket: Socket = io('/terminal', {
+      path:            '/socket.io',
+      withCredentials: true,                    // forward session cookie
+      transports:      ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      // Sync terminal dimensions immediately after connecting
+      socket.emit('terminal:resize', { cols: term.cols, rows: term.rows });
+    });
+
+    socket.on('connect_error', (err) => {
+      term.writeln(`\r\n\x1b[31mConnection error: ${err.message}\x1b[0m`);
+    });
+
+    // Raw PTY output → write directly to xterm (ANSI sequences handled natively)
+    socket.on('terminal:output', (data: string) => {
+      term.write(data);
+    });
+
+    socket.on('terminal:exit', ({ exitCode }: { exitCode: number }) => {
+      term.writeln(`\r\n\x1b[33mSession ended (exit code ${exitCode}).\x1b[0m`);
+    });
+
+    socket.on('terminal:error', (msg: string) => {
+      term.writeln(`\r\n\x1b[31mError: ${msg}\x1b[0m`);
+    });
+
+    socket.on('disconnect', (reason) => {
+      term.writeln(`\r\n\x1b[33mDisconnected: ${reason}\x1b[0m`);
+    });
+
+    // ── Input / resize forwarding ─────────────────────────────────────────
+    // Forward every keystroke / paste to the PTY
+    term.onData((data) => {
+      socket.emit('terminal:input', data);
+    });
+
+    // When xterm re-measures and reports new cols/rows, tell the PTY
+    term.onResize(({ cols, rows }) => {
+      socket.emit('terminal:resize', { cols, rows });
+    });
+
+    // Re-fit whenever the container's CSS size changes (sidebar open/close, etc.)
+    const ro = new ResizeObserver(() => {
+      try { fitAddon.fit(); } catch { /* container may briefly be 0×0 */ }
+    });
+    ro.observe(containerRef.current!);
+
+    // ── Cleanup on unmount ────────────────────────────────────────────────
+    return () => {
+      ro.disconnect();
+      socket.disconnect();
+      term.dispose();
+      termRef.current   = null;
+      fitRef.current    = null;
+      socketRef.current = null;
+    };
+  }, []); // intentional empty-dep: connect once on mount
 
   return (
     <DashboardLayout>
-      <Box sx={{ maxWidth: 1000, mx: 'auto', mt: 4 }}>
-        <Paper elevation={4} sx={{ p: 2, bgcolor: '#0d1117', color: '#e6edf3', minHeight: 500, display: 'flex', flexDirection: 'column', border: '1px solid #1f2630' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <Typography variant="subtitle2" sx={{ flexGrow: 1, color: '#58a6ff' }}>{userHost}:{cwd}</Typography>
-            <IconButton size="small" onClick={handleClear} sx={{ color: '#e6edf3' }} title="Clear">
-              <ClearIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })} sx={{ color: '#e6edf3' }} title="Scroll bottom">
-              <ArrowDownwardIcon fontSize="small" />
-            </IconButton>
-          </Box>
-          <Box ref={scrollRef} sx={{ fontFamily: 'monospace', flexGrow: 1, fontSize: 14, overflowY: 'auto', mb: 2, p: 1, bgcolor: '#010409', border: '1px solid #1f2630', borderRadius: 1 }}>
-            {history.length === 0 && <Typography variant="caption" sx={{ color: '#7d8590' }}>Type a command (e.g. ls, pwd, cd /tmp) and press Enter</Typography>}
-            {history.map((h, i) => (
-              <div key={i} style={{ whiteSpace: 'pre-wrap', color: h.isError ? '#ff7b72' : undefined }}>{h.line}</div>
-            ))}
-            {loading && <div style={{ color: '#7d8590' }}>Running...</div>}
-            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-              <span style={{ color: '#58a6ff' }}>{`${userHost || 'server@localhost'}:${cwd || '~'}$`}&nbsp;</span>
-              <div
-                ref={inputRef}
-                contentEditable
-                spellCheck={false}
-                onKeyDown={handleKeyDown}
-                style={{ outline: 'none', whiteSpace: 'pre-wrap', flexGrow: 1, minHeight: 18 }}
-                aria-label="terminal-input"
-              />
-            </div>
-          </Box>
-          {/* Inline prompt input replaces old input controls */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 124px)' }}>
+        <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600 }}>
+          Terminal
+        </Typography>
+
+        <Paper
+          elevation={4}
+          sx={{
+            flexGrow: 1,
+            minHeight: 0,
+            bgcolor:  '#0d1117',
+            border:   '1px solid',
+            borderColor: 'divider',
+            borderRadius: 2,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            p: 0.5,
+          }}
+        >
+          {/* xterm.js mounts into this div */}
+          <Box
+            ref={containerRef}
+            sx={{
+              flexGrow: 1,
+              minHeight: 0,
+              p: '4px 8px',
+              '& .xterm':          { height: '100%' },
+              '& .xterm-viewport': { overflowY: 'hidden !important' },
+              '& .xterm-screen':   { width: '100% !important' },
+            }}
+          />
         </Paper>
       </Box>
     </DashboardLayout>
