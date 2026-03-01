@@ -131,6 +131,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/processes': { title: 'Processes', path: '/processes', icon: <MemoryIcon /> },
         '/git': { title: 'Git', path: '/git', icon: <AccountTreeIcon /> },
         '/ftp': { title: 'FTP Manager', path: '/ftp', icon: <CloudUploadIcon /> },
+        '/redirects': { title: 'Redirects', path: '/redirects', icon: <CloudIcon /> },
+        '/ip-blocker': { title: 'IP Blocker', path: '/ip-blocker', icon: <ShieldIcon /> },
+        '/dir-privacy': { title: 'Dir Privacy', path: '/dir-privacy', icon: <LockIcon /> },
+        '/hotlink-protection': { title: 'Hotlink Protection', path: '/hotlink-protection', icon: <ShieldIcon /> },
       };
       const items = paths
         .map((p) => map[p])

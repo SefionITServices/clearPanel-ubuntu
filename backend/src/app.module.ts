@@ -28,6 +28,10 @@ import { TwoFactorModule } from './two-factor/two-factor.module';
 import { ProcessModule } from './process/process.module';
 import { GitModule } from './git/git.module';
 import { FtpModule } from './ftp/ftp.module';
+import { RedirectsModule } from './redirects/redirects.module';
+import { IpBlockerModule } from './ip-blocker/ip-blocker.module';
+import { DirPrivacyModule } from './dir-privacy/dir-privacy.module';
+import { HotlinkModule } from './hotlink/hotlink.module';
 
 @Module({
   imports: [
@@ -63,6 +67,10 @@ import { FtpModule } from './ftp/ftp.module';
     GitModule,
     ProcessModule,
     FtpModule,
+    RedirectsModule,
+    IpBlockerModule,
+    DirPrivacyModule,
+    HotlinkModule,
   ],
 })
 export class AppModule implements NestModule {

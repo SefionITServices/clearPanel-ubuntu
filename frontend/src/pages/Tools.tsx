@@ -24,6 +24,9 @@ import ImageIcon from '@mui/icons-material/Image';
 import PrivacyTipIcon from '@mui/icons-material/PrivacyTip';
 import StoreIcon from '@mui/icons-material/Store';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import AltRouteIcon from '@mui/icons-material/AltRoute';
+import BlockIcon from '@mui/icons-material/Block';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DataObjectIcon from '@mui/icons-material/DataObject';
@@ -249,10 +252,10 @@ export default function ToolsPage() {
         {
           label: 'Directory Privacy',
           icon: <PrivacyTipIcon sx={{ fontSize: 28 }} />,
-          description: 'Protect directories',
-          onClick: () => navigate('/files'),
+          description: 'Password-protect directories',
+          onClick: () => navigate('/dir-privacy'),
           color: '#EA4335',
-          favoritePath: '/files',
+          favoritePath: '/dir-privacy',
         },
         {
           label: 'FTP Manager',
@@ -297,6 +300,30 @@ export default function ToolsPage() {
           description: 'Configure nameservers',
           onClick: () => navigate('/nameservers'),
           color: '#00ACC1',
+        },
+        {
+          label: 'Redirects',
+          icon: <AltRouteIcon sx={{ fontSize: 28 }} />,
+          description: '301/302 URL redirects',
+          onClick: () => navigate('/redirects'),
+          color: '#0288D1',
+          favoritePath: '/redirects',
+        },
+        {
+          label: 'IP Blocker',
+          icon: <BlockIcon sx={{ fontSize: 28 }} />,
+          description: 'Block IPs per domain',
+          onClick: () => navigate('/ip-blocker'),
+          color: '#E53935',
+          favoritePath: '/ip-blocker',
+        },
+        {
+          label: 'Hotlink Protection',
+          icon: <LinkOffIcon sx={{ fontSize: 28 }} />,
+          description: 'Prevent image/file hotlinking',
+          onClick: () => navigate('/hotlink-protection'),
+          color: '#F57C00',
+          favoritePath: '/hotlink-protection',
         },
       ],
     },

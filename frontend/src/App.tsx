@@ -37,6 +37,10 @@ const TwoFactorPage = lazy(() => import('./pages/TwoFactor'));
 const ProcessesPage = lazy(() => import('./pages/Processes'));
 const GitPage = lazy(() => import('./pages/Git'));
 const FtpManagerPage = lazy(() => import('./pages/FtpManager'));
+const RedirectsPage = lazy(() => import('./pages/Redirects'));
+const IpBlockerPage = lazy(() => import('./pages/IpBlocker'));
+const DirPrivacyPage = lazy(() => import('./pages/DirPrivacy'));
+const HotlinkProtectionPage = lazy(() => import('./pages/HotlinkProtection'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -299,6 +303,38 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <FtpManagerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/redirects"
+              element={
+                <ProtectedRoute>
+                  <RedirectsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ip-blocker"
+              element={
+                <ProtectedRoute>
+                  <IpBlockerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dir-privacy"
+              element={
+                <ProtectedRoute>
+                  <DirPrivacyPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/hotlink-protection"
+              element={
+                <ProtectedRoute>
+                  <HotlinkProtectionPage />
                 </ProtectedRoute>
               }
             />
