@@ -21,8 +21,17 @@ export class SessionIoAdapter extends IoAdapter {
 
     // Inject the Express session middleware into every Socket.IO handshake so
     // that socket.request.session is populated (and authenticated) at connect time.
-    server.use((socket: any, next: (err?: any) => void) => {
+    const wrap = (socket: any, next: (err?: any) => void) => {
       this.sessionMiddleware(socket.request, socket.request.res ?? {}, next);
+    };
+
+    // Apply to the default namespace
+    server.use(wrap);
+
+    // Automatically apply to every new namespace (e.g. /terminal) so that
+    // socket.request.session is always available regardless of namespace.
+    server.on('new_namespace', (namespace: any) => {
+      namespace.use(wrap);
     });
 
     return server;
