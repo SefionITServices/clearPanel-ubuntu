@@ -1,28 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 420" width="512" height="420">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 95">
   <defs>
-    <linearGradient id="cloudGrad" x1="0" y1="0" x2="512" y2="420" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#7ED4F5"/>
-      <stop offset="35%" stop-color="#4DB8E8"/>
-      <stop offset="70%" stop-color="#2D9CDB"/>
-      <stop offset="100%" stop-color="#2185D0"/>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5DCAF0"/>
+      <stop offset="100%" stop-color="#1E84CC"/>
     </linearGradient>
   </defs>
-  <!-- Cloud body -->
+  <!-- Cloud body with two bumps -->
   <path d="
-    M 125,340
-    C 60,340 20,305 20,265
-    C 20,225 55,195 90,190
-    C 85,140 120,90 175,90
-    C 210,90 238,108 252,132
-    C 272,80 320,48 375,48
-    C 445,48 500,108 500,178
-    C 500,185 499,192 498,198
-    C 510,215 520,240 520,265
-    C 520,310 485,340 435,340
+    M 18,84
+    C 6,84 1,75 1,65
+    C 1,55 8,47 18,46
+    C 16,32 26,20 40,19
+    C 49,18 57,23 61,31
+    C 67,18 79,10 94,11
+    C 108,12 116,25 114,39
+    C 114,41 113,43 112,46
+    C 116,54 115,66 112,75
+    C 108,85 98,90 86,90
+    L 18,90
     Z
-  " fill="url(#cloudGrad)" />
-  <!-- Terminal chevron > -->
-  <polygon points="170,190 250,240 170,290" fill="white" stroke="white" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
-  <!-- Terminal cursor _ -->
-  <rect x="275" y="270" width="80" height="18" rx="4" fill="white"/>
+  " fill="url(#g)"/>
+  <!-- Chevron > (rounded strokes) -->
+  <polyline points="34,40 56,55 34,70"
+    fill="none" stroke="white" stroke-width="9"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Dash - -->
+  <rect x="60" y="62" width="28" height="9" rx="4.5" fill="white"/>
 </svg>
