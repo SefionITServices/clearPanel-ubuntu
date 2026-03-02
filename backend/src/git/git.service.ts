@@ -630,15 +630,21 @@ export class GitService {
     if (!fsSync.existsSync(scriptPath)) {
       throw new Error('No deploy script found. Save a deploy script first in the Pull or Deploy tab.');
     }
-    const { stdout, stderr } = await execFileCb('bash', [scriptPath], {
-      cwd: abs,
-      env: { ...process.env, HOME: this.getRootPath(username) } as NodeJS.ProcessEnv,
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 120000,
-    }).then(
-      (r) => ({ stdout: r.stdout, stderr: r.stderr }),
-      (e: any) => ({ stdout: e.stdout || '', stderr: e.stderr || e.message || 'Deploy script failed' }),
-    );
+    let stdout = '';
+    let stderr = '';
+    try {
+      const r = await execFile('bash', [scriptPath], {
+        cwd: abs,
+        env: { ...process.env, HOME: this.getRootPath(username) } as NodeJS.ProcessEnv,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 120000,
+      });
+      stdout = r.stdout;
+      stderr = r.stderr;
+    } catch (e: any) {
+      stdout = e.stdout || '';
+      stderr = e.stderr || e.message || 'Deploy script failed';
+    }
     return { success: true, output: stdout + (stderr ? `\nSTDERR:\n${stderr}` : '') };
   }
 }
