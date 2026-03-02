@@ -6,6 +6,18 @@ import { execFile as execFileCb, execSync } from 'child_process';
 import { promisify } from 'util';
 import { getDataFilePath } from '../common/paths';
 
+// ─── Managed Repo ─────────────────────────────────────────────────────────────
+
+export interface ManagedRepo {
+  name: string;
+  path: string;
+  cloneUrl?: string;
+  addedAt?: string;
+  isCloning?: boolean;
+  cloneError?: string;
+  currentBranch?: string;
+}
+
 const execFile = promisify(execFileCb);
 
 // Resolve git binary once at startup — handles cases where /usr/bin is not in PATH
@@ -42,6 +54,15 @@ export class GitService {
     const rootResolved = path.resolve(rootPath);
     if (!full.startsWith(rootResolved)) throw new Error('Access denied');
     return full;
+  }
+
+  // Helper to extract hostname from a URL (used as a credentials key for host-wide auth)
+  private extractUrlHost(url: string): string | null {
+    try {
+      return new URL(url).host;
+    } catch {
+      return null;
+    }
   }
 
   // ── Credential store ──────────────────────────────────────────────────────
@@ -140,31 +161,44 @@ export class GitService {
     return { success: true, message: `Initialized empty repository in ${abs}` };
   }
 
-  async clone(username: string, url: string, destDir: string, repoName?: string) {
+  async clone(username: string, url: string, destDir: string, repoName?: string, token?: string, gitUser?: string) {
     const absParent = this.validatePath(destDir, username);
-    const creds = await this.readCreds(username);
-    let cloneUrl = url;
 
-    // If HTTPS and we have a token for this destination
-    const absTarget = path.join(absParent, repoName || url.split('/').pop()?.replace(/\.git$/, '') || 'repo');
-    const cred = creds[absTarget];
-    if (cred && (url.startsWith('http://') || url.startsWith('https://'))) {
-      cloneUrl = this.injectToken(url, cred.token, cred.username);
+    let cloneUrl = url;
+    // Inject HTTPS token directly into the URL if provided
+    if (token && gitUser && (url.startsWith('http://') || url.startsWith('https://'))) {
+      cloneUrl = this.injectToken(url, token, gitUser);
+    } else {
+      // Fall back to stored credentials keyed by URL host
+      const creds = await this.readCreds(username);
+      const urlHost = this.extractUrlHost(url);
+      const hostCred = urlHost ? (creds[urlHost] || null) : null;
+      if (hostCred && (url.startsWith('http://') || url.startsWith('https://'))) {
+        cloneUrl = this.injectToken(url, hostCred.token, hostCred.username);
+      }
     }
 
+    const guessedName = url.split('/').pop()?.replace(/\.git$/, '') || 'repo';
     const cloneArgs = repoName
       ? ['clone', cloneUrl, repoName]
       : ['clone', cloneUrl];
 
     await this.runGit(cloneArgs, absParent, username);
 
-    const cloned = repoName
-      ? path.join(absParent, repoName)
-      : absTarget;
+    const cloned = path.join(absParent, repoName || guessedName);
 
     // Set identity in cloned repo
-    await this.runGit(['config', 'user.name', username], cloned, username);
-    await this.runGit(['config', 'user.email', `${username}@localhost`], cloned, username);
+    await this.runGit(['config', 'user.name', username], cloned, username).catch(() => null);
+    await this.runGit(['config', 'user.email', `${username}@localhost`], cloned, username).catch(() => null);
+
+    // Save credentials keyed by BOTH the repo path and the URL host for future pulls/pushes
+    if (token && gitUser) {
+      const creds = await this.readCreds(username);
+      creds[cloned] = { token, username: gitUser };
+      const urlHost = this.extractUrlHost(url);
+      if (urlHost) creds[urlHost] = { token, username: gitUser };
+      await this.writeCreds(username, creds);
+    }
 
     return { success: true, message: 'Repository cloned', path: cloned };
   }
@@ -366,9 +400,10 @@ export class GitService {
   async pull(username: string, repoPath: string, remote = 'origin', branch?: string) {
     const abs = this.validatePath(repoPath, username);
     const creds = await this.readCreds(username);
-    const cred = creds[abs];
-
-    let remoteUrl = await this.resolveRemoteUrl(username, repoPath, remote);
+    const remoteUrl = await this.resolveRemoteUrl(username, repoPath, remote);
+    const urlHost = remoteUrl ? this.extractUrlHost(remoteUrl) : null;
+    // Look up by exact repo path first, fall back to URL host
+    const cred = creds[abs] || (urlHost ? creds[urlHost] : null) || null;
     const extraEnv: Record<string, string> = {};
 
     if (remoteUrl && cred && (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://'))) {
@@ -387,9 +422,9 @@ export class GitService {
   async push(username: string, repoPath: string, remote = 'origin', branch?: string, force = false) {
     const abs = this.validatePath(repoPath, username);
     const creds = await this.readCreds(username);
-    const cred = creds[abs];
-
-    let remoteUrl = await this.resolveRemoteUrl(username, repoPath, remote);
+    const remoteUrl = await this.resolveRemoteUrl(username, repoPath, remote);
+    const urlHost = remoteUrl ? this.extractUrlHost(remoteUrl) : null;
+    const cred = creds[abs] || (urlHost ? creds[urlHost] : null) || null;
     const extraEnv: Record<string, string> = {};
 
     if (remoteUrl && cred && (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://'))) {
@@ -492,5 +527,118 @@ export class GitService {
     } catch { /* no domains yet */ }
 
     return { success: true, paths: results };
+  }
+
+  // ── Managed Repositories ──────────────────────────────────────────────────
+
+  private managedReposPath(): string {
+    return getDataFilePath('git-repos.json');
+  }
+
+  private async readAllManagedRepos(): Promise<ManagedRepo[]> {
+    try {
+      const raw = await fs.readFile(this.managedReposPath(), 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeAllManagedRepos(repos: ManagedRepo[]) {
+    await fs.writeFile(this.managedReposPath(), JSON.stringify(repos, null, 2));
+  }
+
+  async listManagedRepos(username: string) {
+    const repos = await this.readAllManagedRepos();
+    const enriched = await Promise.all(
+      repos.map(async (repo) => {
+        if (repo.isCloning) return repo;
+        try {
+          const abs = path.resolve(repo.path);
+          if (!fsSync.existsSync(path.join(abs, '.git'))) {
+            return { ...repo, currentBranch: '' };
+          }
+          const branch = await this.runGit(['rev-parse', '--abbrev-ref', 'HEAD'], abs, username).catch(() => '');
+          return { ...repo, currentBranch: branch.trim() };
+        } catch {
+          return repo;
+        }
+      }),
+    );
+    return { success: true, repos: enriched };
+  }
+
+  async addManagedRepo(username: string, name: string, repoPath: string, cloneUrl?: string) {
+    const abs = this.validatePath(repoPath, username);
+    const repos = await this.readAllManagedRepos();
+    const idx = repos.findIndex((r) => r.path === abs);
+    const entry: ManagedRepo = { name, path: abs, cloneUrl, addedAt: new Date().toISOString() };
+    if (idx >= 0) repos[idx] = entry;
+    else repos.push(entry);
+    await this.writeAllManagedRepos(repos);
+    return { success: true };
+  }
+
+  async removeManagedRepo(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const repos = await this.readAllManagedRepos();
+    await this.writeAllManagedRepos(repos.filter((r) => r.path !== abs));
+    return { success: true };
+  }
+
+  // ── Repository Info ───────────────────────────────────────────────────────
+
+  async getHeadCommit(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const fmt = '%H%x1f%h%x1f%an%x1f%ae%x1f%ai%x1f%s';
+    const raw = await this.runGit(['log', '-1', `--format=${fmt}`], abs, username).catch(() => '');
+    if (!raw.trim()) return { success: true, commit: null };
+    const [hash, short, authorName, authorEmail, date, subject] = raw.trim().split('\x1f');
+    const remoteUrl = await this.runGit(['remote', 'get-url', 'origin'], abs, username).catch(() => '');
+    return { success: true, commit: { hash, short, authorName, authorEmail, date, subject, remoteUrl: remoteUrl.trim() } };
+  }
+
+  // ── Deploy Script ─────────────────────────────────────────────────────────
+
+  private deployScriptPath(repoPath: string): string {
+    return path.join(repoPath, '.clearpanel-deploy.sh');
+  }
+
+  async getDeployScript(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const scriptPath = this.deployScriptPath(abs);
+    try {
+      const content = await fs.readFile(scriptPath, 'utf-8');
+      return { success: true, script: content };
+    } catch {
+      const template =
+        `#!/bin/bash\n# ClearPanel Deploy Script\n# This script runs when you click "Deploy HEAD Commit"\n# Environment: runs from your repository root directory\n\n# Example — copy built files to your web root:\n# export DEPLOYPATH=/home/clearpanel/public_html/\n# cp -r dist/* $DEPLOYPATH\n`;
+      return { success: true, script: template };
+    }
+  }
+
+  async setDeployScript(username: string, repoPath: string, script: string) {
+    const abs = this.validatePath(repoPath, username);
+    const scriptPath = this.deployScriptPath(abs);
+    await fs.writeFile(scriptPath, script, { mode: 0o755 });
+    return { success: true };
+  }
+
+  async deploy(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const scriptPath = this.deployScriptPath(abs);
+    if (!fsSync.existsSync(scriptPath)) {
+      throw new Error('No deploy script found. Save a deploy script first in the Pull or Deploy tab.');
+    }
+    const { stdout, stderr } = await execFileCb('bash', [scriptPath], {
+      cwd: abs,
+      env: { ...process.env, HOME: this.getRootPath(username) } as NodeJS.ProcessEnv,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 120000,
+    }).then(
+      (r) => ({ stdout: r.stdout, stderr: r.stderr }),
+      (e: any) => ({ stdout: e.stdout || '', stderr: e.stderr || e.message || 'Deploy script failed' }),
+    );
+    return { success: true, output: stdout + (stderr ? `\nSTDERR:\n${stderr}` : '') };
   }
 }

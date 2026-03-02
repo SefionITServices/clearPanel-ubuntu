@@ -65,6 +65,26 @@ export interface PathOption {
   kind: 'home' | 'domain';
 }
 
+export interface ManagedRepo {
+  name: string;
+  path: string;
+  cloneUrl?: string;
+  addedAt?: string;
+  isCloning?: boolean;
+  cloneError?: string;
+  currentBranch?: string;
+}
+
+export interface HeadCommit {
+  hash: string;
+  short: string;
+  authorName: string;
+  authorEmail: string;
+  date: string;
+  subject: string;
+  remoteUrl: string;
+}
+
 // ─── API Object ───────────────────────────────────────────────────────────────
 
 export const gitApi = {
@@ -86,8 +106,8 @@ export const gitApi = {
   init: (path: string) =>
     post(`${API_BASE}/init`, { path }),
 
-  clone: (url: string, dest: string, name?: string) =>
-    post(`${API_BASE}/clone`, { url, dest, name }),
+  clone: (url: string, dest: string, name?: string, token?: string, gitUser?: string) =>
+    post(`${API_BASE}/clone`, { url, dest, name, token, gitUser }),
 
   // ── Staging ───────────────────────────────────────────────────────────────
 
@@ -204,4 +224,35 @@ export const gitApi = {
 
   removeCred: (path: string) =>
     post(`${API_BASE}/remove-cred`, { path }),
+
+  // ── Managed Repositories ──────────────────────────────────────────────────
+
+  listRepos: () =>
+    fetchJSON<{ success: boolean; repos: ManagedRepo[] }>(`${API_BASE}/repos`),
+
+  addRepo: (name: string, path: string, cloneUrl?: string) =>
+    post(`${API_BASE}/repos`, { name, path, cloneUrl }),
+
+  removeRepo: (path: string) =>
+    post(`${API_BASE}/repos/remove`, { path }),
+
+  // ── Head Commit ────────────────────────────────────────────────────────────
+
+  getHeadCommit: (path: string) =>
+    fetchJSON<{ success: boolean; commit: HeadCommit | null }>(
+      `${API_BASE}/head-commit?path=${encodeURIComponent(path)}`,
+    ),
+
+  // ── Deploy Script ──────────────────────────────────────────────────────────
+
+  getDeployScript: (path: string) =>
+    fetchJSON<{ success: boolean; script: string }>(
+      `${API_BASE}/deploy-script?path=${encodeURIComponent(path)}`,
+    ),
+
+  setDeployScript: (path: string, script: string) =>
+    post(`${API_BASE}/deploy-script`, { path, script }),
+
+  deploy: (path: string) =>
+    post<{ success: boolean; output: string }>(`${API_BASE}/deploy`, { path }),
 };

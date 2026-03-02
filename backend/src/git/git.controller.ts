@@ -59,7 +59,10 @@ export class GitController {
   @Post('clone')
   async clone(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     try {
-      const data = await this.git.clone(this.user(req), body.url, body.dest || '', body.name);
+      const data = await this.git.clone(
+        this.user(req), body.url, body.dest || '', body.name,
+        body.token, body.gitUser,
+      );
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
@@ -352,6 +355,84 @@ export class GitController {
   async removeCred(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     try {
       const data = await this.git.removeRepoCred(this.user(req), body.path);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  // ── Managed Repositories ─────────────────────────────────────────────────
+
+  @Get('repos')
+  async listRepos(@Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.listManagedRepos(this.user(req));
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('repos')
+  async addRepo(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.addManagedRepo(
+        this.user(req), body.name, body.path, body.cloneUrl,
+      );
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('repos/remove')
+  async removeRepo(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.removeManagedRepo(this.user(req), body.path);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  // ── Head Commit ───────────────────────────────────────────────────────────
+
+  @Get('head-commit')
+  async headCommit(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.getHeadCommit(this.user(req), p);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  // ── Deploy Script & Deployment ────────────────────────────────────────────
+
+  @Get('deploy-script')
+  async getDeployScript(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.getDeployScript(this.user(req), p);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('deploy-script')
+  async setDeployScript(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.setDeployScript(this.user(req), body.path, body.script);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('deploy')
+  async deploy(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.deploy(this.user(req), body.path);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
