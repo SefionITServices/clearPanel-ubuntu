@@ -135,6 +135,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/ip-blocker': { title: 'IP Blocker', path: '/ip-blocker', icon: <ShieldIcon /> },
         '/dir-privacy': { title: 'Dir Privacy', path: '/dir-privacy', icon: <LockIcon /> },
         '/hotlink-protection': { title: 'Hotlink Protection', path: '/hotlink-protection', icon: <ShieldIcon /> },
+        '/docker': { title: 'Docker', path: '/docker', icon: <StorageIcon /> },
+        '/node-apps': { title: 'App Manager', path: '/node-apps', icon: <CodeIcon /> },
       };
       const items = paths
         .map((p) => map[p])

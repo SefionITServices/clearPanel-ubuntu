@@ -6,6 +6,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [3.1.0] — 2026-03-01
+
+### Added — Phase 3 Features (2 new)
+- **Docker Manager** — full container lifecycle (start/stop/restart/remove), image pull & list, run new containers, Compose stack management (create YAML, up/down), networks & volumes view, system prune (DockerModule + Docker.tsx)
+- **Node.js / Python App Manager** — PM2-backed process management: create/clone-from-git/edit apps, start/stop/restart, pull & restart, env vars editor, live log viewer, supports `node`, `python`, and `static` runtimes; auto-runs `npm install` / `pip install` on start (NodeAppsModule + NodeApps.tsx)
+
+### Changed
+- Backend now registers 31 NestJS modules; frontend now has 37 lazy-loaded pages
+- Docker Manager and App Manager added to Tools catalog, sidebar favorites map, and App.tsx routes
+- ROADMAP updated: Phase 3 now 3/10 complete
+
+---
+
+## [3.0.0] — 2026-03-01
+
+### Added — Phase 2 Features (5 new)
+- **FTP Account Manager** — vsftpd account CRUD, per-domain FTP users, password reset (FtpModule + FtpManager.tsx, 414 lines)
+- **Directory Privacy** — .htpasswd-style password-protect directories per domain (DirPrivacyModule + DirPrivacy.tsx)
+- **Hotlink Protection** — Nginx rules to prevent external image/file leeching (HotlinkModule + HotlinkProtection.tsx)
+- **Redirect Manager** — 301/302 per-domain URL redirects via Nginx config, enable/disable toggle (RedirectsModule + Redirects.tsx)
+- **IP Blocker** — deny access from specific IPs at the Nginx level per domain, with comment field (IpBlockerModule + IpBlocker.tsx)
+
+### Added — Phase 3 Features (1 new)
+- **Git Deployment** — full git workflow: repo clone/pull/push, branch management, commit history with diffs, SSH deploy key setup (GitModule + Git.tsx, 950 lines)
+
+### Added — Frontend Infrastructure
+- **GlobalSearch** — spotlight-style keyboard search (575 lines); queries pages, domains, databases, SSL certs, DNS zones, and installed apps; cached per session; integrated into dashboard AppBar
+- **Favorites system** — per-user localStorage favorites, surfaced as sidebar Favorites section (up to 7 items)
+
+### Changed
+- **Terminal** — fully upgraded from basic command execution to full PTY: xterm.js 6 + node-pty + Socket.IO `/terminal` namespace; ANSI colors, resize via ResizeObserver, GitHub Dark theme, WebLinks addon; backend TerminalGateway verifies session before spawning PTY
+- **API modules** — expanded from 10 to 27 centralized modules covering all pages
+- All 8 new frontend pages wired into `App.tsx` routes, sidebar favorites map, `Tools` page catalog
+
+---
+
 ## [2.1.0] — 2026-02-22
 
 ### Added — Phase 1 Tier 1 Features

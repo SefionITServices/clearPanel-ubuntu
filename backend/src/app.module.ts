@@ -32,6 +32,8 @@ import { RedirectsModule } from './redirects/redirects.module';
 import { IpBlockerModule } from './ip-blocker/ip-blocker.module';
 import { DirPrivacyModule } from './dir-privacy/dir-privacy.module';
 import { HotlinkModule } from './hotlink/hotlink.module';
+import { DockerModule } from './docker/docker.module';
+import { NodeAppsModule } from './node-apps/node-apps.module';
 
 @Module({
   imports: [
@@ -71,6 +73,8 @@ import { HotlinkModule } from './hotlink/hotlink.module';
     IpBlockerModule,
     DirPrivacyModule,
     HotlinkModule,
+    DockerModule,
+    NodeAppsModule,
   ],
 })
 export class AppModule implements NestModule {

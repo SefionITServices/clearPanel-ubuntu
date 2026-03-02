@@ -41,6 +41,8 @@ const RedirectsPage = lazy(() => import('./pages/Redirects'));
 const IpBlockerPage = lazy(() => import('./pages/IpBlocker'));
 const DirPrivacyPage = lazy(() => import('./pages/DirPrivacy'));
 const HotlinkProtectionPage = lazy(() => import('./pages/HotlinkProtection'));
+const DockerPage = lazy(() => import('./pages/Docker'));
+const NodeAppsPage = lazy(() => import('./pages/NodeApps'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -335,6 +337,22 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <HotlinkProtectionPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/docker"
+              element={
+                <ProtectedRoute>
+                  <DockerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/node-apps"
+              element={
+                <ProtectedRoute>
+                  <NodeAppsPage />
                 </ProtectedRoute>
               }
             />

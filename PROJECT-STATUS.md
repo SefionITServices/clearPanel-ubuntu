@@ -1,8 +1,8 @@
-# ClearPanel — Project Status Report
+﻿# ClearPanel — Project Status Report
 
-**Date:** February 22, 2026  
-**Version:** 2.0.0 (NestJS backend + React frontend)  
-**Last Updated:** Session 3 — All priority issues resolved
+**Date:** March 1, 2026  
+**Version:** 3.1.0 (NestJS backend + React frontend)  
+**Last Updated:** Session 5 — Phase 3: Docker Manager + Node.js/Python App Manager
 
 ---
 
@@ -12,6 +12,7 @@
 |-------|-------|
 | Backend | NestJS 10, TypeScript, Express-session auth, file-based JSON storage |
 | Frontend | React 18, TypeScript, MUI v7, React Router v6, Vite |
+| Terminal | xterm.js 6 + node-pty + Socket.IO (full PTY) |
 | Target OS | Ubuntu/Debian (some RHEL support in BIND9 module) |
 | Deployment | systemd service on port 3334, Nginx reverse proxy, Cloudflare Tunnel optional |
 
@@ -19,15 +20,15 @@
 
 ## What Is Implemented
 
-### Backend (16 Modules — All Registered)
+### Backend (31 Modules — All Registered in app.module.ts)
 
 | Module | Endpoints | Status | Notes |
 |--------|-----------|--------|-------|
-| **Auth** | Login, logout, status | Done | Session-based, single admin user |
+| **Auth** | Login, logout, status, 2FA challenge | Done | Session-based, bcrypt, 2FA TOTP flow |
 | **Setup** | Wizard, IP detect, validate | Done | First-run setup with migration support |
 | **Domains** | CRUD, vhost edit, settings | Done | Orchestrates DNS + BIND9 + Nginx + Mail |
 | **Files** | 22 endpoints (browse, upload, edit, archive, extract, search, chmod, symlink…) | Done | Full cPanel-style file manager |
-| **Terminal** | Exec, session info | Done | Basic shell execution, per-session CWD |
+| **Terminal** | WebSocket gateway (node-pty), resize | Done | Full PTY via Socket.IO /terminal namespace, xterm.js client |
 | **DNS** | Zone CRUD, record CRUD | Done | JSON-based record storage |
 | **DNS Server** | BIND9 status, install, reload | Done | Real zone file management |
 | **Webserver** | Nginx status, install, vhost CRUD | Done | PHP-FPM socket integration |
@@ -38,32 +39,65 @@
 | **Mail** | 25+ endpoints (domains, mailboxes, aliases, DKIM, DMARC, TLS, queue, metrics) | Done | Postfix/Dovecot/Rspamd/ClamAV + Roundcube SSO |
 | **Logs** | 16 log sources, tail/journalctl | Done | Cleanest module, proper auth guard |
 | **Server** | Nameservers, hostname | Done | Auto-detects IP, updates Postfix/hosts |
+| **SSH Keys** | Generate (Ed25519/RSA), import, list, delete | Done | Manages authorized_keys |
+| **License** | Validate key, feature gating, plan display | Done | Guards premium features |
+| **Cron** | List/add/edit/delete/toggle jobs, raw crontab editor | Done | Schedule presets included |
+| **Firewall** | UFW rule management, quick presets, Fail2Ban status | Done | Web/mail/dns/database/panel presets |
+| **Monitoring** | CPU, memory, disk, network, services | Done | Auto-refresh, real-time stats |
+| **Backup** | Full/panel/mail/db/domain backups, scheduling, restore | Done | One-click restore |
+| **Two-Factor** | TOTP setup, QR code, 8 recovery codes | Done | Login flow integration |
+| **Process** | Process list, systemd service management | Done | Kill/restart, search/sort |
+| **Git** | Repo CRUD, clone, pull, push, branches, commits, diffs, SSH keys | Done | Phase 3 — 950-line frontend, full deployment workflow |
+| **FTP** | vsftpd account CRUD, per-domain FTP users, password reset | Done | Phase 2 — fully wired |
+| **Redirects** | 301/302 URL redirects via Nginx config | Done | Phase 2 — per-domain |
+| **IP Blocker** | Deny access from specific IPs at the Nginx level | Done | Phase 2 — per-domain |
+| **Dir Privacy** | .htpasswd-style password protection for directories | Done | Phase 2 — per-domain |
+| **Hotlink** | Prevent external image/file leeching via Nginx rules | Done | Phase 2 — per-domain |
+| **Docker** | Container lifecycle, image pull/run, Compose stacks, networks, volumes, prune | Done | Phase 3 — full Docker CLI wrapper |
+| **Node Apps** | PM2-backed app management: create/clone/start/stop/restart/pull, env vars, logs | Done | Phase 3 — Node.js/Python/static runtimes |
 | **Common** | Path utilities | Done | Dynamic data-dir resolution |
 
-### Frontend (20 Pages — All Routed)
+### Frontend (37 Pages — All Routed & Lazy-loaded)
 
-| Page | Quality | Notes |
-|------|---------|-------|
-| **Setup Wizard** | Excellent | Multi-step, validation, IP auto-detect |
-| **Login** | Good | Clean form, password toggle |
-| **Dashboard** | Good | Stat cards, quick actions, server info |
-| **File Manager** | Excellent | Monaco editor, drag-drop, archive/extract, search, permissions (1486 lines) |
-| **Terminal** | Basic | Command history, styled; no xterm.js |
-| **Domains** | Good | Table + edit dialog, vhost editing, filter |
-| **Domain Create** | Good | Addon & subdomain, path modes |
-| **DNS Editor** | Good | Zone browser, inline record editing |
-| **Nameserver Setup** | Good | Primary domain + nameserver config |
-| **SSL Manager** | Good | Per-domain cert lifecycle |
-| **Databases** | Excellent | Multi-engine, SQL console, import/export (1848 lines) |
-| **App Store** | Good | Catalog, category filter, install/diagnose |
-| **PHP Manager** | Good | Multi-version, FPM control, config editing |
-| **Mail Domains** | Excellent | Full mail stack management (2730 lines) |
-| **Email Accounts** | Good | Mailbox CRUD, quotas, search |
-| **Forwarders** | Good | Alias management with domain filtering |
-| **Email Filters** | Good | Sieve filter management with templates |
-| **Logs** | Good | Multi-source, auto-refresh, color-coded |
-| **Tools** | Good | Grid with search, favorites, categories |
-| **Settings** | Good | Tabbed: General (hostname + security checklist), Nameservers, Panel Info |
+| Page | Lines (approx) | Quality | Notes |
+|------|---------------|---------|-------|
+| **Setup Wizard** | ~500 | Excellent | Multi-step, validation, IP auto-detect |
+| **Login** | ~200 | Good | Clean form, password toggle, 2FA challenge step |
+| **Dashboard** | ~350 | Good | Stat cards, quick actions, server info |
+| **File Manager** | 1486 | Excellent | Monaco editor, drag-drop, archive/extract, search, permissions |
+| **Terminal** | 168 | Excellent | Full PTY via xterm.js + Socket.IO; ANSI colors, resize, GitHub Dark theme |
+| **Domains** | ~400 | Good | Table + edit dialog, vhost editing, filter |
+| **Domain Create** | ~300 | Good | Addon & subdomain, path modes |
+| **DNS Editor** | ~500 | Good | Zone browser, inline record editing |
+| **Nameserver Setup** | ~250 | Good | Primary domain + nameserver config |
+| **SSL Manager** | ~350 | Good | Per-domain cert lifecycle |
+| **Databases** | 1848 | Excellent | Multi-engine, SQL console, import/export |
+| **App Store** | ~500 | Good | Catalog, category filter, install/diagnose |
+| **PHP Manager** | ~600 | Good | Multi-version, FPM control, config editing |
+| **Mail Domains** | 2730 | Excellent | Full mail stack management |
+| **Email Accounts** | ~400 | Good | Mailbox CRUD, quotas, search |
+| **Forwarders** | ~350 | Good | Alias management with domain filtering |
+| **Email Filters** | ~400 | Good | Sieve filter management with templates |
+| **Email Hub** | ~250 | Good | Unified email dashboard links |
+| **Webserver** | ~450 | Good | Nginx status/install, vhost management |
+| **Logs** | ~400 | Good | Multi-source, auto-refresh, color-coded |
+| **Settings** | ~500 | Good | Tabbed: General (hostname + security checklist), Nameservers, Panel Info |
+| **SSH Keys** | ~350 | Good | Generate/import/delete, authorized_keys |
+| **Cron Jobs** | ~450 | Good | Schedule CRUD, presets, raw crontab editor |
+| **Firewall** | ~500 | Good | UFW rules, presets, Fail2Ban status |
+| **Monitoring** | 366 | Good | CPU/mem/disk/network/services, tabs, auto-refresh |
+| **Backup** | ~500 | Good | Backup types, scheduling, restore |
+| **Two-Factor** | ~400 | Good | TOTP setup, QR code, recovery codes |
+| **Processes** | ~450 | Good | Process list, systemd service management |
+| **Git** | 950 | Excellent | Repo CRUD, clone/pull/push, branches, commits, diffs, SSH key setup |
+| **FTP Manager** | 414 | Good | vsftpd account CRUD, per-domain users, password reset |
+| **Redirects** | 274 | Good | 301/302 per-domain redirects, enable/disable toggle |
+| **IP Blocker** | 231 | Good | Per-domain IP deny rules, comment field |
+| **Dir Privacy** | ~250 | Good | .htpasswd directory protection |
+| **Hotlink Protection** | ~220 | Good | Nginx hotlink rules per domain |
+| **Docker Manager** | ~400 | Good | Container lifecycle, image pull/run, Compose stacks, networks, volumes, prune |
+| **App Manager** | ~380 | Good | PM2 app management: create/clone/start/stop/restart/pull, env vars, log viewer |
+| **Tools** | ~400 | Good | Grid with search, favorites, categories |
 
 ### Scripts & Tooling
 
@@ -76,100 +110,124 @@
 | `UPDATE.md` | Clear update/rollback documentation |
 | `setup-ssl.sh` | Interactive Let's Encrypt wrapper |
 
+### Frontend Infrastructure
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **GlobalSearch** | Done (575 lines) | Spotlight-style keyboard search; queries pages, domains, databases, SSL certs, DNS zones, installed apps; cached per session |
+| **Favorites** | Done | Per-user localStorage favorites; sidebar Favorites section (up to 7 items) |
+| **Sidebar Nav** | Done | Dynamic sections: core, favorites (if any), quick access, system |
+| **API Modules** | Done (29 modules) | All pages use centralized `src/api/*.ts` modules |
+| **AuthContext** | Done | Session auth, `verify2FA`, `twoFactorPending` state |
+| **SetupGuard** | Done | Redirects to `/setup` on first run |
+
 ---
 
-## Issues Found
+## Issues Resolved (Sessions 1–4)
 
-### Critical Security
+### Critical Security (All Fixed)
 
-| # | Issue | Location | Status |
-|---|-------|----------|--------|
-| 1 | **`NOPASSWD: ALL` sudo** — should be scoped to specific commands | `install.sh` | **FIXED** — scoped to ~25 specific binaries |
-| 2 | **Missing `@UseGuards(AuthGuard)`** on controllers | Multiple controllers | **FIXED** (Session 2) — all controllers guarded |
-| 3 | **Terminal executes arbitrary shell commands** with no filtering | `terminal.service.ts` | **FIXED** — BLOCKED_PATTERNS regex array blocks ~15 dangerous patterns |
-| 4 | **Plaintext admin password** in `.env` | `auth.service.ts`, `setup.service.ts` | **FIXED** (Session 2) — bcrypt hashing |
-| 5 | **SSO secret fallback** is `'change-me-sso'` | `mail-sso.service.ts` | **FIXED** — auto-generates ephemeral secret with randomBytes |
-| 6 | **Session secret fallback** is `'change-me'` | `main.ts` | **FIXED** — auto-generates ephemeral secret with randomBytes |
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | `NOPASSWD: ALL` sudo | **FIXED** — scoped to ~25 specific binaries |
+| 2 | Missing `@UseGuards(AuthGuard)` on controllers | **FIXED** — all 29 controllers guarded |
+| 3 | Terminal executes arbitrary shell commands | **FIXED** — BLOCKED_PATTERNS + upgraded to node-pty PTY |
+| 4 | Plaintext admin password in `.env` | **FIXED** — bcrypt hashing |
+| 5 | SSO secret fallback `'change-me-sso'` | **FIXED** — ephemeral randomBytes secret |
+| 6 | Session secret fallback `'change-me'` | **FIXED** — ephemeral randomBytes secret |
 
 ### Functional Issues
 
-| # | Issue | Location | Status |
-|---|-------|----------|--------|
-| 7 | **DNS JSON ↔ BIND9 drift** | `dns.service.ts` vs `dns-server.service.ts` | **FIXED** (Session 2) — sync on record changes |
-| 8 | **No DTO validation** — bodies are `any` | All controllers | **FIXED** (Session 2) — class-validator on all endpoints |
-| 9 | **File-based JSON storage** — concurrent write risk | Multiple services | Open — acceptable for single-admin panel |
-| 10 | **Manual `ensureAuth()` pattern** | files, database, app-store, php controllers | **FIXED** (Session 2) — AuthGuard decorators |
-| 11 | **Service file `ReadWritePaths`** too broad | `clearpanel.service` | Open — low priority |
+| # | Issue | Status |
+|---|-------|--------|
+| 7 | DNS JSON ↔ BIND9 drift | **FIXED** — sync on record changes |
+| 8 | No DTO validation | **FIXED** — class-validator on all endpoints |
+| 9 | File-based JSON storage concurrent write risk | Open — acceptable for single-admin panel |
+| 10 | Manual `ensureAuth()` pattern | **FIXED** — AuthGuard decorators everywhere |
+| 11 | Service file `ReadWritePaths` too broad | Open — low priority |
 
 ### Frontend Issues
 
-| # | Issue | Location | Status |
-|---|-------|----------|--------|
-| 12 | **No Webserver Management page** | Missing page | **FIXED** — Webserver.tsx + route + API module |
-| 13 | **Settings page is minimal** | `Settings.tsx` | **FIXED** — 3 tabs: General, Nameservers, Panel Info |
-| 14 | **API calls not centralized** | Various pages | **FIXED** — 10 API modules, 11 pages updated |
-| 15 | **Orphaned files** | `frontend/src/pages/`, `frontend/src/layouts/` | **FIXED** — removed Domains.tsx, DomainsTable.tsx, DashboardLayout.tsx |
-| 16 | **Top search bar non-functional** | Dashboard layout | Open — medium priority |
-| 17 | **Notifications bell decorative** | Dashboard layout | Open — medium priority |
-| 18 | **Sidebar has only 5 fixed items** | Dashboard layout | **FIXED** — 12 items in 5 sections, sub-route matching |
+| # | Issue | Status |
+|---|-------|--------|
+| 12 | No Webserver Management page | **FIXED** — Webserver.tsx + route + API module |
+| 13 | Settings page minimal | **FIXED** — 3 tabs: General, Nameservers, Panel Info |
+| 14 | API calls not centralized | **FIXED** — 27 API modules |
+| 15 | Orphaned files | **FIXED** — removed unused files |
+| 16 | Top search bar non-functional | **FIXED** — GlobalSearch.tsx (575 lines, spotlight-style) |
+| 17 | Notifications bell decorative | Open — medium priority |
+| 18 | Terminal basic / no xterm.js | **FIXED** — full PTY: xterm.js 6 + node-pty + Socket.IO |
 
 ### Minor Issues
 
-| # | Issue | Location | Status |
-|---|-------|----------|--------|
-| 19 | Port mismatch: `.env.example` says 3000 | `backend/.env.example` | **FIXED** — PORT=3334 |
-| 20 | `backups/` folder not in `.gitignore` | `.gitignore` | **FIXED** |
-| 21 | BIND9 zone serial uses `Math.random()` | `dns-server.service.ts` | **FIXED** — time-based deterministic serial |
-| 22 | Terminal has 10s hardcoded timeout | `terminal.service.ts` | Open — low priority |
-| 23 | Hardcoded SSH git URL in installer | `install.sh` | Open — low priority |
-| 24 | Very large service files | database, app-store, mail | Open — low priority |
+| # | Issue | Status |
+|---|-------|--------|
+| 19 | Port mismatch in `.env.example` | **FIXED** — PORT=3334 |
+| 20 | `backups/` not in `.gitignore` | **FIXED** |
+| 21 | BIND9 zone serial uses `Math.random()` | **FIXED** — time-based deterministic serial |
+| 22 | Terminal 10s hardcoded timeout | **FIXED** — PTY upgrade removed timeout entirely |
+| 23 | Hardcoded SSH git URL in installer | Open — low priority |
+| 24 | Very large service files | Open — low priority |
 
 ---
 
-## What Needs To Be Implemented
+## What Remains
 
-### Completed (Sessions 2 & 3)
+### Medium Priority
 
-- [x] **Add auth guards to all controllers** — domains, dns, dns-server, webserver, ssl: `@UseGuards(AuthGuard)`
-- [x] **Hash admin password** with bcrypt instead of plaintext `.env` storage
-- [x] **Scope sudoers permissions** — replaced `NOPASSWD: ALL` with ~25 specific binary paths
-- [x] **Add DTO validation** using `class-validator` + `class-transformer` on all endpoints
-- [x] **Sync DNS JSON ↔ BIND9** — when records change in the UI, propagate to zone files
-- [x] **Webserver management page** — Nginx status, install, vhost management
-- [x] **Expand Settings page** — tabbed: hostname + security checklist, nameservers, panel info
-- [x] **Centralize API calls** — 10 API modules replacing inline `fetch()` in 11 pages
-- [x] **Add sidebar navigation** — 12 items across 5 sections with sub-route matching
-- [x] **Clean up orphaned files** — removed unused `Domains.tsx`, `DomainsTable.tsx`, `DashboardLayout.tsx`
-- [x] **Fix hardcoded secrets** — auto-generate ephemeral secrets for session & SSO
-- [x] **Terminal command filtering** — BLOCKED_PATTERNS regex array blocks destructive commands
-- [x] **Fix zone serial** — time-based deterministic serial instead of Math.random()
-- [x] **Fix port mismatch** — `.env.example` PORT=3334
-- [x] **Fix server API methods** — `setHostname` uses POST (not PUT), `configureNameservers` matches backend DTO
-
-### Medium Priority (Remaining)
-
-- [ ] **Upgrade terminal** to xterm.js with WebSocket for real-time streaming, ANSI colors, resize
-- [ ] **Implement top search bar** — global search across domains, files, settings
-- [ ] **Add notification system** — connect to real events (cert expiry, disk usage, service down)
+- [ ] **Notification system** — wire bell icon to real events (cert expiry, disk usage, service down)
 - [ ] **Narrow systemd `ReadWritePaths`** — specify exact paths instead of `/etc` and `/var`
 
-### Low Priority (Remaining)
+### Phase 2 — Remaining (6 of 13 items)
 
-- [ ] **Multi-user support** — role-based access control (admin, reseller, user)
-- [ ] **Dark mode toggle** — theme infrastructure exists, needs implementation
-- [ ] **Add backup rotation** — auto-prune old backups
-- [ ] **Add AAAA, SRV, CAA record types** to DNS module
-- [ ] **Split large service files** — refactor 1000+ line services into focused sub-services
-- [ ] **Add E2E and unit tests** — current test coverage is minimal (one spec file)
+- [ ] **Subdomain Manager** — dedicated subdomain CRUD page (currently handled inside Domain Create only)
+- [ ] **Custom Error Pages** — per-domain 404/500/503 custom pages via Nginx
+- [ ] **Auto-Responders** — out-of-office/vacation replies (Postfix)
+- [ ] **Mailing Lists** — list management, subscriber CRUD
+- [ ] **Spam Filter UI** — SpamAssassin/Rspamd policy per domain
+- [ ] **Remote MySQL Access** — grant remote host access, per-user IP whitelisting
+
+### Phase 3 — Remaining (9 of 10 items)
+
+- [x] **Git Deployment** — done (950-line frontend, full workflow)
+- [ ] **Docker Manager** — container deployment UI
+- [ ] **Node.js / Python App Manager** — PM2-style process management
+- [ ] **WordPress Manager** — staging, auto-update, clone, harden
+- [ ] **Activity / Audit Log** — track all admin actions with timestamp
+- [ ] **Notification System** — email/webhook alerts (disk full, service down, cert expiry)
+- [ ] **Bandwidth Monitoring** — per-domain traffic stats, monthly graphs
+- [ ] **Cloudflare Integration** — proxy toggle, SSL mode, page rules
+- [ ] **Server Migration Tool** — import from cPanel/Plesk/ClearPanel
+- [ ] **Bulk Domain Import** — import domain list with auto-provisioning
+
+### Phase 4 — Not Started
+
+- [ ] Multi-User / Reseller Accounts (roles: admin, reseller, client)
+- [ ] Resource Limits per user (disk, bandwidth, email, database quotas)
+- [ ] Account Suspension
+- [ ] White-Label / Branding
+- [ ] REST API & Webhooks
+- [ ] WHMCS Integration
+
+### Low Priority
+
+- [ ] Dark mode toggle — theme infrastructure exists, needs implementation
+- [ ] Add backup rotation — auto-prune old backups
+- [ ] Add AAAA, SRV, CAA record types to DNS module
+- [ ] Split large service files (database, mail, app-store 1000+ lines)
+- [ ] Add E2E and unit tests — minimal current coverage
 
 ---
 
 ## Summary
 
-ClearPanel is a **feature-rich hosting control panel** with complete backend (16 modules) and frontend (21 pages) coverage. All critical and high-priority issues have been resolved across 3 sessions:
+ClearPanel is a **feature-rich hosting control panel** with a complete backend (29 modules) and frontend (35 pages).
 
-- **Security:** Auth guards on all controllers, bcrypt password hashing, scoped sudoers (~25 binaries), terminal command filtering, auto-generated session/SSO secrets, DTO validation on all endpoints
-- **Frontend:** Full sidebar navigation (12 items, 5 sections), new Webserver management page, expanded Settings page (3 tabs), 10 centralized API modules replacing inline fetch calls, orphaned files cleaned
-- **Backend:** DNS JSON ↔ BIND9 sync, time-based zone serials, port mismatch fixed
+| Phase | Features | Status |
+|-------|----------|--------|
+| **Phase 1 — Core Foundation** | 26 features | ✅ Complete |
+| **Phase 2 — Pro Panel Parity** | 13 features | 🟡 7/13 done (FTP, Dir Privacy, Hotlink, Redirects, IP Blocker, PostgreSQL in DB module, DB Import/Export) |
+| **Phase 3 — Competitive Edge** | 10 features | 🟡 1/10 done (Git Deployment) |
+| **Phase 4 — Commercial & Scale** | 6 features | 🔲 Not started |
 
-The remaining work is **medium/low priority enhancements**: xterm.js terminal upgrade, global search, notification system, multi-user RBAC, and test coverage. The project is approximately **95% complete** for a v2.0 release.
+The project is approximately **75% complete** toward a full commercial-grade release.

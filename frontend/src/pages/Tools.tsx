@@ -49,6 +49,7 @@ import ShieldIcon from '@mui/icons-material/Shield';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import SecurityIcon from '@mui/icons-material/Security';
 import MemoryIcon from '@mui/icons-material/Memory';
+import CodeIcon from '@mui/icons-material/Code';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -486,6 +487,22 @@ export default function ToolsPage() {
           onClick: () => navigate('/processes'),
           color: '#0277BD',
           favoritePath: '/processes',
+        },
+        {
+          label: 'Docker Manager',
+          icon: <StorageIcon sx={{ fontSize: 28 }} />,
+          description: 'Containers, images & Compose stacks',
+          onClick: () => navigate('/docker'),
+          color: '#2496ED',
+          favoritePath: '/docker',
+        },
+        {
+          label: 'App Manager',
+          icon: <CodeIcon sx={{ fontSize: 28 }} />,
+          description: 'Node.js & Python apps via PM2',
+          onClick: () => navigate('/node-apps'),
+          color: '#68A063',
+          favoritePath: '/node-apps',
         },
         ...(phpMyAdminInstalled
           ? [
