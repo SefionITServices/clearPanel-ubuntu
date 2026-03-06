@@ -378,8 +378,8 @@ export class AppStoreService {
 
   // ─── install / uninstall ────────────────────────────────────────────
 
-  async installApp(id: string): Promise<{ success: boolean; message: string; logs?: string }> {
-    const fn = this.installMap()[id];
+  async installApp(id: string, options: Record<string, string> = {}): Promise<{ success: boolean; message: string; logs?: string }> {
+    const fn = this.installMap(options)[id];
     if (!fn) throw new Error(`Unknown app: ${id}`);
     this.logger.log(`Installing app: ${id}`);
     return fn();
@@ -392,7 +392,7 @@ export class AppStoreService {
     return fn();
   }
 
-  private installMap(): Record<string, () => Promise<{ success: boolean; message: string; logs?: string }>> {
+  private installMap(options: Record<string, string> = {}): Record<string, () => Promise<{ success: boolean; message: string; logs?: string }>> {
     return {
       phpmyadmin: () => this.installPhpMyAdmin(),
       redis: () => this.installGenericApt('redis-server', 'redis-server', 'Redis'),
@@ -403,7 +403,7 @@ export class AppStoreService {
       certbot: () => this.installCertbot(),
       'wp-cli': () => this.installWpCli(),
       pgadmin: () => this.installPgAdmin(),
-      roundcube: () => this.installRoundcube(),
+      roundcube: () => this.installRoundcube(options.webmailDomain || null),
       mailman: () => this.installMailman(),
     };
   }
@@ -1449,73 +1449,67 @@ location /pgadmin {
     return { id: 'roundcube', installed, running, version, url: '/mail (webmail domain)' };
   }
 
-  private async installRoundcube(): Promise<{ success: boolean; message: string; logs?: string }> {
+  private async installRoundcube(webmailDomain?: string | null): Promise<{ success: boolean; message: string; logs?: string }> {
     try {
       const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
       const script = path.join(scriptsDir, 'install-roundcube.sh');
 
-      // Detect a sensible default webmail domain
-      let webmailDomain = 'webmail.localhost';
-      try {
-        const settings = await fs.readFile(
-          path.join(process.cwd(), 'server-settings.json'), 'utf-8',
-        );
-        const parsed = JSON.parse(settings);
-        if (parsed.primaryDomain) {
-          webmailDomain = `webmail.${parsed.primaryDomain}`;
-        }
-      } catch { /* use default */ }
+      // Determine mode: path-only (/roundcube/) or dedicated domain vhost
+      const usePathOnly = !webmailDomain;
+      let resolvedDomain = webmailDomain?.trim() || '';
 
-      const { stdout, stderr } = await exec(`sudo bash ${script} '${webmailDomain}'`, { timeout: 300_000 });
+      const scriptArgs = usePathOnly ? '--path-only' : `'${resolvedDomain}'`;
+      const { stdout, stderr } = await exec(`sudo bash ${script} ${scriptArgs}`, { timeout: 300_000 });
 
-      // Verify nginx vhost was created; create inline if the script missed it
-      const vhostPath = `/etc/nginx/sites-available/${webmailDomain}`;
-      try {
-        await exec(`test -f ${vhostPath}`, { timeout: 5_000 });
-      } catch {
-        // Vhost missing — create it directly
-        this.logger.warn(`Roundcube vhost not found after install, creating inline: ${vhostPath}`);
-        const phpVer = await this.detectPhpFpmVersion();
-        const vhostContent = [
-          '# ClearPanel — Roundcube webmail vhost',
-          'server {',
-          '    listen 80;',
-          '    listen [::]:80;',
-          `    server_name ${webmailDomain};`,
-          '',
-          '    root /usr/share/roundcube;',
-          '    index index.php;',
-          '',
-          '    add_header X-Content-Type-Options nosniff;',
-          '    add_header X-Frame-Options SAMEORIGIN;',
-          '    add_header X-XSS-Protection "1; mode=block";',
-          '',
-          '    location ~ /\\. { deny all; }',
-          '    location ~ ^/(config|temp|logs)/ { deny all; }',
-          '',
-          '    location / {',
-          '        try_files $uri $uri/ /index.php?$args;',
-          '    }',
-          '',
-          '    location ~ \\.php$ {',
-          '        include snippets/fastcgi-php.conf;',
-          `        fastcgi_pass unix:/var/run/php/php${phpVer}-fpm.sock;`,
-          '        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;',
-          '        include fastcgi_params;',
-          '    }',
-          '',
-          '    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {',
-          '        expires 30d;',
-          '        add_header Cache-Control "public, immutable";',
-          '    }',
-          '}',
-        ].join('\n');
-        await this.sudo(`bash -c 'cat > ${vhostPath} << "VHOSTEOF"\n${vhostContent}\nVHOSTEOF'`);
-        await this.sudo(`ln -sf ${vhostPath} /etc/nginx/sites-enabled/`);
+      if (!usePathOnly) {
+        // Verify nginx vhost was created; create inline if the script missed it
+        const vhostPath = `/etc/nginx/sites-available/${resolvedDomain}`;
         try {
-          await this.sudo('nginx -t && systemctl reload nginx');
-        } catch (e: any) {
-          this.logger.warn(`Nginx reload after vhost creation: ${e.message}`);
+          await exec(`test -f ${vhostPath}`, { timeout: 5_000 });
+        } catch {
+          this.logger.warn(`Roundcube vhost not found after install, creating inline: ${vhostPath}`);
+          const phpVer = await this.detectPhpFpmVersion();
+          const vhostContent = [
+            '# ClearPanel — Roundcube webmail vhost',
+            'server {',
+            '    listen 80;',
+            '    listen [::]:80;',
+            `    server_name ${resolvedDomain};`,
+            '',
+            '    root /usr/share/roundcube;',
+            '    index index.php;',
+            '',
+            '    add_header X-Content-Type-Options nosniff;',
+            '    add_header X-Frame-Options SAMEORIGIN;',
+            '    add_header X-XSS-Protection "1; mode=block";',
+            '',
+            '    location ~ /\\. { deny all; }',
+            '    location ~ ^/(config|temp|logs)/ { deny all; }',
+            '',
+            '    location / {',
+            '        try_files $uri $uri/ /index.php?$args;',
+            '    }',
+            '',
+            '    location ~ \\.php$ {',
+            '        include snippets/fastcgi-php.conf;',
+            `        fastcgi_pass unix:/var/run/php/php${phpVer}-fpm.sock;`,
+            '        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;',
+            '        include fastcgi_params;',
+            '    }',
+            '',
+            '    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {',
+            '        expires 30d;',
+            '        add_header Cache-Control "public, immutable";',
+            '    }',
+            '}',
+          ].join('\n');
+          await this.sudo(`bash -c 'cat > ${vhostPath} << "VHOSTEOF"\n${vhostContent}\nVHOSTEOF'`);
+          await this.sudo(`ln -sf ${vhostPath} /etc/nginx/sites-enabled/`);
+          try {
+            await this.sudo('nginx -t && systemctl reload nginx');
+          } catch (e: any) {
+            this.logger.warn(`Nginx reload after vhost creation: ${e.message}`);
+          }
         }
       }
 
@@ -1539,11 +1533,12 @@ location /pgadmin {
         ssoStderr.trim() && `--- Roundcube SSO (stderr) ---\n${ssoStderr.trim()}`,
       ].filter(Boolean) as string[];
       const logs = logsParts.join('\n\n');
-      return {
-        success: true,
-        message: `Roundcube installed with SSO. Access via: http://${webmailDomain}`,
-        logs,
-      };
+
+      const accessNote = usePathOnly
+        ? 'Access via: http://<server-ip>/roundcube/'
+        : `Access via: http://${resolvedDomain}`;
+
+      return { success: true, message: `Roundcube installed with SSO. ${accessNote}`, logs };
     } catch (e: any) {
       this.logger.error(`Roundcube install failed: ${e.message}`);
       return { success: false, message: e.message };

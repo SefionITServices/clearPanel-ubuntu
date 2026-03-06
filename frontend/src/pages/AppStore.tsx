@@ -23,6 +23,11 @@ import {
   Tooltip,
   Grid,
   LinearProgress,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormControl,
+  FormLabel,
 } from '@mui/material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { appStoreApi } from '../api/app-store';
@@ -116,6 +121,11 @@ export default function AppStorePage() {
   const [diagnosing, setDiagnosing] = useState(false);
   const [fixing, setFixing] = useState(false);
 
+  // ─── Roundcube install dialog ────────────────────────────────────────
+  const [rcDialogOpen, setRcDialogOpen] = useState(false);
+  const [rcAccessMode, setRcAccessMode] = useState<'path' | 'domain'>('path');
+  const [rcDomain, setRcDomain] = useState('');
+
   const fetchApps = async () => {
     try {
       const data = await appStoreApi.listApps();
@@ -132,9 +142,20 @@ export default function AppStorePage() {
   }, []);
 
   const handleInstall = async (id: string) => {
+    // Roundcube needs extra config before installing
+    if (id === 'roundcube') {
+      setRcAccessMode('path');
+      setRcDomain('');
+      setRcDialogOpen(true);
+      return;
+    }
+    await doInstall(id);
+  };
+
+  const doInstall = async (id: string, options?: Record<string, string>) => {
     setInstalling(id);
     try {
-      const data = await appStoreApi.installApp(id);
+      const data = await appStoreApi.installApp(id, options);
       if (data.success) {
         setSnackbar({ open: true, message: `${apps.find((a) => a.id === id)?.name} installed successfully!`, severity: 'success' });
         await fetchApps();
@@ -146,6 +167,15 @@ export default function AppStorePage() {
     } finally {
       setInstalling(null);
     }
+  };
+
+  const handleRoundcubeInstall = () => {
+    setRcDialogOpen(false);
+    const opts: Record<string, string> = {};
+    if (rcAccessMode === 'domain' && rcDomain.trim()) {
+      opts.webmailDomain = rcDomain.trim();
+    }
+    doInstall('roundcube', Object.keys(opts).length ? opts : undefined);
   };
 
   const handleUninstall = async (id: string) => {
@@ -457,6 +487,78 @@ export default function AppStorePage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* ── Roundcube install config dialog ─────────────────────────── */}
+      <Dialog open={rcDialogOpen} onClose={() => setRcDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Install Roundcube Webmail</DialogTitle>
+        <DialogContent dividers>
+          <FormControl component="fieldset" fullWidth>
+            <FormLabel component="legend" sx={{ mb: 1, fontSize: '0.875rem' }}>
+              How should Roundcube be accessed?
+            </FormLabel>
+            <RadioGroup
+              value={rcAccessMode}
+              onChange={(e) => setRcAccessMode(e.target.value as 'path' | 'domain')}
+            >
+              <FormControlLabel
+                value="path"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Server path (recommended)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Access via <code>http://&lt;server-ip&gt;/roundcube/</code> — no DNS needed
+                    </Typography>
+                  </Box>
+                }
+                sx={{ mb: 1 }}
+              />
+              <FormControlLabel
+                value="domain"
+                control={<Radio size="small" />}
+                label={
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Custom domain
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      e.g. <code>webmail.example.com</code> — requires DNS A-record pointing to this server
+                    </Typography>
+                  </Box>
+                }
+              />
+            </RadioGroup>
+
+            {rcAccessMode === 'domain' && (
+              <TextField
+                label="Webmail domain"
+                placeholder="webmail.example.com"
+                value={rcDomain}
+                onChange={(e) => setRcDomain(e.target.value)}
+                size="small"
+                fullWidth
+                sx={{ mt: 2 }}
+                autoFocus
+              />
+            )}
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setRcDialogOpen(false)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleRoundcubeInstall}
+            disabled={rcAccessMode === 'domain' && !rcDomain.trim()}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
+          >
+            Install
+          </Button>
+        </DialogActions>
+      </Dialog>
     </DashboardLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Req, Res, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Req, Res, Body, HttpStatus, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AppStoreService } from './app-store.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -43,9 +43,9 @@ export class AppStoreController {
 
   /** Install an app */
   @Post('install/:id')
-  async installApp(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+  async installApp(@Param('id') id: string, @Body() body: Record<string, string>, @Req() req: Request, @Res() res: Response) {
     try {
-      const result = await this.appStore.installApp(id);
+      const result = await this.appStore.installApp(id, body ?? {});
       return res.json(result);
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });

@@ -13,7 +13,12 @@ async function fetchJSON<T = any>(url: string, opts?: RequestInit): Promise<T> {
 
 export const appStoreApi = {
   listApps: () => fetchJSON(`${API_BASE}/apps`),
-  installApp: (id: string) => fetchJSON(`${API_BASE}/install/${id}`, { method: 'POST' }),
+  installApp: (id: string, options?: Record<string, string>) =>
+    fetchJSON(`${API_BASE}/install/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: options ? JSON.stringify(options) : undefined,
+    }),
   uninstallApp: (id: string) => fetchJSON(`${API_BASE}/uninstall/${id}`, { method: 'DELETE' }),
   diagnoseApp: (id: string) => fetchJSON(`${API_BASE}/diagnose/${id}`),
   reconfigure: (id: string) => fetchJSON(`${API_BASE}/reconfigure/${id}`, { method: 'POST' }),
