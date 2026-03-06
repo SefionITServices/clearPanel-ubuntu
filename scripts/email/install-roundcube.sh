@@ -1,26 +1,40 @@
 #!/usr/bin/env bash
 # ==========================================================================
-# install-roundcube.sh — Install Roundcube webmail via apt + nginx vhost
+# install-roundcube.sh — Install Roundcube webmail via apt + nginx config
 #
-# Usage:  ./install-roundcube.sh <webmail-domain> [--db-type sqlite|mysql]
-# Example: ./install-roundcube.sh webmail.example.com
+# Usage:
+#   ./install-roundcube.sh                          # path mode: {server}/roundcube/
+#   ./install-roundcube.sh webmail.example.com      # dedicated vhost for a domain
+#   ./install-roundcube.sh --path-only              # explicit path mode
+#   ./install-roundcube.sh <domain> --db-type sqlite|mysql
 # ==========================================================================
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <webmail-domain> [--db-type sqlite|mysql]" >&2
-  exit 1
+# Parse args
+WEBMAIL_DOMAIN=""
+DB_TYPE="sqlite"
+PATH_ONLY=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --path-only) PATH_ONLY=true ;;
+    --db-type) ;;
+    sqlite|mysql) DB_TYPE="$arg" ;;
+    *) [[ -z "$WEBMAIL_DOMAIN" ]] && WEBMAIL_DOMAIN="$arg" || DB_TYPE="$arg" ;;
+  esac
+done
+
+# If no domain provided, default to path mode
+if [[ -z "$WEBMAIL_DOMAIN" ]]; then
+  PATH_ONLY=true
 fi
 
-WEBMAIL_DOMAIN="$1"
-DB_TYPE="${2:---db-type}"
-DB_TYPE="${3:-sqlite}"
-
-SCRIPT_SOURCE="${BASH_SOURCE[0]}"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-
-echo "=== ClearPanel Roundcube Installation ==="
-echo "Webmail domain: ${WEBMAIL_DOMAIN}"
+if [[ "$PATH_ONLY" == "true" ]]; then
+  echo "=== ClearPanel Roundcube Installation (path mode: /roundcube/) ==="
+else
+  echo "=== ClearPanel Roundcube Installation ==="
+  echo "Webmail domain: ${WEBMAIL_DOMAIN}"
+fi
 echo "Database type:  ${DB_TYPE}"
 
 # --- Detect PHP-FPM version ---
@@ -188,8 +202,58 @@ chmod -R 770 /var/log/roundcube 2>/dev/null || true
 if [[ -f "$ROUNDCUBE_CONF" ]] && ! grep -q "\$config\['temp_dir'\]" "$ROUNDCUBE_CONF"; then
   printf "\n\$config['temp_dir'] = '/var/lib/roundcube/temp';\n" >> "$ROUNDCUBE_CONF"
 fi
-NGINX_CONF="/etc/nginx/sites-available/${WEBMAIL_DOMAIN}"
-cat >"$NGINX_CONF" <<NGINX
+
+# ── Nginx config ──────────────────────────────────────────────────────────────
+if [[ "$PATH_ONLY" == "true" ]]; then
+  # Patch the main clearPanel nginx config to add /roundcube/ location block
+  MAIN_NGINX=""
+  if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
+    MAIN_NGINX="/etc/nginx/sites-available/clearpanel"
+  elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
+    MAIN_NGINX="/etc/nginx/conf.d/clearpanel.conf"
+  fi
+
+  if [ -n "$MAIN_NGINX" ]; then
+    if ! grep -q "location /roundcube/" "$MAIN_NGINX"; then
+      # Insert Roundcube location before the catch-all "location /" block
+      ROUNDCUBE_BLOCK="
+    # Roundcube webmail
+    location /roundcube/ {
+        alias /usr/share/roundcube/;
+        index index.php;
+        location ~ \\.php\$ {
+            fastcgi_pass unix:/var/run/php/php${PHP_VER}-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME \$request_filename;
+        }
+    }
+    location = /roundcube { return 301 /roundcube/; }"
+      # Use awk to insert before the "location /" block
+      awk -v block="$ROUNDCUBE_BLOCK" '
+        /^[[:space:]]+location \/ \{/ && !done {
+          print block
+          done=1
+        }
+        { print }
+      ' "$MAIN_NGINX" > "${MAIN_NGINX}.tmp" && mv "${MAIN_NGINX}.tmp" "$MAIN_NGINX"
+      echo "[✓] Added /roundcube/ location to main nginx config"
+    else
+      echo "[✓] /roundcube/ location already present in nginx config"
+    fi
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx 2>/dev/null || true
+      echo "[✓] Nginx reloaded"
+    else
+      echo "WARN: Nginx config test failed — check ${MAIN_NGINX}" >&2
+    fi
+  else
+    echo "WARN: Could not find main nginx config — add /roundcube/ manually" >&2
+  fi
+else
+  # Create dedicated vhost for the custom domain
+  NGINX_CONF="/etc/nginx/sites-available/${WEBMAIL_DOMAIN}"
+  cat >"$NGINX_CONF" <<NGINX
 # ClearPanel — Roundcube webmail vhost
 server {
     listen 80;
@@ -199,13 +263,11 @@ server {
     root /usr/share/roundcube;
     index index.php;
 
-    # Security headers
     add_header X-Content-Type-Options nosniff;
     add_header X-Frame-Options SAMEORIGIN;
     add_header X-XSS-Protection "1; mode=block";
     add_header Referrer-Policy strict-origin-when-cross-origin;
 
-    # Prevent access to sensitive files
     location ~ /\. { deny all; }
     location ~ ^/(config|temp|logs)/ { deny all; }
     location ~ /README|INSTALL|LICENSE|CHANGELOG|UPGRADING { deny all; }
@@ -229,15 +291,13 @@ server {
 }
 NGINX
 
-# Enable site
-ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
-
-# Test nginx config
-if nginx -t 2>/dev/null; then
-  systemctl reload nginx 2>/dev/null || true
-  echo "[✓] Nginx vhost configured and reloaded"
-else
-  echo "WARN: Nginx config test failed — check ${NGINX_CONF}" >&2
+  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
+  if nginx -t 2>/dev/null; then
+    systemctl reload nginx 2>/dev/null || true
+    echo "[✓] Nginx vhost configured and reloaded"
+  else
+    echo "WARN: Nginx config test failed — check ${NGINX_CONF}" >&2
+  fi
 fi
 
 # Ensure PHP-FPM is running
@@ -246,11 +306,15 @@ systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
 
 echo ""
 echo "=== Roundcube installation complete ==="
-echo "Access:  http://${WEBMAIL_DOMAIN}"
+if [[ "$PATH_ONLY" == "true" ]]; then
+  echo "Access:  http://<server-ip>/roundcube/"
+else
+  echo "Access:  http://${WEBMAIL_DOMAIN}"
+  echo "Vhost:   /etc/nginx/sites-available/${WEBMAIL_DOMAIN}"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Point DNS A record for ${WEBMAIL_DOMAIN} to your server IP"
+  echo "  2. Run 'certbot --nginx -d ${WEBMAIL_DOMAIN}' for HTTPS"
+fi
 echo "Config:  ${ROUNDCUBE_CONF}"
-echo "Vhost:   ${NGINX_CONF}"
-echo ""
-echo "Next steps:"
-echo "  1. Point DNS A record for ${WEBMAIL_DOMAIN} to your server IP"
-echo "  2. Run 'certbot --nginx -d ${WEBMAIL_DOMAIN}' for HTTPS"
 echo "  3. Users can log in with their mailbox email + password"

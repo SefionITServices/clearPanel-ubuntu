@@ -259,159 +259,6 @@ MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" && \
     echo -e "${GREEN}✓ Mail stack installed${NC}" || \
     echo -e "${RED}⚠ Mail stack installation had issues — can retry from the panel${NC}"
 
-# ── Pre-install Roundcube Webmail ─────────────────────────────────
-echo -e "${YELLOW}📬 Installing Roundcube webmail packages...${NC}"
-export DEBIAN_FRONTEND=noninteractive
-
-# Add Ondřej Surý PHP PPA so modern PHP versions (8.2/8.3/8.4) are available
-if ! grep -rq "ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
-    echo -e "${YELLOW}🐘 Adding PHP PPA (ondrej/php)...${NC}"
-    apt-get install -y -qq software-properties-common > /dev/null 2>&1
-    add-apt-repository -y ppa:ondrej/php > /dev/null 2>&1
-    apt-get update -qq
-fi
-
-PHP_VER=""
-for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
-    if [[ -S "/var/run/php/php${ver}-fpm.sock" ]] || dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
-        PHP_VER="$ver"
-        break
-    fi
-done
-if [[ -z "$PHP_VER" ]]; then
-    PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || true)
-fi
-if [[ -z "$PHP_VER" ]]; then
-    PHP_VER="8.2"
-fi
-echo -e "${YELLOW}Using PHP ${PHP_VER} for Roundcube${NC}"
-
-# Install PHP-FPM first (required for Roundcube)
-apt-get install -y -qq \
-    "php${PHP_VER}-cli" \
-    "php${PHP_VER}-fpm" \
-    "php${PHP_VER}-mbstring" \
-    "php${PHP_VER}-xml" \
-    "php${PHP_VER}-intl" \
-    "php${PHP_VER}-zip" \
-    "php${PHP_VER}-gd" \
-    "php${PHP_VER}-curl" \
-    "php${PHP_VER}-ldap"
-
-apt-get install -y -qq "php${PHP_VER}-imagick" >/dev/null 2>&1 || \
-    apt-get install -y -qq php-imagick >/dev/null 2>&1 || true
-
-phpenmod -v "${PHP_VER}" intl mbstring xml zip gd curl ldap >/dev/null 2>&1 || true
-
-# Ensure PHP-FPM is running before installing Roundcube
-systemctl enable "php${PHP_VER}-fpm" 2>/dev/null || true
-systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
-
-# Verify PHP-FPM socket exists (wait up to 5 seconds)
-FPM_SOCK="/var/run/php/php${PHP_VER}-fpm.sock"
-for i in 1 2 3 4 5; do
-    [ -S "$FPM_SOCK" ] && break
-    sleep 1
-done
-if [ ! -S "$FPM_SOCK" ]; then
-    echo -e "${YELLOW}⚠ PHP-FPM socket not found at $FPM_SOCK — Roundcube may not work${NC}"
-fi
-
-apt-get install -y -qq roundcube roundcube-plugins roundcube-plugins-extra
-if ! php"${PHP_VER}" -r 'exit(defined("INTL_IDNA_VARIANT_UTS46") ? 0 : 1);'; then
-    echo -e "${RED}ERROR: php${PHP_VER}-intl is missing/not enabled; Roundcube login will fail${NC}"
-    exit 1
-fi
-
-# Configure Roundcube for localhost IMAP (works for any domain)
-ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
-if [[ -f "$ROUNDCUBE_CONF" ]]; then
-    set +u
-
-    # Generate a secure 24-character des_key if missing or still the default placeholder
-    CURRENT_KEY=$(grep -oP "\\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
-    if [[ -z "$CURRENT_KEY" || "$CURRENT_KEY" == *"rcmail"* || ${#CURRENT_KEY} -lt 24 ]]; then
-        DES_KEY=$(head -c 24 /dev/urandom | base64 | head -c 24)
-        if grep -q "\$config\['des_key'\]" "$ROUNDCUBE_CONF"; then
-            sed -i "s|\$config\['des_key'\].*|\$config['des_key'] = '${DES_KEY}';|" "$ROUNDCUBE_CONF"
-        else
-            printf "\n\$config['des_key'] = '%s';\n" "$DES_KEY" >> "$ROUNDCUBE_CONF"
-        fi
-        echo -e "${GREEN}✓ Generated Roundcube encryption key (des_key)${NC}"
-    fi
-
-    # Enable error logging so problems are visible in /var/log/roundcube/
-    grep -q "\$config\['log_driver'\]" "$ROUNDCUBE_CONF" || \
-        printf "\n\$config['log_driver'] = 'file';\n" >> "$ROUNDCUBE_CONF"
-    grep -q "\$config\['enable_logging'\]" "$ROUNDCUBE_CONF" || \
-        printf "\$config['enable_logging'] = true;\n" >> "$ROUNDCUBE_CONF"
-    grep -q "\$config\['debug_level'\]" "$ROUNDCUBE_CONF" || \
-        printf "\$config['debug_level'] = 1;\n" >> "$ROUNDCUBE_CONF"
-
-    set -u
-
-    sed -i "s|\$config\['imap_host'\].*|\$config['imap_host'] = ['localhost:143'];|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-    sed -i "s|\$config\['default_host'\].*|\$config['default_host'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-    sed -i "s|\$config\['smtp_server'\].*|\$config['smtp_host'] = 'tls://localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-    sed -i "s|\$config\['smtp_host'\].*|\$config['smtp_host'] = 'tls://localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-    sed -i "s|\$config\['smtp_port'\].*|\$config['smtp_port'] = 587;|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-
-    if ! grep -q "\$config\['imap_host'\]" "$ROUNDCUBE_CONF"; then
-        printf "\n\$config['imap_host'] = ['localhost:143'];\n" >> "$ROUNDCUBE_CONF"
-    fi
-    if ! grep -q "\$config\['default_host'\]" "$ROUNDCUBE_CONF"; then
-        printf "\$config['default_host'] = 'localhost';\n" >> "$ROUNDCUBE_CONF"
-    fi
-    if ! grep -q "\$config\['smtp_host'\]" "$ROUNDCUBE_CONF"; then
-        printf "\$config['smtp_host'] = 'tls://localhost';\n" >> "$ROUNDCUBE_CONF"
-    fi
-    if ! grep -q "\$config\['smtp_port'\]" "$ROUNDCUBE_CONF"; then
-        printf "\$config['smtp_port'] = 587;\n" >> "$ROUNDCUBE_CONF"
-    fi
-    if ! grep -q "\$config\['smtp_conn_options'\]" "$ROUNDCUBE_CONF"; then
-        cat >>"$ROUNDCUBE_CONF" <<'EOF'
-$config['smtp_conn_options'] = [
-    'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false,
-        'allow_self_signed' => true,
-    ],
-];
-EOF
-    fi
-
-    # Enable useful plugins
-    if ! grep -q "'managesieve'" "$ROUNDCUBE_CONF"; then
-        sed -i "s|\$config\['plugins'\] = array(|\$config['plugins'] = array(\n  'managesieve',\n  'archive',\n  'zipdownload',\n  'newmail_notifier',|" "$ROUNDCUBE_CONF" 2>/dev/null || true
-    fi
-fi
-# Restart PHP-FPM after config changes
-systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
-chown -R www-data:www-data /var/lib/roundcube 2>/dev/null || true
-chown -R www-data:www-data /var/log/roundcube 2>/dev/null || true
-
-# Patch Nginx config with the correct PHP-FPM socket for Roundcube
-NGINX_CONF=""
-if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
-    NGINX_CONF="/etc/nginx/sites-available/clearpanel"
-elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
-    NGINX_CONF="/etc/nginx/conf.d/clearpanel.conf"
-fi
-if [ -n "$NGINX_CONF" ]; then
-    sed -i "s|__PHP_FPM_SOCK__|php${PHP_VER}|g" "$NGINX_CONF"
-    nginx -t > /dev/null 2>&1 && systemctl reload nginx 2>/dev/null || \
-        echo -e "${YELLOW}⚠ Nginx config test failed after Roundcube patch — run: sudo nginx -t${NC}"
-    echo -e "${GREEN}✓ Nginx Roundcube location configured (PHP $PHP_VER)${NC}"
-fi
-
-echo -e "${GREEN}✓ Roundcube packages installed${NC}"
-
-# ── Install Roundcube SSO Plugin ──────────────────────────────────
-echo -e "${YELLOW}🔐 Installing Roundcube SSO plugin...${NC}"
-MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-roundcube-sso.sh" "http://localhost:3334" && \
-    echo -e "${GREEN}✓ Roundcube SSO plugin installed${NC}" || \
-    echo -e "${YELLOW}⚠ SSO plugin setup skipped — can configure later from the panel${NC}"
-
 # ── Pre-install TLS, Postscreen, DMARC ───────────────────────────
 echo -e "${YELLOW}🛡️  Configuring mail security (Postscreen, DMARC)...${NC}"
 MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-postscreen.sh" 2>/dev/null && \
@@ -461,7 +308,7 @@ if systemctl is-active --quiet clearpanel; then
     echo -e "${GREEN}clearPanel is now running${NC}"
     echo -e "${GREEN}BIND9 DNS server is installed and ready${NC}"
     echo -e "${GREEN}Mail stack (Postfix, Dovecot, Rspamd, ClamAV) is installed${NC}"
-    echo -e "${GREEN}Roundcube webmail is installed with SSO plugin${NC}"
+    echo -e "${GREEN}Roundcube webmail can be installed from the App Store or Email module${NC}"
     echo ""
     echo -e "${YELLOW}⚠️  NEXT STEPS:${NC}"
     echo "1. Open the panel in your browser to complete the Setup Wizard"
@@ -470,8 +317,8 @@ if systemctl is-active --quiet clearpanel; then
     echo "2. (Optional) Setup SSL with Let's Encrypt after wizard:"
     echo "   sudo certbot --nginx -d your-domain.com"
     echo ""
-    echo "3. Add a mail domain in the panel to start sending/receiving email"
-    echo "   Roundcube vhost will be created when you set up webmail for a domain"
+    echo "3. Install Roundcube webmail from the Email module or App Store"
+    echo "   (supports /roundcube path on this server, or a custom webmail domain)"
     echo ""
     SERVER_IP=$(hostname -I | awk '{print $1}')
     echo -e "${GREEN}Access your panel at: http://$SERVER_IP${NC}"

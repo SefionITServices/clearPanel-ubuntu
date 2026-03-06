@@ -44,19 +44,8 @@ server {
         proxy_send_timeout 3600;
     }
 
-    # Roundcube webmail
-    location /roundcube/ {
-        alias /usr/share/roundcube/;
-        index index.php;
-
-        location ~ \.php$ {
-            fastcgi_pass unix:/var/run/php/__PHP_FPM_SOCK__-fpm.sock;
-            fastcgi_index index.php;
-            include fastcgi_params;
-            fastcgi_param SCRIPT_FILENAME $request_filename;
-        }
-    }
-    location = /roundcube { return 301 /roundcube/; }
+    # Roundcube webmail — added automatically when installed via App Store
+    # (install-roundcube.sh patches this file when Roundcube is installed)
 
     # Static files - served by nginx
     location / {
