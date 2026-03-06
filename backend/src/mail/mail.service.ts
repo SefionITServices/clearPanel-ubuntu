@@ -1371,4 +1371,17 @@ export class MailService {
 
     return this.automation.getDmarcSummary(domain.domain);
   }
+
+  // ---- Webmail URL Setting ----
+
+  async getWebmailUrl(): Promise<string | null> {
+    const settings = await this.serverSettings.getSettings();
+    return settings.webmailUrl ?? null;
+  }
+
+  async setWebmailUrl(url: string | null): Promise<string | null> {
+    const cleaned = url?.trim() || null;
+    await this.serverSettings.updateSettings({ webmailUrl: cleaned ?? undefined });
+    return cleaned;
+  }
 }

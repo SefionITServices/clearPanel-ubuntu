@@ -326,6 +326,30 @@ fi
 # Configure Roundcube for localhost IMAP (works for any domain)
 ROUNDCUBE_CONF="/etc/roundcube/config.inc.php"
 if [[ -f "$ROUNDCUBE_CONF" ]]; then
+    set +u
+
+    # Generate a secure 24-character des_key if missing or still the default placeholder
+    CURRENT_KEY=$(grep -oP "\\\$config\['des_key'\]\s*=\s*'\K[^']*" "$ROUNDCUBE_CONF" 2>/dev/null || true)
+    if [[ -z "$CURRENT_KEY" || "$CURRENT_KEY" == *"rcmail"* || ${#CURRENT_KEY} -lt 24 ]]; then
+        DES_KEY=$(head -c 24 /dev/urandom | base64 | head -c 24)
+        if grep -q "\$config\['des_key'\]" "$ROUNDCUBE_CONF"; then
+            sed -i "s|\$config\['des_key'\].*|\$config['des_key'] = '${DES_KEY}';|" "$ROUNDCUBE_CONF"
+        else
+            printf "\n\$config['des_key'] = '%s';\n" "$DES_KEY" >> "$ROUNDCUBE_CONF"
+        fi
+        echo -e "${GREEN}✓ Generated Roundcube encryption key (des_key)${NC}"
+    fi
+
+    # Enable error logging so problems are visible in /var/log/roundcube/
+    grep -q "\$config\['log_driver'\]" "$ROUNDCUBE_CONF" || \
+        printf "\n\$config['log_driver'] = 'file';\n" >> "$ROUNDCUBE_CONF"
+    grep -q "\$config\['enable_logging'\]" "$ROUNDCUBE_CONF" || \
+        printf "\$config['enable_logging'] = true;\n" >> "$ROUNDCUBE_CONF"
+    grep -q "\$config\['debug_level'\]" "$ROUNDCUBE_CONF" || \
+        printf "\$config['debug_level'] = 1;\n" >> "$ROUNDCUBE_CONF"
+
+    set -u
+
     sed -i "s|\$config\['imap_host'\].*|\$config['imap_host'] = ['localhost:143'];|" "$ROUNDCUBE_CONF" 2>/dev/null || true
     sed -i "s|\$config\['default_host'\].*|\$config['default_host'] = 'localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true
     sed -i "s|\$config\['smtp_server'\].*|\$config['smtp_host'] = 'tls://localhost';|" "$ROUNDCUBE_CONF" 2>/dev/null || true

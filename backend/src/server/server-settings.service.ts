@@ -43,6 +43,7 @@ export class ServerSettingsService implements OnModuleInit {
       primaryDomain: update.primaryDomain ?? current.primaryDomain,
       serverIp: this.resolveServerIp(update.serverIp ?? current.serverIp),
       nameservers,
+      webmailUrl: update.webmailUrl !== undefined ? update.webmailUrl : current.webmailUrl,
       updatedAt: new Date().toISOString(),
     };
 
@@ -72,6 +73,7 @@ export class ServerSettingsService implements OnModuleInit {
         primaryDomain: parsed.primaryDomain?.toLowerCase(),
         serverIp: this.resolveServerIp(parsed.serverIp),
         nameservers: this.normalizeNameservers(parsed.nameservers ?? []),
+        webmailUrl: parsed.webmailUrl,
         updatedAt: parsed.updatedAt,
       };
       this.cache = normalized;
@@ -83,6 +85,7 @@ export class ServerSettingsService implements OnModuleInit {
         primaryDomain: undefined,
         serverIp: this.resolveServerIp(undefined),
         nameservers: [],
+        webmailUrl: undefined,
         updatedAt: new Date().toISOString(),
       };
       await this.writeSettings(defaultSettings);
@@ -139,6 +142,7 @@ export class ServerSettingsService implements OnModuleInit {
       primaryDomain: settings.primaryDomain,
       serverIp: settings.serverIp,
       nameservers: [...settings.nameservers],
+      webmailUrl: settings.webmailUrl,
       updatedAt: settings.updatedAt,
     };
   }

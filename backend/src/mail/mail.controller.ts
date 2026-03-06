@@ -508,6 +508,22 @@ export class MailController {
     return this.mailService.getDmarcSummary(id);
   }
 
+  // ---- Webmail URL Setting ----
+
+  @SkipThrottle()
+  @Get('webmail-url')
+  async getWebmailUrl() {
+    const settings = await this.mailService.getWebmailUrl();
+    return { webmailUrl: settings };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Patch('webmail-url')
+  async setWebmailUrl(@Body() body: { webmailUrl?: string }) {
+    const url = await this.mailService.setWebmailUrl(body?.webmailUrl ?? null);
+    return { webmailUrl: url };
+  }
+
   // ---- Webmail SSO ----
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })

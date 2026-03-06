@@ -625,4 +625,18 @@ export const mailAPI = {
       method: 'POST',
     });
   },
+
+  // ---- Webmail URL ----
+
+  async getWebmailUrl(): Promise<{ webmailUrl: string | null }> {
+    return fetchJSON<{ webmailUrl: string | null }>(`${API_BASE}/webmail-url`);
+  },
+
+  async setWebmailUrl(webmailUrl: string | null): Promise<{ webmailUrl: string | null }> {
+    return fetchJSON<{ webmailUrl: string | null }>(`${API_BASE}/webmail-url`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webmailUrl }),
+    });
+  },
 };

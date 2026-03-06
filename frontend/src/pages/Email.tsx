@@ -11,6 +11,14 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormHelperText,
+  Tooltip,
+  IconButton,
 } from '@mui/material';
 import EmailIcon from '@mui/icons-material/Email';
 import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
@@ -18,9 +26,11 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import SettingsIcon from '@mui/icons-material/Settings';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import TuneIcon from '@mui/icons-material/Tune';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { appStoreApi } from '../api/app-store';
+import { mailAPI } from '../api/mail';
 
 interface EmailTool {
   id: string;
@@ -36,19 +46,53 @@ export default function EmailPage() {
   const navigate = useNavigate();
   const [roundcubeInstalled, setRoundcubeInstalled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [webmailUrl, setWebmailUrl] = useState<string | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlSaving, setUrlSaving] = useState(false);
+  const [urlError, setUrlError] = useState('');
 
   useEffect(() => {
-    appStoreApi
-      .listApps()
-      .then((data) => {
+    Promise.all([
+      appStoreApi.listApps().then((data) => {
         if (Array.isArray(data.apps)) {
           const rc = data.apps.find((a: any) => a.id === 'roundcube');
           setRoundcubeInstalled(!!rc?.status?.installed);
         }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      }).catch(() => {}),
+      mailAPI.getWebmailUrl().then((res) => {
+        setWebmailUrl(res.webmailUrl);
+      }).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
+
+  const openConfigDialog = () => {
+    setUrlInput(webmailUrl ?? '');
+    setUrlError('');
+    setConfigOpen(true);
+  };
+
+  const saveWebmailUrl = async () => {
+    const trimmed = urlInput.trim();
+    // Accept empty (reset to default), or a valid URL/path
+    if (trimmed && !trimmed.startsWith('/') && !trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      setUrlError('Enter a full URL (https://webmail.example.com) or a path (/roundcube)');
+      return;
+    }
+    setUrlSaving(true);
+    try {
+      const res = await mailAPI.setWebmailUrl(trimmed || null);
+      setWebmailUrl(res.webmailUrl);
+      setConfigOpen(false);
+    } catch {
+      setUrlError('Failed to save. Please try again.');
+    } finally {
+      setUrlSaving(false);
+    }
+  };
+
+  /** Resolve the effective URL to open Roundcube */
+  const resolvedWebmailUrl = webmailUrl || '/roundcube/';
 
   const managementTools: EmailTool[] = [
     {
@@ -106,7 +150,7 @@ export default function EmailPage() {
       icon: <MailOutlineIcon sx={{ fontSize: 32 }} />,
       color: '#2196F3',
       installed: roundcubeInstalled,
-      url: '/roundcube/',
+      url: resolvedWebmailUrl,
     },
   ];
 
@@ -169,9 +213,16 @@ export default function EmailPage() {
         </Grid>
 
         {/* Webmail Clients */}
-        <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-          Webmail Clients
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Webmail Clients
+          </Typography>
+          <Tooltip title="Configure webmail URL">
+            <IconButton size="small" onClick={openConfigDialog}>
+              <TuneIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
         {loading ? (
           <Box sx={{ py: 4, textAlign: 'center' }}>
             <CircularProgress size={28} />
@@ -273,6 +324,54 @@ export default function EmailPage() {
             to install Roundcube or another email client.
           </Alert>
         )}
+
+        {/* Webmail URL configuration dialog */}
+        <Dialog open={configOpen} onClose={() => setConfigOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Configure Webmail URL</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Choose how users access Roundcube:
+            </Typography>
+            <Box component="ul" sx={{ m: 0, pl: 2, mb: 2 }}>
+              <Typography component="li" variant="body2" color="text.secondary">
+                <strong>Default (server IP/domain):</strong> leave empty — opens{' '}
+                <code>/roundcube/</code> on this server
+              </Typography>
+              <Typography component="li" variant="body2" color="text.secondary">
+                <strong>Custom domain:</strong> e.g.{' '}
+                <code>https://mail.example.com</code> or{' '}
+                <code>https://webmail.example.com</code>
+              </Typography>
+            </Box>
+            <TextField
+              fullWidth
+              label="Webmail URL"
+              placeholder="Leave empty for /roundcube/ (default)"
+              value={urlInput}
+              onChange={(e) => { setUrlInput(e.target.value); setUrlError(''); }}
+              error={!!urlError}
+              autoFocus
+            />
+            {urlError && <FormHelperText error>{urlError}</FormHelperText>}
+            {!urlError && (
+              <FormHelperText>
+                Current:{' '}
+                <strong>{webmailUrl || '/roundcube/ (default)'}</strong>
+              </FormHelperText>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfigOpen(false)} disabled={urlSaving}>Cancel</Button>
+            {webmailUrl && (
+              <Button color="warning" onClick={() => { setUrlInput(''); }} disabled={urlSaving}>
+                Reset to Default
+              </Button>
+            )}
+            <Button variant="contained" onClick={saveWebmailUrl} disabled={urlSaving}>
+              {urlSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </DashboardLayout>
   );
