@@ -184,27 +184,30 @@ if [ -f "/etc/bind/named.conf.local" ]; then
 fi
 
 # ── Step 3: Install dependencies ────────────────────────────────────
+NPM="$(command -v npm)"
+[ -z "$NPM" ] && { echo -e "${RED}Error: npm not found in PATH${NC}"; exit 1; }
+
 echo ""
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"
 cd "$BACKEND_DIR"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps
 echo -e "${GREEN}✓ Backend dependencies installed${NC}"
 
 echo -e "${YELLOW}📦 Installing frontend dependencies...${NC}"
 cd "$FRONTEND_DIR"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps
 echo -e "${GREEN}✓ Frontend dependencies installed${NC}"
 
 # ── Step 4: Build ───────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}🔧 Building backend...${NC}"
 cd "$BACKEND_DIR"
-sudo -u "$SERVICE_USER" npm run build
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build
 echo -e "${GREEN}✓ Backend built${NC}"
 
 echo -e "${YELLOW}🎨 Building frontend...${NC}"
 cd "$FRONTEND_DIR"
-sudo -u "$SERVICE_USER" npm run build
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build
 echo -e "${GREEN}✓ Frontend built${NC}"
 
 # Ensure public directory permissions

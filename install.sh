@@ -119,20 +119,24 @@ fi
 # Set ownership
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
+# Resolve npm once so PATH is not an issue under sudo -u
+NPM="$(command -v npm)"
+[ -z "$NPM" ] && { echo -e "${RED}Error: npm not found in PATH${NC}"; exit 1; }
+
 # Install backend dependencies
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"
 cd "$INSTALL_DIR/backend"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps
 
 # Build backend
 echo -e "${YELLOW}🔧 Building backend...${NC}"
-sudo -u "$SERVICE_USER" npm run build
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build
 
 # Install frontend dependencies and build
 echo -e "${YELLOW}🎨 Building frontend...${NC}"
 cd "$INSTALL_DIR/frontend"
-sudo -u "$SERVICE_USER" npm install --legacy-peer-deps
-sudo -u "$SERVICE_USER" npm run build
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps
+sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build
 
 # Frontend vite config outputs directly to backend/public, no copy needed
 

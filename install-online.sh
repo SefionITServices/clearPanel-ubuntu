@@ -219,16 +219,19 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 6 — Build backend & frontend
 # ══════════════════════════════════════════════════════════════════
+NPM="$(command -v npm)"
+[ -z "$NPM" ] && fail "npm not found in PATH — Node.js may not be installed correctly"
+
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"
-if ! sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -5; then
-    fail "Backend npm install failed. Check: sudo -u $SERVICE_USER npm install --legacy-peer-deps (in $INSTALL_DIR/backend)"
+if ! sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps 2>&1 | tail -5; then
+    fail "Backend npm install failed. Check: sudo -u $SERVICE_USER env PATH=\$PATH npm install --legacy-peer-deps (in $INSTALL_DIR/backend)"
 fi
 success "Backend dependencies installed"
 
 step "Building backend..."
-if ! sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -5; then
-    fail "Backend build failed. Check: sudo -u $SERVICE_USER npm run build (in $INSTALL_DIR/backend)"
+if ! sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build 2>&1 | tail -5; then
+    fail "Backend build failed. Check: sudo -u $SERVICE_USER env PATH=\$PATH npm run build (in $INSTALL_DIR/backend)"
 fi
 # Verify dist/main.js exists (the file systemd runs)
 if [ ! -f "$INSTALL_DIR/backend/dist/main.js" ]; then
@@ -238,14 +241,14 @@ success "Backend built (dist/main.js verified)"
 
 step "Installing frontend dependencies..."
 cd "$INSTALL_DIR/frontend"
-if ! sudo -u "$SERVICE_USER" npm install --legacy-peer-deps 2>&1 | tail -5; then
+if ! sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps 2>&1 | tail -5; then
     fail "Frontend npm install failed"
 fi
 success "Frontend dependencies installed"
 
 step "Building frontend..."
-if ! sudo -u "$SERVICE_USER" npm run build 2>&1 | tail -5; then
-    fail "Frontend build failed. Check: sudo -u $SERVICE_USER npm run build (in $INSTALL_DIR/frontend)"
+if ! sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" run build 2>&1 | tail -5; then
+    fail "Frontend build failed. Check: sudo -u $SERVICE_USER env PATH=\$PATH npm run build (in $INSTALL_DIR/frontend)"
 fi
 # Verify the frontend built into backend/public
 if [ ! -f "$INSTALL_DIR/backend/public/index.html" ]; then
