@@ -666,39 +666,6 @@ export default function DomainCreatePage() {
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                     Override with custom nameservers only if needed. Leave blank to use your VPS nameservers{vpsNameservers.length > 0 ? ` (${vpsNameservers.join(', ')})` : ''}.
                   </Typography>
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={3}
-                    value={nameservers}
-                    onChange={(e) => setNameservers(e.target.value)}
-                    disabled={submitting}
-                    placeholder={vpsNameservers.length > 0 ? vpsNameservers.join('\n') : `ns1.${domain || 'example.com'}\nns2.${domain || 'example.com'}`}
-                  />
-                </Box>
-
-                {/* Subdomain */}
-                <Box>
-                  <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
-                    <Typography variant="subtitle2" fontWeight={600}>Subdomain</Typography>
-                    <IconButton size="small"><InfoOutlinedIcon fontSize="small" /></IconButton>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    An addon domain requires a subdomain in order to use a separate document root.
-                  </Typography>
-                  <Stack direction="row" spacing={1}>
-                    <TextField
-                      fullWidth
-                      value={subdomain}
-                      onChange={(e) => setSubdomain(e.target.value)}
-                      disabled={submitting}
-                    />
-                    <TextField
-                      value={primaryDomain ? `.${primaryDomain.name}` : '.example.com'}
-                      disabled
-                      sx={{ width: 180 }}
-                    />
-                  </Stack>
                 </Box>
 
                 <Divider />
