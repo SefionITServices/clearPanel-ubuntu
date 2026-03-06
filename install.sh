@@ -31,7 +31,7 @@ if command -v apt-get &> /dev/null; then
     apt-get install -y software-properties-common
     # Add NodeSource repository for latest Node.js
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx
+    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
     # Enable and configure UFW firewall
     ufw --force enable
     ufw allow OpenSSH
