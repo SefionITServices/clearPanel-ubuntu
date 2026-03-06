@@ -263,6 +263,14 @@ MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" && \
 echo -e "${YELLOW}📬 Installing Roundcube webmail packages...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 
+# Add Ondřej Surý PHP PPA so modern PHP versions (8.2/8.3/8.4) are available
+if ! grep -rq "ondrej/php" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+    echo -e "${YELLOW}🐘 Adding PHP PPA (ondrej/php)...${NC}"
+    apt-get install -y -qq software-properties-common > /dev/null 2>&1
+    add-apt-repository -y ppa:ondrej/php > /dev/null 2>&1
+    apt-get update -qq
+fi
+
 PHP_VER=""
 for ver in 8.4 8.3 8.2 8.1 8.0 7.4; do
     if [[ -S "/var/run/php/php${ver}-fpm.sock" ]] || dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
