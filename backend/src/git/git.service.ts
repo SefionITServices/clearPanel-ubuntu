@@ -20,17 +20,17 @@ export interface ManagedRepo {
 
 const execFile = promisify(execFileCb);
 
-// Resolve git binary once at startup — handles cases where /usr/bin is not in PATH
+// Resolve git binary — try `which git` first (works on any distro), then fall back to known paths
 function resolveGitBin(): string {
+  try {
+    const found = execSync('which git 2>/dev/null', { encoding: 'utf-8' }).trim();
+    if (found) return found;
+  } catch { /* ignore */ }
   const candidates = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git'];
   for (const c of candidates) {
     if (fsSync.existsSync(c)) return c;
   }
-  try {
-    return execSync('which git', { encoding: 'utf-8' }).trim();
-  } catch {
-    return 'git'; // last resort — let OS resolve it
-  }
+  return 'git'; // last resort — let the shell resolve it
 }
 
 const GIT_BIN = resolveGitBin();
@@ -163,6 +163,9 @@ export class GitService {
 
   async clone(username: string, url: string, destDir: string, repoName?: string, token?: string, gitUser?: string) {
     const absParent = this.validatePath(destDir, username);
+
+    // Ensure the destination parent directory exists — execFile throws ENOENT if cwd is missing
+    await fs.mkdir(absParent, { recursive: true });
 
     let cloneUrl = url;
     // Inject HTTPS token directly into the URL if provided
