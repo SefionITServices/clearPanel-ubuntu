@@ -28,6 +28,7 @@ export const subdomainsApi = {
     prefix: string;
     parentDomain: string;
     folderPath?: string;
+    pathMode?: string;
     phpVersion?: string;
   }) =>
     fetchJSON(API_BASE, {

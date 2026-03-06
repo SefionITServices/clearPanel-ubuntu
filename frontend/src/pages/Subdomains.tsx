@@ -27,10 +27,14 @@ import {
   Chip,
   Tooltip,
   FormControl,
+  FormLabel,
   InputLabel,
   Select,
   MenuItem,
   Divider,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
 } from '@mui/material';
 import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import AddIcon from '@mui/icons-material/Add';
@@ -39,9 +43,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderIcon from '@mui/icons-material/Folder';
 import LanguageIcon from '@mui/icons-material/Language';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { useAuth } from '../auth/AuthContext';
 import { subdomainsApi, SubdomainRecord } from '../api/subdomains';
 import { domainsApi } from '../api/domains';
 
@@ -49,6 +53,7 @@ const PHP_VERSIONS = ['Default', '7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
 
 export default function SubdomainsPage() {
   const navigate = useNavigate();
+  const { username } = useAuth();
 
   // Data
   const [subdomains, setSubdomains] = useState<SubdomainRecord[]>([]);
@@ -60,6 +65,7 @@ export default function SubdomainsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [prefix, setPrefix] = useState('');
   const [selectedParent, setSelectedParent] = useState('');
+  const [pathMode, setPathMode] = useState<'public_html' | 'root' | 'websites' | 'custom'>('public_html');
   const [customPath, setCustomPath] = useState('');
   const [phpVersion, setPhpVersion] = useState('Default');
   const [creating, setCreating] = useState(false);
@@ -111,6 +117,7 @@ export default function SubdomainsPage() {
   const openCreate = () => {
     setPrefix('');
     setCustomPath('');
+    setPathMode('public_html');
     setPhpVersion('Default');
     setCreateLogs([]);
     if (parentDomains.length > 0) setSelectedParent(parentDomains[0].name);
@@ -123,12 +130,17 @@ export default function SubdomainsPage() {
     setCreating(true);
     setCreateLogs([]);
     try {
-      const res = await subdomainsApi.create({
+      const payload: Parameters<typeof subdomainsApi.create>[0] = {
         prefix: prefix.trim(),
         parentDomain: selectedParent,
-        folderPath: customPath.trim() || undefined,
         phpVersion: phpVersion === 'Default' ? undefined : phpVersion,
-      });
+      };
+      if (pathMode === 'custom') {
+        payload.folderPath = customPath.trim() || undefined;
+      } else {
+        payload.pathMode = pathMode;
+      }
+      const res = await subdomainsApi.create(payload);
       setCreateLogs(res.automationLogs || []);
       setSnack({
         open: true,
@@ -193,7 +205,14 @@ export default function SubdomainsPage() {
     ? `${prefix.trim().toLowerCase()}.${selectedParent}`
     : '';
 
-  const defaultPath = fullPreview ? `~/public_html/${fullPreview}` : '';
+  const pathPreview = (() => {
+    if (!fullPreview) return '';
+    if (pathMode === 'public_html') return `~/public_html/${fullPreview}`;
+    if (pathMode === 'root') return `~/${fullPreview}`;
+    if (pathMode === 'websites') return `/home/${username || 'clearpanel'}/websites/${fullPreview}`;
+    if (pathMode === 'custom') return customPath.trim() || '(enter path below)';
+    return '';
+  })();
 
   const formatDate = (d: string) => {
     try { return new Date(d).toLocaleDateString(); } catch { return '—'; }
@@ -444,32 +463,77 @@ export default function SubdomainsPage() {
 
             <Divider />
 
-            {/* Document root */}
+            {/* Document Root / Path Mode */}
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600 }}>
-                Document Root
-                <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1, fontWeight: 400 }}>
-                  (optional)
-                </Typography>
-              </Typography>
-              {defaultPath && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                  <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+              <FormControl component="fieldset" fullWidth disabled={creating}>
+                <FormLabel component="legend" sx={{ fontWeight: 600, fontSize: '0.875rem', mb: 1 }}>
+                  Document Root
+                </FormLabel>
+                <RadioGroup
+                  value={pathMode}
+                  onChange={(e) => setPathMode(e.target.value as any)}
+                >
+                  <FormControlLabel
+                    value="public_html"
+                    control={<Radio size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>~/public_html/{fullPreview || '<subdomain>'}</Typography>
+                        <Typography variant="caption" color="text.secondary">Inside public_html (recommended)</Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel
+                    value="root"
+                    control={<Radio size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>~/{fullPreview || '<subdomain>'}</Typography>
+                        <Typography variant="caption" color="text.secondary">Directly in home directory</Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel
+                    value="websites"
+                    control={<Radio size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>/home/{username || 'clearpanel'}/websites/{fullPreview || '<subdomain>'}</Typography>
+                        <Typography variant="caption" color="text.secondary">Websites folder</Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel
+                    value="custom"
+                    control={<Radio size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>Custom path</Typography>
+                        <Typography variant="caption" color="text.secondary">Specify your own document root</Typography>
+                      </Box>
+                    }
+                  />
+                </RadioGroup>
+              </FormControl>
+              {pathMode === 'custom' && (
+                <TextField
+                  label="Custom document root"
+                  placeholder="/var/www/html/example"
+                  value={customPath}
+                  onChange={(e) => setCustomPath(e.target.value)}
+                  size="small"
+                  fullWidth
+                  disabled={creating}
+                  sx={{ mt: 1 }}
+                />
+              )}
+              {pathPreview && pathMode !== 'custom' && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
                   <Typography variant="caption" color="text.secondary">
-                    Default: <code>{defaultPath}</code>
+                    Path: <code>{pathPreview}</code>
                   </Typography>
                 </Box>
               )}
-              <TextField
-                label="Custom document root"
-                placeholder={defaultPath || '/var/www/html/example'}
-                value={customPath}
-                onChange={(e) => setCustomPath(e.target.value)}
-                size="small"
-                fullWidth
-                disabled={creating}
-                helperText="Leave blank to use the default path above"
-              />
             </Box>
 
             {/* PHP Version */}

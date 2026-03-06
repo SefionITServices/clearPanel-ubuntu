@@ -74,6 +74,7 @@ export class DomainsService {
     customNameservers?: string[],
     pathMode?: string,
     phpVersion?: string,
+    skipMail = false,
   ): Promise<DomainCreationResult> {
     const domains = await this.readDomains();
     const logs: AutomationLog[] = [];
@@ -284,6 +285,7 @@ export class DomainsService {
     }
 
     let mailResult: MailDomainResult | undefined;
+    if (!skipMail) {
     try {
       mailResult = await this.mailService.createDomain(name);
       const convertedLogs = mailResult.automationLogs.map((log) => ({
@@ -326,6 +328,7 @@ export class DomainsService {
         });
       }
     }
+    } // end !skipMail
 
     return {
       domain,

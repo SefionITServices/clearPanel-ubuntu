@@ -22,6 +22,7 @@ export class SubdomainsController {
       body.parentDomain,
       body.folderPath,
       body.phpVersion,
+      body.pathMode,
     );
     return { success: true, subdomain: domain, automationLogs: logs };
   }

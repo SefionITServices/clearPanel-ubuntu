@@ -30,15 +30,35 @@ export class SubdomainsService {
     parentDomain: string,
     folderPath?: string,
     phpVersion?: string,
+    pathMode?: string,
   ) {
     const fullName = `${prefix.trim().toLowerCase()}.${parentDomain.trim().toLowerCase()}`;
+
+    // Resolve folderPath and pathMode similar to DomainCreate frontend logic
+    let resolvedFolderPath: string | undefined = folderPath;
+    let resolvedPathMode: string | undefined = pathMode ?? 'public_html';
+
+    if (pathMode === 'websites') {
+      // Compute websites path server-side using the username
+      const safeUser = (username ?? '').trim() || 'clearpanel';
+      resolvedFolderPath = `/home/${safeUser}/websites/${fullName}`;
+      resolvedPathMode = undefined;
+    } else if (pathMode === 'root') {
+      // Root mode = default backend behavior (no pathMode passed)
+      resolvedPathMode = undefined;
+    } else if (pathMode === 'custom') {
+      // Custom: folderPath is already set, clear pathMode
+      resolvedPathMode = undefined;
+    }
+
     const { domain, logs } = await this.domainsService.addDomain(
       username,
       fullName,
-      folderPath || undefined,
+      resolvedFolderPath,
       undefined, // use default nameservers
-      folderPath ? undefined : 'public_html', // default path mode
+      resolvedPathMode,
       phpVersion,
+      true, // skipMail — subdomains don't need their own mail stack
     );
     return { domain, logs };
   }

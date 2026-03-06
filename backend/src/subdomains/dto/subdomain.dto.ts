@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
 
 export class CreateSubdomainDto {
   @IsString()
@@ -12,6 +12,11 @@ export class CreateSubdomainDto {
   @IsString()
   @IsOptional()
   folderPath?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['public_html', 'root', 'websites', 'custom'])
+  pathMode?: string;
 
   @IsString()
   @IsOptional()
