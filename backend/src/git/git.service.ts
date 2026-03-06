@@ -140,6 +140,15 @@ export class GitService {
 
   async init(username: string, repoPath: string) {
     const abs = this.validatePath(repoPath, username);
+
+    // If the directory exists and already has files (but is not already a git repo), reject
+    if (fsSync.existsSync(abs) && !fsSync.existsSync(path.join(abs, '.git'))) {
+      const existing = await fs.readdir(abs);
+      if (existing.length > 0) {
+        throw new Error(`Directory "${abs}" already exists and contains files. Remove existing files first or choose a different path.`);
+      }
+    }
+
     await this.runGit(['init'], abs, username);
 
     // Set default identity
@@ -154,6 +163,16 @@ export class GitService {
 
     // Ensure the destination parent directory exists — execFile throws ENOENT if cwd is missing
     await fs.mkdir(absParent, { recursive: true });
+
+    // Check if the destination folder already exists and is non-empty
+    const guessedNameEarly = url.split('/').pop()?.replace(/\.git$/, '') || 'repo';
+    const destFolder = path.join(absParent, repoName || guessedNameEarly);
+    if (fsSync.existsSync(destFolder)) {
+      const existing = await fs.readdir(destFolder);
+      if (existing.length > 0) {
+        throw new Error(`Destination folder "${destFolder}" already exists and is not empty. Remove existing files first or choose a different path.`);
+      }
+    }
 
     let cloneUrl = url;
     // Inject HTTPS token directly into the URL if provided
@@ -570,10 +589,15 @@ export class GitService {
     return { success: true };
   }
 
-  async removeManagedRepo(username: string, repoPath: string) {
+  async removeManagedRepo(username: string, repoPath: string, deleteFiles = true) {
     const abs = this.validatePath(repoPath, username);
+    // Remove from managed list
     const repos = await this.readAllManagedRepos();
     await this.writeAllManagedRepos(repos.filter((r) => r.path !== abs));
+    // Delete the repository directory from disk
+    if (deleteFiles && fsSync.existsSync(abs)) {
+      await fs.rm(abs, { recursive: true, force: true });
+    }
     return { success: true };
   }
 

@@ -1012,7 +1012,7 @@ function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) =>
   useEffect(() => { loadRepos(); }, [loadRepos]);
 
   const doRemove = async (repo: ManagedRepo) => {
-    if (!confirm(`Remove "${repo.name}" from the managed list?\n\nThe repository files will NOT be deleted.`)) return;
+    if (!confirm(`Remove "${repo.name}"?\n\nThis will permanently DELETE the repository folder and all its files from disk. This cannot be undone.`)) return;
     setRemoving(repo.path);
     try { await gitApi.removeRepo(repo.path); setToast({ msg: 'Removed from management', sev: 'success' }); loadRepos(); }
     catch (e: any) { setToast({ msg: e.message, sev: 'error' }); }
