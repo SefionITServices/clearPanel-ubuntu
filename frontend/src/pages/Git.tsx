@@ -1014,9 +1014,16 @@ function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) =>
   const doRemove = async (repo: ManagedRepo) => {
     if (!confirm(`Remove "${repo.name}"?\n\nThis will permanently DELETE the repository folder and all its files from disk. This cannot be undone.`)) return;
     setRemoving(repo.path);
-    try { await gitApi.removeRepo(repo.path); setToast({ msg: 'Removed from management', sev: 'success' }); loadRepos(); }
-    catch (e: any) { setToast({ msg: e.message, sev: 'error' }); }
-    finally { setRemoving(null); }
+    // Optimistically remove from list immediately so UI updates without waiting for reload
+    setRepos(prev => prev.filter(r => r.path !== repo.path));
+    try {
+      await gitApi.removeRepo(repo.path);
+      setToast({ msg: 'Repository deleted', sev: 'success' });
+      await loadRepos(); // re-sync from server to confirm
+    } catch (e: any) {
+      setToast({ msg: e.message, sev: 'error' });
+      await loadRepos(); // restore list on error
+    } finally { setRemoving(null); }
   };
 
   return (
