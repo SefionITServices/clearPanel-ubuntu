@@ -140,15 +140,7 @@ export class GitService {
 
   async init(username: string, repoPath: string) {
     const abs = this.validatePath(repoPath, username);
-
-    // If the directory exists and already has files (but is not already a git repo), reject
-    if (fsSync.existsSync(abs) && !fsSync.existsSync(path.join(abs, '.git'))) {
-      const existing = await fs.readdir(abs);
-      if (existing.length > 0) {
-        throw new Error(`Directory "${abs}" already exists and contains files. Remove existing files first or choose a different path.`);
-      }
-    }
-
+    await fs.mkdir(abs, { recursive: true });
     await this.runGit(['init'], abs, username);
 
     // Set default identity
@@ -161,17 +153,22 @@ export class GitService {
   async clone(username: string, url: string, destDir: string, repoName?: string, token?: string, gitUser?: string) {
     const absParent = this.validatePath(destDir, username);
 
-    // Ensure the destination parent directory exists — execFile throws ENOENT if cwd is missing
+    // Ensure the destination parent directory exists
     await fs.mkdir(absParent, { recursive: true });
 
-    // Check if the destination folder already exists and is non-empty
+    // Determine the final destination folder
     const guessedNameEarly = url.split('/').pop()?.replace(/\.git$/, '') || 'repo';
     const destFolder = path.join(absParent, repoName || guessedNameEarly);
+
+    // If a destination folder exists but has no git history it is a leftover from a
+    // previous failed clone — remove it so git can clone cleanly
     if (fsSync.existsSync(destFolder)) {
-      const existing = await fs.readdir(destFolder);
-      if (existing.length > 0) {
-        throw new Error(`Destination folder "${destFolder}" already exists and is not empty. Remove existing files first or choose a different path.`);
+      const isAlreadyRepo = fsSync.existsSync(path.join(destFolder, '.git'));
+      if (isAlreadyRepo) {
+        throw new Error(`A repository already exists at "${destFolder}". Remove it first before cloning again.`);
       }
+      // Partial / empty leftover — wipe it
+      await fs.rm(destFolder, { recursive: true, force: true });
     }
 
     let cloneUrl = url;
