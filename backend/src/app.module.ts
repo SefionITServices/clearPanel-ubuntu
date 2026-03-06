@@ -34,6 +34,7 @@ import { DirPrivacyModule } from './dir-privacy/dir-privacy.module';
 import { HotlinkModule } from './hotlink/hotlink.module';
 import { DockerModule } from './docker/docker.module';
 import { NodeAppsModule } from './node-apps/node-apps.module';
+import { SubdomainsModule } from './subdomains/subdomains.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { NodeAppsModule } from './node-apps/node-apps.module';
     HotlinkModule,
     DockerModule,
     NodeAppsModule,
+    SubdomainsModule,
   ],
 })
 export class AppModule implements NestModule {

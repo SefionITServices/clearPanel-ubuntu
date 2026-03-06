@@ -307,7 +307,7 @@ export default function DomainsListView() {
               <Button
                 fullWidth variant="outlined" startIcon={<SubdirectoryArrowRightIcon />}
                 sx={{ textTransform: 'none', py: 1.5 }}
-                onClick={() => navigate('/domains/new?type=subdomain')}
+                onClick={() => navigate('/subdomains')}
               >
                 Create Subdomain
               </Button>

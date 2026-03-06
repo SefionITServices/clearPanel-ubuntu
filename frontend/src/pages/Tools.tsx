@@ -39,6 +39,7 @@ import ForwardToInboxIcon from '@mui/icons-material/ForwardToInbox';
 import LockIcon from '@mui/icons-material/Lock';
 import LanIcon from '@mui/icons-material/Lan';
 import LanguageIcon from '@mui/icons-material/Language';
+import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import CloudIcon from '@mui/icons-material/Cloud';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -278,6 +279,14 @@ export default function ToolsPage() {
           onClick: () => navigate('/domains'),
           color: '#4285F4',
           favoritePath: '/domains',
+        },
+        {
+          label: 'Subdomains',
+          icon: <SubdirectoryArrowRightIcon sx={{ fontSize: 28 }} />,
+          description: 'Create & manage subdomains',
+          onClick: () => navigate('/subdomains'),
+          color: '#0288D1',
+          favoritePath: '/subdomains',
         },
         {
           label: 'DNS Zones',
