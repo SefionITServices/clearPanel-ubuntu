@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
-import { execFile as execFileCb, execSync } from 'child_process';
+import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import { getDataFilePath } from '../common/paths';
 
@@ -20,20 +20,6 @@ export interface ManagedRepo {
 
 const execFile = promisify(execFileCb);
 
-// Resolve git binary — try `which git` first (works on any distro), then fall back to known paths
-function resolveGitBin(): string {
-  try {
-    const found = execSync('which git 2>/dev/null', { encoding: 'utf-8' }).trim();
-    if (found) return found;
-  } catch { /* ignore */ }
-  const candidates = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git'];
-  for (const c of candidates) {
-    if (fsSync.existsSync(c)) return c;
-  }
-  return 'git'; // last resort — let the shell resolve it
-}
-
-const GIT_BIN = resolveGitBin();
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -125,7 +111,9 @@ export class GitService {
       ...extraEnv,
     };
 
-    const { stdout } = await execFile(GIT_BIN, args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
+    // Use 'git' (not an absolute path) so the PATH we build above resolves the
+    // correct binary — avoids ENOENT when git is a snap wrapper or lives outside /usr/bin
+    const { stdout } = await execFile('git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
     return stdout.trim();
   }
 
@@ -638,7 +626,11 @@ export class GitService {
     try {
       const r = await execFile('bash', [scriptPath], {
         cwd: abs,
-        env: { ...process.env, HOME: this.getRootPath(username) } as NodeJS.ProcessEnv,
+        env: {
+          ...process.env,
+          PATH: `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${process.env.PATH ?? ''}`,
+          HOME: this.getRootPath(username),
+        } as NodeJS.ProcessEnv,
         maxBuffer: 10 * 1024 * 1024,
         timeout: 120000,
       });
