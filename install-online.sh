@@ -132,11 +132,11 @@ apt-get update -qq || fail "apt-get update failed — check your network/DNS"
 apt-get install -y -qq software-properties-common ca-certificates gnupg curl git ufw acl > /dev/null 2>&1 || fail "Failed to install base packages"
 success "Base packages"
 
-# Clean any old Node.js / npm packages that may cause conflicts (Ubuntu/Debian default packages)
-if dpkg -l | grep -E 'nodejs|npm' >/dev/null; then
-    info "Removing old nodejs/npm packages that may conflict..."
-    apt-get purge -y nodejs npm || true
-    apt-get autoremove -y || true
+# Clean any old Node.js / npm packages that conflict with NodeSource
+if dpkg -l nodejs 2>/dev/null | grep -q '^ii' || dpkg -l npm 2>/dev/null | grep -q '^ii'; then
+    info "Removing old nodejs/npm packages to avoid conflicts..."
+    apt-get purge -y nodejs npm 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
 fi
 
 # Node.js 20
@@ -146,8 +146,10 @@ if [ "$NODE_VERSION" -lt 20 ]; then
     if ! curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1; then
         fail "Failed to add NodeSource repository"
     fi
-    if ! apt-get install -y -qq nodejs npm > /dev/null 2>&1; then
-        fail "Failed to install Node.js/npm"
+    # Install Node.js (NodeSource package includes npm)
+    # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
+    if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
+        fail "Failed to install Node.js"
     fi
     # Update command hash to recognize newly installed binaries
     hash -r
@@ -239,7 +241,7 @@ if [ -z "$NPM" ]; then
         fi
     done
 fi
-[ -z "$NPM" ] && fail "npm not found in PATH — Try: sudo apt-get update && sudo apt-get install -y npm && hash -r"
+[ -z "$NPM" ] && fail "npm not found in PATH — npm is bundled with NodeSource's nodejs. Try: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs && hash -r"
 
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"
