@@ -139,9 +139,11 @@ if [ "$NODE_VERSION" -lt 20 ]; then
     if ! curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1; then
         fail "Failed to add NodeSource repository"
     fi
-    if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
-        fail "Failed to install Node.js"
+    if ! apt-get install -y -qq nodejs npm > /dev/null 2>&1; then
+        fail "Failed to install Node.js/npm"
     fi
+    # Update command hash to recognize newly installed binaries
+    hash -r
 fi
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
 if [ "$NODE_VERSION" -lt 20 ]; then
@@ -219,8 +221,18 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 6 — Build backend & frontend
 # ══════════════════════════════════════════════════════════════════
+# Resolve npm once so PATH is not an issue under sudo -u
+# Try command -v first, then search in common paths if it fails
 NPM="$(command -v npm)"
-[ -z "$NPM" ] && fail "npm not found in PATH — Node.js may not be installed correctly"
+if [ -z "$NPM" ]; then
+    for path in /usr/bin/npm /usr/local/bin/npm /opt/node/bin/npm; do
+        if [ -x "$path" ]; then
+            NPM="$path"
+            break
+        fi
+    done
+fi
+[ -z "$NPM" ] && fail "npm not found in PATH — Try: sudo apt-get update && sudo apt-get install -y npm && hash -r"
 
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"

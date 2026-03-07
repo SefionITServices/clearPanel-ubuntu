@@ -31,7 +31,9 @@ if command -v apt-get &> /dev/null; then
     apt-get install -y software-properties-common
     # Add NodeSource repository for latest Node.js
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
+    apt-get install -y nodejs npm nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
+    # Update command hash to recognize newly installed binaries
+    hash -r
     # Enable and configure UFW firewall
     ufw --force enable
     ufw allow OpenSSH
@@ -120,8 +122,23 @@ fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
 # Resolve npm once so PATH is not an issue under sudo -u
+# Try command -v first, then search in common paths if it fails
 NPM="$(command -v npm)"
-[ -z "$NPM" ] && { echo -e "${RED}Error: npm not found in PATH${NC}"; exit 1; }
+if [ -z "$NPM" ]; then
+    for path in /usr/bin/npm /usr/local/bin/npm /opt/node/bin/npm; do
+        if [ -x "$path" ]; then
+            NPM="$path"
+            break
+        fi
+    done
+fi
+
+if [ -z "$NPM" ]; then
+    echo -e "${RED}Error: npm not found in PATH or common locations.${NC}"
+    echo -e "${YELLOW}Try: sudo apt-get update && sudo apt-get install -y npm && hash -r${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ npm found at: $NPM${NC}"
 
 # Install backend dependencies
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"
