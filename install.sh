@@ -25,14 +25,17 @@ fi
 
 echo -e "${YELLOW}📋 Installing system dependencies for Ubuntu/Zorin OS...${NC}"
 # Ubuntu/Debian package management
-if command -v apt-get &> /dev/null; then
-    PKG_MANAGER="apt-get"
-    apt-get update
-    apt-get install -y software-properties-common
-    # Add NodeSource repository for latest Node.js
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs npm nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
-    # Update command hash to recognize newly installed binaries
+    # Clean any old Node.js / npm packages that may cause conflicts (Ubuntu/Debian default packages)
+    if dpkg -l | grep -E 'nodejs|npm' >/dev/null; then
+        info "Removing old nodejs/npm packages that may conflict..."
+        apt-get purge -y nodejs npm || true
+        apt-get autoremove -y || true
+    fi
+    # Add NodeSource repository for latest Node.js 20 LTS
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - || fail "Failed to add NodeSource repo"
+    # Install Node.js (includes npm) and other system packages
+    apt-get install -y nodejs npm nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev || fail "Failed to install base packages"
+    # Refresh command hash so newly installed binaries are visible
     hash -r
     # Enable and configure UFW firewall
     ufw --force enable

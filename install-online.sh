@@ -132,6 +132,13 @@ apt-get update -qq || fail "apt-get update failed — check your network/DNS"
 apt-get install -y -qq software-properties-common ca-certificates gnupg curl git ufw acl > /dev/null 2>&1 || fail "Failed to install base packages"
 success "Base packages"
 
+# Clean any old Node.js / npm packages that may cause conflicts (Ubuntu/Debian default packages)
+if dpkg -l | grep -E 'nodejs|npm' >/dev/null; then
+    info "Removing old nodejs/npm packages that may conflict..."
+    apt-get purge -y nodejs npm || true
+    apt-get autoremove -y || true
+fi
+
 # Node.js 20
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
 if [ "$NODE_VERSION" -lt 20 ]; then
