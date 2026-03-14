@@ -132,7 +132,7 @@ export class NodeAppsService {
   }
 
   async cloneAndCreate(dto: CloneAppDto): Promise<AppDefinition> {
-    await exec(`git clone ${dto.repoUrl} ${dto.directory}${dto.branch ? ` -b ${dto.branch}` : ''}`, { timeout: 120000 });
+    await exec(`/usr/bin/git clone ${dto.repoUrl} ${dto.directory}${dto.branch ? ` -b ${dto.branch}` : ''}`, { timeout: 120000 });
     return this.createApp({
       name: dto.name,
       runtime: dto.runtime as any,
@@ -238,7 +238,7 @@ export class NodeAppsService {
     const apps = await this.readApps();
     const app = apps.find((a) => a.id === id);
     if (!app) throw new Error('App not found');
-    const { stdout: pullOut, stderr: pullErr } = await exec(`git -C "${app.directory}" pull`, { timeout: 60000 });
+    const { stdout: pullOut, stderr: pullErr } = await exec(`/usr/bin/git -C "${app.directory}" pull`, { timeout: 60000 });
 
     // Install deps after pull
     try {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
@@ -25,6 +25,8 @@ const execFile = promisify(execFileCb);
 
 @Injectable()
 export class GitService {
+  private readonly logger = new Logger(GitService.name);
+
   // ── Path helpers (same sandbox as FilesService) ──────────────────────────
 
   private getRootPath(username: string): string {
@@ -111,10 +113,18 @@ export class GitService {
       ...extraEnv,
     };
 
-    // Use 'git' (not an absolute path) so the PATH we build above resolves the
-    // correct binary — avoids ENOENT when git is a snap wrapper or lives outside /usr/bin
-    const { stdout } = await execFile('git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
-    return stdout.trim();
+    this.logger.debug(`Executing /usr/bin/git ${args.join(' ')} in ${cwd}`);
+
+    try {
+      const { stdout } = await execFile('/usr/bin/git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
+      return stdout.trim();
+    } catch (e: any) {
+      this.logger.error(`Git command failed: git ${args.join(' ')} - Error: ${e.message}`, e.stack);
+      if (e.code === 'ENOENT') {
+        this.logger.error(`PATH during failure: ${env.PATH}`);
+      }
+      throw e;
+    }
   }
 
   // Inject HTTPS token into remote URL before push/pull
