@@ -143,9 +143,13 @@ fi
 NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
 if [ "$NODE_VERSION" -lt 20 ]; then
     info "Installing Node.js 20 LTS..."
-    if ! curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1; then
-        fail "Failed to add NodeSource repository"
+    # NodeSource deprecated setup_20.x scripts — use manual GPG key + apt repo
+    mkdir -p /etc/apt/keyrings
+    if ! curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg 2>/dev/null; then
+        fail "Failed to download NodeSource GPG key"
     fi
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+    apt-get update -qq || fail "apt-get update failed after adding NodeSource repo"
     # Install Node.js (NodeSource package includes npm)
     # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
     if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
@@ -241,7 +245,7 @@ if [ -z "$NPM" ]; then
         fi
     done
 fi
-[ -z "$NPM" ] && fail "npm not found in PATH — npm is bundled with NodeSource's nodejs. Try: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs && hash -r"
+[ -z "$NPM" ] && fail "npm not found in PATH — try: mkdir -p /etc/apt/keyrings && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' > /etc/apt/sources.list.d/nodesource.list && apt-get update && apt-get install -y nodejs && hash -r"
 
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"

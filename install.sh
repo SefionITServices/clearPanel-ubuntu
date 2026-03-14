@@ -35,8 +35,11 @@ if command -v apt-get &> /dev/null; then
         apt-get purge -y nodejs npm 2>/dev/null || true
         apt-get autoremove -y 2>/dev/null || true
     fi
-    # Add NodeSource repository for latest Node.js 20 LTS
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    # NodeSource deprecated setup_20.x scripts — use manual GPG key + apt repo
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+    apt-get update
     # Install Node.js (NodeSource package includes npm) and other system packages
     # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
     apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
@@ -144,7 +147,7 @@ fi
 if [ -z "$NPM" ]; then
     echo -e "${RED}Error: npm not found in PATH or common locations.${NC}"
     echo -e "${YELLOW}npm is bundled with NodeSource's nodejs package.${NC}"
-    echo -e "${YELLOW}Try: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs && hash -r${NC}"
+    echo -e "${YELLOW}Try: mkdir -p /etc/apt/keyrings && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' > /etc/apt/sources.list.d/nodesource.list && apt-get update && apt-get install -y nodejs && hash -r${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ npm found at: $NPM${NC}"
