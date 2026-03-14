@@ -3,7 +3,10 @@ node_modules/
 uploads/
 *.log
 .DS_Store
+# Build artifacts
 backend/dist/
+backend/public/assets/
+frontend/dist/
 data/
 backups/
 
