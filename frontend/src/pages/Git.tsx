@@ -848,6 +848,7 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
 function CreateView({ onBack, onCreated, pathOptions }: { onBack: () => void; onCreated: (repo: ManagedRepo) => void; pathOptions: PathOption[] }) {
   const [isClone, setIsClone] = useState(false);
   const [cloneUrl, setCloneUrl] = useState('');
+  const [cloneIntoDir, setCloneIntoDir] = useState(false);
   const [repoPath, setRepoPath] = useState('');
   const [repoPathInput, setRepoPathInput] = useState('');
   const [repoName, setRepoName] = useState('');
@@ -875,7 +876,7 @@ function CreateView({ onBack, onCreated, pathOptions }: { onBack: () => void; on
         const r = await gitApi.clone(
           cloneUrl.trim(),
           repoPath.trim(),
-          repoName.trim() || undefined,
+          cloneIntoDir ? '.' : (repoName.trim() || undefined),
           useHttpsCreds && isHttps ? token : undefined,
           useHttpsCreds && isHttps ? gitUser : undefined,
         );
@@ -925,6 +926,14 @@ function CreateView({ onBack, onCreated, pathOptions }: { onBack: () => void; on
                 placeholder="https://github.com/user/repo.git  or  git@github.com:user/repo.git"
                 fullWidth size="small" helperText="Supports HTTPS and SSH URLs"
               />
+
+              <Box>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: isHttps ? 1 : 0 }}>
+                  <Checkbox size="small" checked={cloneIntoDir} onChange={e => setCloneIntoDir(e.target.checked)} sx={{ p: 0 }} />
+                  <Typography variant="body2">Clone directly into the selected folder (folder must be empty)</Typography>
+                </Stack>
+              </Box>
+
               {isHttps && (
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>

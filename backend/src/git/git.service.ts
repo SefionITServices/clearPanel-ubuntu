@@ -178,17 +178,30 @@ export class GitService {
 
     // Determine the final destination folder
     const guessedNameEarly = url.split('/').pop()?.replace(/\.git$/, '') || 'repo';
-    const destFolder = path.join(absParent, repoName || guessedNameEarly);
+    const isDirectClone = repoName === '.';
+    const destFolder = isDirectClone ? absParent : path.join(absParent, repoName || guessedNameEarly);
 
     // If a destination folder exists but has no git history it is a leftover from a
-    // previous failed clone — remove it so git can clone cleanly
+    // previous failed clone — remove it so git can clone cleanly.
+    // NOTE: For direct clone (.), we don't want to wipe the whole parent dir!
+    // We only check if it's already a repo.
     if (fsSync.existsSync(destFolder)) {
       const isAlreadyRepo = fsSync.existsSync(path.join(destFolder, '.git'));
       if (isAlreadyRepo) {
         throw new Error(`A repository already exists at "${destFolder}". Remove it first before cloning again.`);
       }
-      // Partial / empty leftover — wipe it
-      await fs.rm(destFolder, { recursive: true, force: true });
+      
+      if (!isDirectClone) {
+        // Partial / empty leftover — wipe it
+        await fs.rm(destFolder, { recursive: true, force: true });
+      } else {
+        // For direct clone, git requires the directory to be empty.
+        // We'll let git itself complain if it's not empty, or we could check here.
+        const files = await fs.readdir(destFolder);
+        if (files.length > 0) {
+          throw new Error(`Destination path "${destFolder}" is not empty. Git cloning into an existing directory requires it to be empty.`);
+        }
+      }
     }
 
     let cloneUrl = url;
@@ -210,9 +223,14 @@ export class GitService {
       ? ['clone', cloneUrl, repoName]
       : ['clone', cloneUrl];
 
+    // For direct clone, we run it in the parent of absParent? No, we run it in absParent with '.' as target.
+    // Wait, if repoName is '.', runGit(cloneArgs, absParent, username) executes:
+    // /usr/bin/git clone <url> .  inside  absParent.
+    // This is correct.
+
     await this.runGit(cloneArgs, absParent, username);
 
-    const cloned = path.join(absParent, repoName || guessedName);
+    const cloned = isDirectClone ? absParent : path.join(absParent, repoName || guessedName);
 
     // Set identity in cloned repo
     await this.runGit(['config', 'user.name', username], cloned, username).catch(() => null);
