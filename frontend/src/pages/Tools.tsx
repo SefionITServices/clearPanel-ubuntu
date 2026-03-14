@@ -51,6 +51,9 @@ import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import SecurityIcon from '@mui/icons-material/Security';
 import MemoryIcon from '@mui/icons-material/Memory';
 import CodeIcon from '@mui/icons-material/Code';
+import WarningIcon from '@mui/icons-material/Warning';
+import EventNoteIcon from '@mui/icons-material/EventNote';
+import PeopleIcon from '@mui/icons-material/People';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -335,6 +338,14 @@ export default function ToolsPage() {
           color: '#F57C00',
           favoritePath: '/hotlink-protection',
         },
+        {
+          label: 'Custom Error Pages',
+          icon: <WarningIcon sx={{ fontSize: 28 }} />,
+          description: 'Custom 404/500 pages',
+          onClick: () => navigate('/error-pages'),
+          color: '#E53935',
+          favoritePath: '/error-pages',
+        },
       ],
     },
     {
@@ -379,6 +390,30 @@ export default function ToolsPage() {
           onClick: () => navigate('/email-filters'),
           color: '#FF6B35',
           favoritePath: '/email-filters',
+        },
+        {
+          label: 'Spam Filtering',
+          icon: <SecurityIcon sx={{ fontSize: 28 }} />,
+          description: 'Rspamd policy & filtering',
+          onClick: () => navigate('/spam-filter'),
+          color: '#1E88E5',
+          favoritePath: '/spam-filter',
+        },
+        {
+          label: 'Auto-Responders',
+          icon: <EventNoteIcon sx={{ fontSize: 28 }} />,
+          description: 'Vacation/Out-of-Office setup',
+          onClick: () => navigate('/auto-responders'),
+          color: '#00ACC1',
+          favoritePath: '/auto-responders',
+        },
+        {
+          label: 'Mailing Lists',
+          icon: <PeopleIcon sx={{ fontSize: 28 }} />,
+          description: 'Forward emails to multiple addresses',
+          onClick: () => navigate('/mailing-lists'),
+          color: '#7B1FA2',
+          favoritePath: '/mailing-lists',
         },
       ],
     },

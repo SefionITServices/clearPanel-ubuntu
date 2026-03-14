@@ -854,6 +854,7 @@ export default function DatabasesPage() {
             <Tab label={`Databases (${databases.length})`} icon={<Storage />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
             <Tab label={`Users (${users.length})`} icon={<Person />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
             <Tab label="SQL Query" icon={<Code />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
+            <Tab label="Remote Access" icon={<Public />} iconPosition="start" sx={{ textTransform: 'none', fontWeight: 500 }} />
           </Tabs>
 
         {/* ==================== DATABASES TAB ==================== */}
@@ -1240,6 +1241,85 @@ export default function DatabasesPage() {
                 </Box>
               )}
             </Stack>
+          </Box>
+        )}
+
+        {/* ==================== REMOTE ACCESS TAB ==================== */}
+        {tab === 3 && (
+          <Box sx={{ p: 3, bgcolor: '#fff' }}>
+            <Typography variant="h6" fontWeight={600} gutterBottom>Remote Database Access</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 800 }}>
+              Allow external applications or developers to connect directly to your databases. To establish a remote connection:
+              <strong>1. Enable Global Remote Access</strong> (using the switch in the top management bar), and 
+              <strong>2. Authorize an IP</strong> by creating a database user that originates from that specific IP (or '%' for any IP).
+            </Typography>
+
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+              <Paper variant="outlined" sx={{ flex: 1, p: 3 }}>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Public sx={{ color: '#4285F4' }} /> Global Status
+                </Typography>
+                <Alert severity={
+                  (activeEngine === 'postgresql' ? remoteAccess.postgresql?.enabled : remoteAccess.mysql?.enabled) ? "success" : "info"
+                } sx={{ mb: 3 }}>
+                  {(activeEngine === 'postgresql' ? remoteAccess.postgresql?.enabled : remoteAccess.mysql?.enabled)
+                    ? "Remote access is globally ENABLED. The database engine is listening on 0.0.0.0."
+                    : "Remote access is currently DISABLED. Localhost only."}
+                </Alert>
+                <Button 
+                  variant="outlined" 
+                  fullWidth 
+                  onClick={() => handleToggleRemoteAccess(activeEngine === 'postgresql' ? 'postgresql' : 'mysql', !(activeEngine === 'postgresql' ? remoteAccess.postgresql?.enabled : remoteAccess.mysql?.enabled))}
+                  disabled={togglingRemote}
+                >
+                  {togglingRemote ? "Applying..." : (activeEngine === 'postgresql' ? remoteAccess.postgresql?.enabled : remoteAccess.mysql?.enabled) ? "Disable Global Remote Access" : "Enable Global Remote Access"}
+                </Button>
+              </Paper>
+
+              <Paper variant="outlined" sx={{ flex: 1, p: 3 }}>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Person sx={{ color: '#34A853' }} /> Authorized Remote Users
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Users authorized to connect from external IPs:
+                </Typography>
+                <Stack spacing={1} sx={{ mb: 3, maxHeight: 150, overflow: 'auto' }}>
+                  {users.filter(u => u.host !== 'localhost' && u.host !== '127.0.0.1').length === 0 ? (
+                    <Typography variant="body2" color="text.disabled">No remote users authorized. All users are restricted to localhost.</Typography>
+                  ) : (
+                    users.filter(u => u.host !== 'localhost' && u.host !== '127.0.0.1').map(u => (
+                      <Box key={`${u.user}@${u.host}`} sx={{ display: 'flex', justifyContent: 'space-between', p: 1, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+                        <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{u.user} <Typography component="span" variant="caption" color="text.secondary">@{u.host}</Typography></Typography>
+                        <Tooltip title="Delete remote user">
+                          <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.user, u.host)} sx={{ p: 0 }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    ))
+                  )}
+                </Stack>
+                <Button 
+                  variant="contained" 
+                  fullWidth 
+                  startIcon={<Add />}
+                  onClick={() => {
+                    setNewUserName('');
+                    setNewUserPassword(generatePassword());
+                    setNewUserHost('%');
+                    setCreateUserOpen(true);
+                  }}
+                >
+                  Add Remote Database User
+                </Button>
+              </Paper>
+            </Stack>
+
+            <Box sx={{ mt: 3 }}>
+              <Button variant="text" startIcon={<InfoIcon />} onClick={() => setConnInfoOpen(true)}>
+                View Connection Information & Ports
+              </Button>
+            </Box>
           </Box>
         )}
 

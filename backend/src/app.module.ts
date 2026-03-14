@@ -35,6 +35,9 @@ import { HotlinkModule } from './hotlink/hotlink.module';
 import { DockerModule } from './docker/docker.module';
 import { NodeAppsModule } from './node-apps/node-apps.module';
 import { SubdomainsModule } from './subdomains/subdomains.module';
+import { ErrorPagesModule } from './error-pages/error-pages.module';
+import { MailingListsModule } from './mailing-lists/mailing-lists.module';
+import { SpamFilterModule } from './spam-filter/spam-filter.module';
 
 @Module({
   imports: [
@@ -77,6 +80,9 @@ import { SubdomainsModule } from './subdomains/subdomains.module';
     DockerModule,
     NodeAppsModule,
     SubdomainsModule,
+    ErrorPagesModule,
+    MailingListsModule,
+    SpamFilterModule,
   ],
 })
 export class AppModule implements NestModule {

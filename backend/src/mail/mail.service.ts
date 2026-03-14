@@ -1299,6 +1299,109 @@ export class MailService {
     return { domain, automationLogs: logs };
   }
 
+  // ---- Auto-Responders ----
+  
+  private get autoRespondersPath() {
+    return getDataFilePath('autoresponders.json');
+  }
+
+  private async readAutoResponders(): Promise<any[]> {
+    try {
+      const raw = await fs.readFile(this.autoRespondersPath, 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeAutoResponders(data: any[]) {
+    await fs.mkdir(path.dirname(this.autoRespondersPath), { recursive: true });
+    await fs.writeFile(this.autoRespondersPath, JSON.stringify(data, null, 2));
+  }
+
+  async listAutoResponders(domainId: string) {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Domain not found');
+
+    const all = await this.readAutoResponders();
+    return all.filter(a => a.domain === domain.domain);
+  }
+
+  async setAutoResponder(domainId: string, data: any) {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Domain not found');
+
+    const mailbox = domain.mailboxes.find(m => m.email === data.email);
+    if (!mailbox) throw new BadRequestException('Mailbox not found');
+
+    const all = await this.readAutoResponders();
+    const existingIdx = all.findIndex(a => a.email === data.email);
+
+    const responder = {
+      email: data.email,
+      domain: domain.domain,
+      subject: data.subject,
+      body: data.body,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      enabled: data.enabled ?? true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (existingIdx >= 0) all[existingIdx] = responder;
+    else all.push(responder);
+
+    await this.writeAutoResponders(all);
+
+    if (responder.enabled) {
+      let script = `require ["vacation", "date", "relational"];\n\n`;
+      let conditions = [];
+      if (responder.startDate) {
+        // expect YYYY-MM-DD
+        conditions.push(`currentdate :value "ge" "date" "${responder.startDate}"`);
+      }
+      if (responder.endDate) {
+        conditions.push(`currentdate :value "le" "date" "${responder.endDate}"`);
+      }
+      const safeSubject = responder.subject.replace(/"/g, '\\"');
+      const safeBody = responder.body.replace(/\r/g, ''); // strip \r for safety
+      
+      const vacationCmd = `vacation :days 1 :subject "${safeSubject}" text:\n${safeBody}\n.\n;`;
+
+      if (conditions.length > 0) {
+        script += `if allof (${conditions.join(', ')}) {\n  ${vacationCmd}\n}`;
+      } else {
+        script += vacationCmd + '\n';
+      }
+
+      await this.automation.putSieveFilter(domain.domain, mailbox.email, 'autoresponder', script);
+    } else {
+      try {
+        await this.automation.deleteSieveFilter(domain.domain, mailbox.email, 'autoresponder');
+      } catch (e) {} // ignore if it didn't exist
+    }
+
+    return { success: true, responder };
+  }
+
+  async removeAutoResponder(domainId: string, email: string) {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) throw new BadRequestException('Domain not found');
+
+    const all = await this.readAutoResponders();
+    const filtered = all.filter(a => a.email !== email);
+    await this.writeAutoResponders(filtered);
+
+    try {
+      await this.automation.deleteSieveFilter(domain.domain, email, 'autoresponder');
+    } catch (e) {}
+
+    return { success: true };
+  }
+
   // ---- Quota Warnings ----
 
   async setupQuotaWarning(threshold: number, adminEmail?: string): Promise<{ automationLogs: AutomationLog[] }> {

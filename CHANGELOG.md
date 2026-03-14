@@ -6,6 +6,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 
 ---
 
+## [3.3.0] — 2026-03-14
+
+### Added — Phase 2 Completion (5 new features)
+- **Custom Error Pages** — per-domain 404, 500, and 503 custom HTML error pages injected directly into Nginx configs.
+- **Auto-Responders** — full support for out-of-office/vacation replies using Dovecot Sieve scripts, configurable per mailbox.
+- **Mailing Lists** — create list addresses that distribute emails to multiple subscribers via tracked Postfix virtual aliases.
+- **Spam Filter UI** — dedicated interface tying into Rspamd's JSON API for displaying global stats, latest scan history, and configuring per-domain reject/add-header thresholds.
+- **Remote MySQL Access** — added definitive UI to the Databases view to enable globally bound (`0.0.0.0`) configuration and explicit per-user IP whitelist management.
+
+---
+
+## [3.2.0] — 2026-03-08
+
+### Added — Phase 2 Feature (1 new)
+- **Subdomain Manager** — dedicated subdomain CRUD page: parent domain picker, 4 path modes (public_html / root / websites / custom), PHP version selector, automation logs on create, search/filter table; backend delegates to DomainsService with `skipMail` flag (SubdomainsModule + Subdomains.tsx, 656 lines)
+
+### Changed
+- **Git Deployment** — complete UI overhaul to cPanel-like interface: clone credentials support, improved branch/commit views, auto-clean partial clone leftovers, `deploy()` uses promisified execFile
+- **Domain Create** — removed nameservers override textarea and subdomain field (subdomains now handled by dedicated page)
+- **Installer scripts** (`install.sh`, `install-online.sh`) — robust npm detection: clean old nodejs/npm before NodeSource install, `hash -r` after install, explicit `$NPM` path resolution, `env PATH=` passthrough under `sudo -u`
+- **Roundcube** — moved out of main installer into App Store / Email module install (configurable domain dialog)
+- Backend now registers 32 NestJS modules; frontend now has 38 lazy-loaded pages; 30 API modules
+
+---
+
 ## [3.1.0] — 2026-03-01
 
 ### Added — Phase 3 Features (2 new)

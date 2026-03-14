@@ -430,6 +430,35 @@ export class MailController {
     return this.mailService.deleteSieveFilter(id, mailboxId, filterName);
   }
 
+  // ---- Auto-Responders ----
+  
+  @SkipThrottle()
+  @Get('domains/:id/autoresponders')
+  listAutoResponders(@Param('id') id: string) {
+    return this.mailService.listAutoResponders(id);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/autoresponders')
+  setAutoResponder(
+    @Param('id') id: string,
+    @Body() body: { email: string; subject: string; body: string; startDate?: string; endDate?: string; enabled: boolean },
+  ) {
+    if (!body?.email || !body?.subject || !body?.body) {
+      throw new BadRequestException('email, subject, and body are required');
+    }
+    return this.mailService.setAutoResponder(id, body);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Delete('domains/:id/autoresponders/:email')
+  removeAutoResponder(
+    @Param('id') id: string,
+    @Param('email') email: string,
+  ) {
+    return this.mailService.removeAutoResponder(id, email);
+  }
+
   // ---- Catch-All Mailbox ----
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })

@@ -45,6 +45,9 @@ import {
   Backup as BackupIcon,
   Security as SecurityIcon,
   Memory as MemoryIcon,
+  Warning as WarningIcon,
+  EventNote as EventNoteIcon,
+  People as PeopleIcon,
 } from '@mui/icons-material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -137,6 +140,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/hotlink-protection': { title: 'Hotlink Protection', path: '/hotlink-protection', icon: <ShieldIcon /> },
         '/docker': { title: 'Docker', path: '/docker', icon: <StorageIcon /> },
         '/node-apps': { title: 'App Manager', path: '/node-apps', icon: <CodeIcon /> },
+        '/error-pages': { title: 'Error Pages', path: '/error-pages', icon: <WarningIcon /> },
+        '/auto-responders': { title: 'Auto-Responders', path: '/auto-responders', icon: <EventNoteIcon /> },
+        '/mailing-lists': { title: 'Mailing Lists', path: '/mailing-lists', icon: <PeopleIcon /> },
+        '/spam-filter': { title: 'Spam Filtering', path: '/spam-filter', icon: <SecurityIcon /> },
       };
       const items = paths
         .map((p) => map[p])

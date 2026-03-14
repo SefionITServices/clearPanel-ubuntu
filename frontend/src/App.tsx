@@ -44,6 +44,10 @@ const HotlinkProtectionPage = lazy(() => import('./pages/HotlinkProtection'));
 const DockerPage = lazy(() => import('./pages/Docker'));
 const NodeAppsPage = lazy(() => import('./pages/NodeApps'));
 const SubdomainsPage = lazy(() => import('./pages/Subdomains'));
+const ErrorPagesPage = lazy(() => import('./pages/ErrorPages'));
+const AutoRespondersPage = lazy(() => import('./pages/AutoResponders'));
+const MailingListsPage = lazy(() => import('./pages/MailingLists'));
+const SpamFilterPage = lazy(() => import('./pages/SpamFilter'));
 
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
@@ -362,6 +366,38 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <SubdomainsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/error-pages"
+              element={
+                <ProtectedRoute>
+                  <ErrorPagesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/auto-responders"
+              element={
+                <ProtectedRoute>
+                  <AutoRespondersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/mailing-lists"
+              element={
+                <ProtectedRoute>
+                  <MailingListsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/spam-filter"
+              element={
+                <ProtectedRoute>
+                  <SpamFilterPage />
                 </ProtectedRoute>
               }
             />

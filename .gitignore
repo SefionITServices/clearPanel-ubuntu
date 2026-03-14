@@ -7,10 +7,6 @@ backend/dist/
 data/
 backups/
 
-# Next.js build output
-.next/
-website/.next/
-
 # Runtime data files (stored in /home/<username>/etc/clearpanel/ in production)
 backend/dns.json
 backend/domains.json

@@ -1,8 +1,8 @@
-﻿# ClearPanel Development Roadmap
+# ClearPanel Development Roadmap
 
-> **Last updated:** March 1, 2026  
-> **Current version:** 3.1.0  
-> **Status:** Phase 1 complete, Phase 2 partially complete, Phase 3 in progress
+> **Last updated:** March 14, 2026  
+> **Current version:** 3.3.0  
+> **Status:** Phase 1 complete, Phase 2 complete, Phase 3 in progress
 
 ---
 
@@ -13,7 +13,7 @@ ClearPanel is being developed in 4 phases, progressing from core hosting essenti
 | Phase | Name | Status | Features |
 |-------|------|--------|----------|
 | **Phase 1** | Core Foundation | ✅ Complete | 26 features |
-| **Phase 2** | Pro Panel Parity | 🟡 7/13 done | 13 features |
+| **Phase 2** | Pro Panel Parity | ✅ Complete | 13 features |
 | **Phase 3** | Competitive Edge | 🟡 3/10 done | 10 features |
 | **Phase 4** | Commercial & Scale | 🔲 Not Started | 6 features |
 
@@ -79,19 +79,19 @@ ClearPanel is being developed in 4 phases, progressing from core hosting essenti
 - [x] **Hotlink Protection** — prevent external image/file leeching via Nginx rules ✅
 
 ### 2.2 Advanced Domain Management
-- [ ] **Subdomain Manager** — dedicated subdomain CRUD (currently only via Domain Create)
+- [x] **Subdomain Manager** — dedicated subdomain CRUD with parent domain selection, path modes, PHP version picker ✅
 - [x] **Redirect Manager** — 301/302 URL redirects via Nginx config ✅
-- [ ] **Custom Error Pages** — per-domain 404, 500, 503 custom pages
+- [x] **Custom Error Pages** — per-domain 404, 500, 503 custom pages via Nginx ✅
 - [x] **IP Blocker** (per-domain) — deny access from specific IPs at the Nginx level ✅
 
 ### 2.3 Advanced Email
-- [ ] **Auto-Responders** — automatic out-of-office / vacation replies
-- [ ] **Mailing Lists** — list management, subscriber CRUD
-- [ ] **Spam Filter UI** — SpamAssassin/Rspamd policy management, per-domain settings
+- [x] **Auto-Responders** — automatic out-of-office / vacation replies (Dovecot Sieve) ✅
+- [x] **Mailing Lists** — list management, subscriber CRUD (Postfix virtual aliases) ✅
+- [x] **Spam Filter UI** — Rspamd policy management, global stats, per-domain settings ✅
 
 ### 2.4 Advanced Database
 - [x] **PostgreSQL Manager** — already included in Database module (multi-engine) ✅
-- [ ] **Remote MySQL Access** — grant remote host access, per-user IP whitelisting
+- [x] **Remote MySQL Access** — grant remote host access globally and per-user IP whitelisting ✅
 - [x] **Database Import/Export** — upload SQL files, scheduled dumps ✅
 
 ---
@@ -138,6 +138,8 @@ ClearPanel is being developed in 4 phases, progressing from core hosting essenti
 
 | Version | Date | Milestone |
 |---------|------|-----------|
+| 3.3.0 | Mar 2026 | Phase 2 Complete (13/13): Custom Error Pages (Nginx), Auto-Responders (Dovecot Sieve), Mailing Lists (Postfix), Spam Filter (Rspamd), and Remote MySQL Access UI. |
+| 3.2.0 | Mar 2026 | Phase 2 +1: Subdomain Manager (dedicated CRUD, path modes, skip mail); Git overhaul (cPanel-like UI, clone credentials); Installer npm/PATH fixes; Roundcube moved to App Store install |
 | 3.1.0 | Mar 2026 | Phase 3 +2: Docker Manager (containers/images/compose/networks/volumes) + Node.js/Python App Manager (PM2, git clone, env, logs) |
 | 3.0.0 | Mar 2026 | Phase 2 (7/13): FTP, Dir Privacy, Hotlink, Redirects, IP Blocker; Phase 3 (1/10): Git; Terminal upgraded to full PTY (xterm.js 6 + node-pty + Socket.IO); GlobalSearch implemented |
 | 2.1.0 | Feb 2026 | Phase 1 complete — 26 features (Cron, Firewall, Monitoring, Backup, 2FA, Processes added) |
@@ -151,8 +153,8 @@ ClearPanel is being developed in 4 phases, progressing from core hosting essenti
 See [INSTALL.md](INSTALL.md) for development setup. Features are implemented as NestJS backend modules + React frontend pages following the existing patterns in the codebase.
 
 **Architecture:**
-- Backend: NestJS 10, TypeScript, REST API at `/api/*`
-- Frontend: React 18, MUI v7, React Router, lazy-loaded pages
+- Backend: NestJS 10, TypeScript, 32 modules, REST API at `/api/*`
+- Frontend: React 18, MUI v7, React Router, 38 lazy-loaded pages
 - Terminal: xterm.js 6 + node-pty + Socket.IO gateway
 - Auth: Session-based with optional 2FA TOTP
 - Data: JSON files in `DATA_DIR` + system commands (systemctl, ufw, crontab, etc.)

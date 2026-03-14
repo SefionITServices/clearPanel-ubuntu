@@ -1,8 +1,8 @@
-﻿# ClearPanel — Project Status Report
+# ClearPanel — Project Status Report
 
-**Date:** March 1, 2026  
-**Version:** 3.1.0 (NestJS backend + React frontend)  
-**Last Updated:** Session 5 — Phase 3: Docker Manager + Node.js/Python App Manager
+**Date:** March 14, 2026  
+**Version:** 3.3.0 (NestJS backend + React frontend)  
+**Last Updated:** Session 7 — Phase 2 Completion (Error Pages, Auto-Responders, Mailing Lists, Spam Filter, Remote MySQL)
 
 ---
 
@@ -20,7 +20,7 @@
 
 ## What Is Implemented
 
-### Backend (31 Modules — All Registered in app.module.ts)
+### Backend (32 Modules — All Registered in app.module.ts)
 
 | Module | Endpoints | Status | Notes |
 |--------|-----------|--------|-------|
@@ -47,7 +47,7 @@
 | **Backup** | Full/panel/mail/db/domain backups, scheduling, restore | Done | One-click restore |
 | **Two-Factor** | TOTP setup, QR code, 8 recovery codes | Done | Login flow integration |
 | **Process** | Process list, systemd service management | Done | Kill/restart, search/sort |
-| **Git** | Repo CRUD, clone, pull, push, branches, commits, diffs, SSH keys | Done | Phase 3 — 950-line frontend, full deployment workflow |
+| **Git** | Repo CRUD, clone, pull, push, branches, commits, diffs, SSH keys | Done | Phase 3 — cPanel-like UI overhaul, clone credentials support |
 | **FTP** | vsftpd account CRUD, per-domain FTP users, password reset | Done | Phase 2 — fully wired |
 | **Redirects** | 301/302 URL redirects via Nginx config | Done | Phase 2 — per-domain |
 | **IP Blocker** | Deny access from specific IPs at the Nginx level | Done | Phase 2 — per-domain |
@@ -55,9 +55,14 @@
 | **Hotlink** | Prevent external image/file leeching via Nginx rules | Done | Phase 2 — per-domain |
 | **Docker** | Container lifecycle, image pull/run, Compose stacks, networks, volumes, prune | Done | Phase 3 — full Docker CLI wrapper |
 | **Node Apps** | PM2-backed app management: create/clone/start/stop/restart/pull, env vars, logs | Done | Phase 3 — Node.js/Python/static runtimes |
+| **Subdomains** | Dedicated subdomain CRUD, parent domain picker, path modes, PHP version, skip-mail | Done | Phase 2 — 656-line frontend, delegates to DomainsService |
+| **Error Pages** | CRUD, Nginx config sync | Done | Phase 2 — per-domain 404/500/503 |
+| **Auto-Resp** | Vacation/out-of-office setup | Done | Phase 2 — Dovecot Sieve integration |
+| **Mail Lists**| List CRUD, subscriber management | Done | Phase 2 — Postfix virtual alias syncing |
+| **Spam Filter**| Rspamd thresholds, global/domain history | Done | Phase 2 — multimap override config |
 | **Common** | Path utilities | Done | Dynamic data-dir resolution |
 
-### Frontend (37 Pages — All Routed & Lazy-loaded)
+### Frontend (38 Pages — All Routed & Lazy-loaded)
 
 | Page | Lines (approx) | Quality | Notes |
 |------|---------------|---------|-------|
@@ -89,14 +94,19 @@
 | **Backup** | ~500 | Good | Backup types, scheduling, restore |
 | **Two-Factor** | ~400 | Good | TOTP setup, QR code, recovery codes |
 | **Processes** | ~450 | Good | Process list, systemd service management |
-| **Git** | 950 | Excellent | Repo CRUD, clone/pull/push, branches, commits, diffs, SSH key setup |
+| **Git** | 1764 | Excellent | cPanel-like UI overhaul: repo CRUD, clone with credentials, pull/push, branches, commits, diffs, SSH key setup |
 | **FTP Manager** | 414 | Good | vsftpd account CRUD, per-domain users, password reset |
 | **Redirects** | 274 | Good | 301/302 per-domain redirects, enable/disable toggle |
 | **IP Blocker** | 231 | Good | Per-domain IP deny rules, comment field |
 | **Dir Privacy** | ~250 | Good | .htpasswd directory protection |
 | **Hotlink Protection** | ~220 | Good | Nginx hotlink rules per domain |
 | **Docker Manager** | ~400 | Good | Container lifecycle, image pull/run, Compose stacks, networks, volumes, prune |
-| **App Manager** | ~380 | Good | PM2 app management: create/clone/start/stop/restart/pull, env vars, log viewer |
+| **Node Apps** | ~380 | Good | PM2 app management: create/clone/start/stop/restart/pull, env vars, log viewer |
+| **Subdomains** | 656 | Good | Dedicated CRUD page: parent domain picker, path mode radio buttons, PHP version, create logs, search/filter |
+| **Error Pages** | 350 | Good | Domain selector, HTML editors for 404/500/503, previews |
+| **Auto-Resp** | 330 | Good | Table + dialog for vacation dates and body text |
+| **Mail Lists** | 380 | Good | List CRUD and inline subscriber management |
+| **Spam Filter** | 420 | Good | Global stats, domain thresholds slider, action history |
 | **Tools** | ~400 | Good | Grid with search, favorites, categories |
 
 ### Scripts & Tooling
@@ -104,6 +114,7 @@
 | Script | Status |
 |--------|--------|
 | `install.sh` (437 lines) | Production installer: Node 20, Nginx, BIND9, full mail stack, Roundcube, systemd |
+| `install-online.sh` (716 lines) | Online installer: auto-clone from GitHub, build backend/frontend, full stack setup, robust npm detection |
 | `backup-restore.sh` | Full backup/restore with list command |
 | `diagnose.sh` (392 lines) | 14+ service checks, API test, shareable report |
 | `scripts/email/` (27 scripts) | Complete mail lifecycle: stack install, domain/mailbox/alias provisioning, DKIM, DMARC, TLS, Sieve, Roundcube SSO |
@@ -117,7 +128,7 @@
 | **GlobalSearch** | Done (575 lines) | Spotlight-style keyboard search; queries pages, domains, databases, SSL certs, DNS zones, installed apps; cached per session |
 | **Favorites** | Done | Per-user localStorage favorites; sidebar Favorites section (up to 7 items) |
 | **Sidebar Nav** | Done | Dynamic sections: core, favorites (if any), quick access, system |
-| **API Modules** | Done (29 modules) | All pages use centralized `src/api/*.ts` modules |
+| **API Modules** | Done (30 modules) | All pages use centralized `src/api/*.ts` modules |
 | **AuthContext** | Done | Session auth, `verify2FA`, `twoFactorPending` state |
 | **SetupGuard** | Done | Redirects to `/setup` on first run |
 
@@ -178,20 +189,20 @@
 - [ ] **Notification system** — wire bell icon to real events (cert expiry, disk usage, service down)
 - [ ] **Narrow systemd `ReadWritePaths`** — specify exact paths instead of `/etc` and `/var`
 
-### Phase 2 — Remaining (6 of 13 items)
+### Phase 2 — Complete (13 of 13 items)
 
-- [ ] **Subdomain Manager** — dedicated subdomain CRUD page (currently handled inside Domain Create only)
-- [ ] **Custom Error Pages** — per-domain 404/500/503 custom pages via Nginx
-- [ ] **Auto-Responders** — out-of-office/vacation replies (Postfix)
-- [ ] **Mailing Lists** — list management, subscriber CRUD
-- [ ] **Spam Filter UI** — SpamAssassin/Rspamd policy per domain
-- [ ] **Remote MySQL Access** — grant remote host access, per-user IP whitelisting
+- [x] **Subdomain Manager** — dedicated CRUD page with parent domain picker, path modes, PHP version ✅ (v3.2.0)
+- [x] **Custom Error Pages** — per-domain 404/500/503 custom pages via Nginx ✅ (v3.3.0)
+- [x] **Auto-Responders** — out-of-office/vacation replies (Postfix/Sieve) ✅ (v3.3.0)
+- [x] **Mailing Lists** — list management, subscriber CRUD ✅ (v3.3.0)
+- [x] **Spam Filter UI** — SpamAssassin/Rspamd policy per domain ✅ (v3.3.0)
+- [x] **Remote MySQL Access** — grant remote host access, per-user IP whitelisting ✅ (v3.3.0)
 
-### Phase 3 — Remaining (9 of 10 items)
+### Phase 3 — Remaining (7 of 10 items)
 
-- [x] **Git Deployment** — done (950-line frontend, full workflow)
-- [ ] **Docker Manager** — container deployment UI
-- [ ] **Node.js / Python App Manager** — PM2-style process management
+- [x] **Git Deployment** — done (cPanel-like UI overhaul, clone credentials, v3.2.0)
+- [x] **Docker Manager** — done (container lifecycle, images, Compose, networks, volumes)
+- [x] **Node.js / Python App Manager** — done (PM2, git clone, env, logs)
 - [ ] **WordPress Manager** — staging, auto-update, clone, harden
 - [ ] **Activity / Audit Log** — track all admin actions with timestamp
 - [ ] **Notification System** — email/webhook alerts (disk full, service down, cert expiry)
@@ -221,13 +232,13 @@
 
 ## Summary
 
-ClearPanel is a **feature-rich hosting control panel** with a complete backend (29 modules) and frontend (35 pages).
+ClearPanel is a **feature-rich hosting control panel** with a complete backend (32 modules) and frontend (38 pages).
 
 | Phase | Features | Status |
 |-------|----------|--------|
 | **Phase 1 — Core Foundation** | 26 features | ✅ Complete |
-| **Phase 2 — Pro Panel Parity** | 13 features | 🟡 7/13 done (FTP, Dir Privacy, Hotlink, Redirects, IP Blocker, PostgreSQL in DB module, DB Import/Export) |
-| **Phase 3 — Competitive Edge** | 10 features | 🟡 1/10 done (Git Deployment) |
+| **Phase 2 — Pro Panel Parity** | 13 features | ✅ Complete (v3.3.0) |
+| **Phase 3 — Competitive Edge** | 10 features | 🟡 3/10 done (Git Deployment, Docker Manager, Node.js/Python App Manager) |
 | **Phase 4 — Commercial & Scale** | 6 features | 🔲 Not started |
 
-The project is approximately **75% complete** toward a full commercial-grade release.
+The project is approximately **85% complete** toward a full commercial-grade release.
