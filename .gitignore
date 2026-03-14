@@ -22,3 +22,9 @@ backend/mail-policies/
 # Release artifacts (never commit private key or built tarballs)
 release/clearpanel-release.key
 release/dist/
+
+# System and cache directories
+.cache/
+.npm/
+.ssh/
+.gitconfig
