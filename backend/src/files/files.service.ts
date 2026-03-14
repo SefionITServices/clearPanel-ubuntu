@@ -28,9 +28,18 @@ export class FilesService {
 
   private validatePath(requestedPath: string | undefined, username: string) {
     const rootPath = this.getRootPath(username);
-    const rel = (requestedPath || '.').replace(/^\/+/, '');
-    const full = path.resolve(rootPath, rel);
     const rootResolved = path.resolve(rootPath);
+    
+    let full: string;
+    const req = requestedPath || '.';
+    
+    if (path.isAbsolute(req)) {
+      full = path.resolve(req);
+    } else {
+      const rel = req.replace(/^\/+/, '');
+      full = path.resolve(rootPath, rel);
+    }
+
     if (!full.startsWith(rootResolved)) throw new Error('Access denied');
     return full;
   }

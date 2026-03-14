@@ -37,10 +37,20 @@ export class GitService {
 
   private validatePath(requestedPath: string, username: string): string {
     const rootPath = this.getRootPath(username);
-    const rel = requestedPath.replace(/^\/+/, '');
-    const full = path.resolve(rootPath, rel);
     const rootResolved = path.resolve(rootPath);
-    if (!full.startsWith(rootResolved)) throw new Error('Access denied');
+    
+    let full: string;
+    if (path.isAbsolute(requestedPath)) {
+      full = path.resolve(requestedPath);
+    } else {
+      const rel = requestedPath.replace(/^\/+/, '');
+      full = path.resolve(rootPath, rel);
+    }
+
+    if (!full.startsWith(rootResolved)) {
+      this.logger.error(`Access denied: ${full} is outside of ${rootResolved}`);
+      throw new Error('Access denied');
+    }
     return full;
   }
 
