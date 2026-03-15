@@ -118,6 +118,10 @@ cd "$INSTALL_DIR"
 # Ensure the service user owns the repo before git operations
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 sudo -u "$SERVICE_USER" git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+# Reset build artifacts that get modified during npm run build
+# These files are regenerated every build and must not block git pull
+sudo -u "$SERVICE_USER" git checkout -- backend/public/ frontend/tsconfig.tsbuildinfo 2>/dev/null || true
+sudo -u "$SERVICE_USER" git clean -fd backend/public/assets/ 2>/dev/null || true
 sudo -u "$SERVICE_USER" git stash 2>/dev/null || true
 sudo -u "$SERVICE_USER" git pull origin main
 # Re-apply ownership for any newly created files
