@@ -53,15 +53,10 @@ A modern, plug-and-play web hosting control panel for any VPS. Features automati
 
 ### Automated Installation
 
-git clone https://github.com/SefionITServices/clearPanel.git
-```bash
-# Clone repository
-git clone https://github.com/SefionITServices/clearPanel.git
-cd clearPanel
+Run this single command as root or with sudo on a fresh Ubuntu 20.04/22.04/24.04 VPS:
 
-# Run installation script
-sudo chmod +x install.sh
-sudo ./install.sh
+```bash
+curl -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
 ```
 
 The installer will:

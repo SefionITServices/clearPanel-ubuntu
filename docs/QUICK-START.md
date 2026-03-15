@@ -1,4 +1,4 @@
-﻿# clearPanel Quick Start Guide
+# clearPanel Quick Start Guide
 
 Get your hosting control panel running in 5 minutes.
 
@@ -11,34 +11,25 @@ Get your hosting control panel running in 5 minutes.
 
 ## Installation
 
-### 1. Clone Repository
+### 1. Run Installer
 
 ```bash
-cd /opt
-sudo git clone https://github.com/SefionITServices/clearPanel.git clearPanel
-cd clearPanel
-```
-
-### 2. Run Installer
-
-```bash
-sudo chmod +x install.sh
-sudo ./install.sh
+curl -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
 ```
 
 The installer automatically:
-- âœ… Installs Node.js and dependencies
-- âœ… Creates backend environment file
-- âœ… Builds the application
-- âœ… Sets up systemd service
-- âœ… Starts the panel
+- ✅ Installs Node.js and dependencies
+- ✅ Creates backend environment file
+- ✅ Builds the application
+- ✅ Sets up systemd service
+- ✅ Starts the panel
 
-### 3. Configure Environment
+### 2. Configure Environment
 
 Edit the configuration:
 
 ```bash
-sudo nano backend/.env
+sudo nano /opt/clearpanel/backend/.env
 ```
 
 **Required changes:**
@@ -57,10 +48,10 @@ SESSION_SECRET=run_openssl_rand_-hex_32
 Save and restart:
 
 ```bash
-sudo systemctl restart clearPanel
+sudo systemctl restart clearpanel
 ```
 
-### 4. Configure Firewall
+### 3. Configure Firewall
 
 **Ubuntu/Debian:**
 ```bash
@@ -81,7 +72,7 @@ sudo firewall-cmd --add-port=3334/tcp --permanent
 sudo firewall-cmd --reload
 ```
 
-### 5. Install DNS Server (Recommended)
+### 4. Install DNS Server (Recommended)
 
 **Ubuntu/Debian:**
 ```bash
@@ -98,7 +89,7 @@ sudo systemctl enable named
 sudo systemctl start named
 ```
 
-### 6. Access Panel
+### 5. Access Panel
 
 Open browser:
 ```
