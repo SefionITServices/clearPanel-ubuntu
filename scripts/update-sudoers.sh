@@ -16,7 +16,7 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/journalctl
 # Web server
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx
 
-# SSL / Certbot
+# SSL / Certbot — both apt and snap paths
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/certbot, /snap/bin/certbot
 
 # DNS (BIND9)
@@ -40,6 +40,9 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/pgadmin4/bin/setup-web.sh
 
 # User management
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/chpasswd
+
+# File operations for panel configuration writes (nginx, etc.)
+clearpanel ALL=(ALL) NOPASSWD: /bin/mv, /bin/chmod, /bin/cat, /bin/mkdir, /bin/rm, /bin/ln, /bin/ls
 EOF
 
 if [ -f "$TARGET_FILE" ] && cmp -s "$TEMP_FILE" "$TARGET_FILE"; then

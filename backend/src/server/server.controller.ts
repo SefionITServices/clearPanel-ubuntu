@@ -256,14 +256,19 @@ export class ServerController {
     // Step 1: Rewrite server_name in nginx config
     try {
       // Read the current config
-      const { stdout: currentConf } = await execAsync(`cat "${nginxConf}"`);
+      const { stdout: currentConf } = await execAsync(`sudo cat "${nginxConf}"`);
       // Replace existing server_name lines (handles both HTTP and HTTPS blocks)
       const newConf = currentConf.replace(
         /server_name\s+[^;]+;/g,
         `server_name ${domain};`,
       );
-      // Write using tee (needs sudo)
-      await execAsync(`echo ${JSON.stringify(newConf)} | sudo tee "${nginxConf}" > /dev/null`);
+      // Write to a temp file, then sudo-move it into place.
+      // This avoids shell-escaping issues with echo|tee and is safe for any content.
+      const tmpFile = `/tmp/clearpanel-nginx-${Date.now()}.conf`;
+      const fsModule = await import('fs/promises');
+      await fsModule.writeFile(tmpFile, newConf, 'utf-8');
+      await execAsync(`sudo mv "${tmpFile}" "${nginxConf}"`);
+      await execAsync(`sudo chmod 644 "${nginxConf}"`);
       logs.push({ task: 'Update nginx server_name', success: true, message: `server_name set to ${domain}` });
     } catch (err: any) {
       logs.push({ task: 'Update nginx server_name', success: false, message: 'Failed to update nginx config', detail: err.message });
@@ -290,20 +295,33 @@ export class ServerController {
     // Step 4: Optional SSL via Certbot
     let sslEnabled = false;
     if (body.enableSsl) {
-      const email = body.email?.trim() || `admin@${domain.split('.').slice(-2).join('.')}`;
+      const sslEmail = body.email?.trim() || `admin@${domain.split('.').slice(-2).join('.')}`;
       try {
-        await execAsync(
-          `sudo certbot --nginx -d "${domain}" --non-interactive --agree-tos -m "${email}" --redirect`,
+        // Resolve certbot binary — it may live in /snap/bin or /usr/bin
+        const { stdout: certbotPath } = await execAsync(
+          'command -v certbot 2>/dev/null || ls /snap/bin/certbot 2>/dev/null || echo ""',
+        ).catch(() => ({ stdout: '' }));
+        const certbot = certbotPath.trim() || '/snap/bin/certbot';
+
+        const { stderr } = await execAsync(
+          `sudo -n ${certbot} --nginx -d "${domain}" --non-interactive --agree-tos -m "${sslEmail}" --redirect`,
           { timeout: 120000 },
         );
         logs.push({ task: 'Issue SSL certificate', success: true, message: `SSL certificate issued for ${domain}` });
+        if (stderr) logs.push({ task: 'Certbot output', success: true, message: stderr.trim().slice(0, 300) });
         sslEnabled = true;
       } catch (err: any) {
+        const detail = err.stderr?.trim() || err.message;
+        const hint = detail?.includes('Permission denied')
+          ? 'Certbot not in sudoers. Run: sudo bash /opt/clearpanel/scripts/update-sudoers.sh'
+          : detail?.includes('Failed to connect')
+            ? 'Domain DNS does not resolve to this server yet'
+            : detail;
         logs.push({
           task: 'Issue SSL certificate',
           success: false,
-          message: 'Certbot failed — ensure the domain DNS points to this server',
-          detail: err.stderr || err.message,
+          message: 'Certbot failed — see detail below',
+          detail: hint?.slice(0, 500),
         });
       }
     }
