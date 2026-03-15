@@ -17,7 +17,7 @@ const DnsEditorPage = lazy(() => import('./pages/DnsEditor'));
 const DomainsListView = lazy(() => import('./pages/DomainsListView'));
 const NameserverSetupPage = lazy(() => import('./pages/NameserverSetup'));
 const SslPage = lazy(() => import('./pages/Ssl'));
-const DatabasesPage = lazy(() => import('./pages/Databases'));
+const DatabasesPage = lazy(() => import('./pages/database/DatabaseManagerPage'));
 const AppStorePage = lazy(() => import('./pages/AppStore'));
 const PhpManagerPage = lazy(() => import('./pages/PhpManager'));
 const MailDomainsPage = lazy(() => import('./pages/mail/MailDomainsPage'));
