@@ -20,7 +20,7 @@ const SslPage = lazy(() => import('./pages/Ssl'));
 const DatabasesPage = lazy(() => import('./pages/Databases'));
 const AppStorePage = lazy(() => import('./pages/AppStore'));
 const PhpManagerPage = lazy(() => import('./pages/PhpManager'));
-const MailDomainsPage = lazy(() => import('./pages/MailDomains'));
+const MailDomainsPage = lazy(() => import('./pages/mail/MailDomainsPage'));
 const EmailAccountsPage = lazy(() => import('./pages/EmailAccounts'));
 const ForwardersPage = lazy(() => import('./pages/Forwarders'));
 const EmailFiltersPage = lazy(() => import('./pages/EmailFilters'));

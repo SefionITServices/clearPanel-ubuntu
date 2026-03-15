@@ -42,6 +42,21 @@ export class FirewallService {
   private readonly logger = new Logger(FirewallService.name);
 
   // ═══════════════════════════════════════════════════════════════════
+  //  SUDO HELPER
+  // ═══════════════════════════════════════════════════════════════════
+
+  private async sudo(cmd: string, timeout = 15000): Promise<{ stdout: string; stderr: string }> {
+    try {
+      return await exec(`sudo -n ${cmd}`, { timeout });
+    } catch (e: any) {
+      if (e.message && (e.message.includes('password') || e.message.includes('terminal') || e.message.includes('permission denied'))) {
+        throw new Error('Permission denied: The backend must be run as root or with passwordless sudo to manage the firewall.');
+      }
+      throw e;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   //  UFW STATUS
   // ═══════════════════════════════════════════════════════════════════
 
@@ -57,13 +72,13 @@ export class FirewallService {
     try {
       // Check if ufw is installed
       try {
-        await exec('which ufw', { timeout: 5000 });
+        await exec('which ufw || test -f /usr/sbin/ufw || test -f /sbin/ufw', { timeout: 5000 });
         status.installed = true;
       } catch {
         return { success: true, status };
       }
 
-      const { stdout } = await exec('ufw status verbose', { timeout: 10_000 });
+      const { stdout } = await this.sudo('ufw status verbose', 10_000);
 
       // Parse active/inactive
       if (stdout.includes('Status: active')) {
@@ -102,7 +117,7 @@ export class FirewallService {
 
   async enable(): Promise<{ success: boolean; message: string }> {
     try {
-      await exec('echo "y" | ufw enable', { timeout: 15_000 });
+      await this.sudo('bash -c "echo y | ufw enable"', 15_000);
       return { success: true, message: 'Firewall enabled' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -111,7 +126,7 @@ export class FirewallService {
 
   async disable(): Promise<{ success: boolean; message: string }> {
     try {
-      await exec('ufw disable', { timeout: 15_000 });
+      await this.sudo('ufw disable', 15_000);
       return { success: true, message: 'Firewall disabled' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -124,12 +139,20 @@ export class FirewallService {
 
   async install(): Promise<{ success: boolean; message: string }> {
     try {
-      await exec('apt-get update && apt-get install -y ufw', { timeout: 120_000 });
+      // Check if already installed
+      try {
+        await exec('which ufw || test -f /usr/sbin/ufw || test -f /sbin/ufw', { timeout: 5000 });
+        // Make sure it has SSH allowed by default
+        await this.sudo('ufw allow 22/tcp comment "SSH"', 10_000);
+        return { success: true, message: 'UFW is already installed' };
+      } catch {}
+
+      await this.sudo('apt-get update -qq && env DEBIAN_FRONTEND=noninteractive apt-get install -y ufw', 120_000);
       // Set sane defaults
-      await exec('ufw default deny incoming', { timeout: 10_000 });
-      await exec('ufw default allow outgoing', { timeout: 10_000 });
+      await this.sudo('ufw default deny incoming', 10_000);
+      await this.sudo('ufw default allow outgoing', 10_000);
       // Always allow SSH first so we don't lock out
-      await exec('ufw allow 22/tcp comment "SSH"', { timeout: 10_000 });
+      await this.sudo('ufw allow 22/tcp comment "SSH"', 10_000);
       return { success: true, message: 'UFW installed with default rules (SSH allowed)' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -176,7 +199,7 @@ export class FirewallService {
         cmd += ` comment "${comment.replace(/"/g, '\\"')}"`;
       }
 
-      const { stdout, stderr } = await exec(cmd, { timeout: 15_000 });
+      const { stdout, stderr } = await this.sudo(cmd, 15_000);
       const output = (stdout + stderr).trim();
 
       if (output.includes('Rule added') || output.includes('Rules updated') || output.includes('Skipping')) {
@@ -195,7 +218,7 @@ export class FirewallService {
   async deleteRule(ruleNumber: number): Promise<{ success: boolean; message: string }> {
     try {
       // Use --force to skip confirmation
-      const { stdout } = await exec(`echo "y" | ufw delete ${ruleNumber}`, { timeout: 15_000 });
+      const { stdout } = await this.sudo(`ufw --force delete ${ruleNumber}`, 15_000);
       return { success: true, message: stdout.trim() || 'Rule deleted' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -208,7 +231,7 @@ export class FirewallService {
 
   async setDefault(direction: 'incoming' | 'outgoing', policy: 'allow' | 'deny' | 'reject'): Promise<{ success: boolean; message: string }> {
     try {
-      const { stdout } = await exec(`ufw default ${policy} ${direction}`, { timeout: 10_000 });
+      const { stdout } = await this.sudo(`ufw default ${policy} ${direction}`, 10_000);
       return { success: true, message: stdout.trim() || `Default ${direction} set to ${policy}` };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -221,7 +244,7 @@ export class FirewallService {
 
   async reset(): Promise<{ success: boolean; message: string }> {
     try {
-      await exec('echo "y" | ufw reset', { timeout: 15_000 });
+      await this.sudo('ufw --force reset', 15_000);
       return { success: true, message: 'Firewall reset to defaults' };
     } catch (e: any) {
       return { success: false, message: e.message };
@@ -270,7 +293,7 @@ export class FirewallService {
       const results: string[] = [];
       for (const cmd of commands) {
         try {
-          const { stdout } = await exec(cmd, { timeout: 10_000 });
+          const { stdout } = await this.sudo(cmd, 10_000);
           results.push(stdout.trim());
         } catch (e: any) {
           results.push(`Error: ${e.message}`);

@@ -132,8 +132,10 @@ export class TerminalGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: Socket,
   ): void {
     const term = this.ptys.get(client.id);
-    if (term && data?.cols && data?.rows) {
-      term.resize(Math.max(1, data.cols), Math.max(1, data.rows));
+    if (term) {
+      const c = Number(data?.cols) || 80;
+      const r = Number(data?.rows) || 24;
+      term.resize(Math.max(1, c), Math.max(1, r));
     }
   }
 }

@@ -69,8 +69,24 @@ export class NodeAppsService {
   }
 
   async installPm2(): Promise<{ success: boolean; output: string }> {
-    const { stdout, stderr } = await exec('npm install -g pm2', { timeout: 120000 });
-    return { success: true, output: stdout + stderr };
+    try {
+      const { stdout, stderr } = await exec('npm install -g pm2', { timeout: 120000 });
+      return { success: true, output: stdout + stderr };
+    } catch (err: any) {
+      const msg = err.message?.toLowerCase() || '';
+      if (msg.includes('eacces') || msg.includes('eperm') || msg.includes('permission denied')) {
+        try {
+          const { stdout, stderr } = await exec('sudo -n npm install -g pm2', { timeout: 120000 });
+          return { success: true, output: stdout + stderr };
+        } catch (sudoErr: any) {
+          if (sudoErr.message?.includes('password') || sudoErr.message?.includes('terminal')) {
+            throw new Error('Permission denied: The backend must run as root or have passwordless sudo to install PM2 globally.');
+          }
+          throw new Error(`Failed to install PM2 with sudo: ${sudoErr.message}`);
+        }
+      }
+      throw new Error(`Failed to install PM2: ${err.message}`);
+    }
   }
 
   private async pm2List(): Promise<any[]> {

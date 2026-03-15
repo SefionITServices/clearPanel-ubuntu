@@ -44,8 +44,8 @@ export class SslService {
   async installCertbot(): Promise<{ success: boolean; message: string }> {
     try {
       this.logger.log('Installing certbot...');
-      await execAsync('sudo apt-get update -qq');
-      await execAsync('sudo apt-get install -y certbot python3-certbot-nginx');
+      await execAsync('sudo -n apt-get update -qq');
+      await execAsync('sudo -n apt-get install -y certbot python3-certbot-nginx');
       return { success: true, message: 'Certbot installed successfully' };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -109,7 +109,7 @@ export class SslService {
    */
   private async readCertbotLog(): Promise<string> {
     try {
-      const { stdout } = await execAsync('sudo tail -50 /var/log/letsencrypt/letsencrypt.log 2>/dev/null', { timeout: 5000 });
+      const { stdout } = await execAsync('sudo -n tail -50 /var/log/letsencrypt/letsencrypt.log 2>/dev/null', { timeout: 5000 });
       return stdout.trim();
     } catch {
       return '';
@@ -139,10 +139,10 @@ export class SslService {
 
     // Verify nginx is running
     try {
-      const { stdout } = await execAsync('sudo systemctl is-active nginx', { timeout: 5000 });
+      const { stdout } = await execAsync('sudo -n systemctl is-active nginx', { timeout: 5000 });
       if (stdout.trim() !== 'active') {
         logs.push('Warning: Nginx is not running, attempting to start...');
-        await execAsync('sudo systemctl start nginx', { timeout: 10000 });
+        await execAsync('sudo -n systemctl start nginx', { timeout: 10000 });
         logs.push('Nginx started');
       }
     } catch {
@@ -196,7 +196,7 @@ export class SslService {
 
     // Build certbot command
     const domains = includeWww ? `-d ${domain} -d www.${domain}` : `-d ${domain}`;
-    const cmd = `sudo certbot --nginx ${domains} --non-interactive --agree-tos --email ${email} --redirect -v`;
+    const cmd = `sudo -n certbot --nginx ${domains} --non-interactive --agree-tos --email ${email} --redirect -v`;
 
     logs.push(`Running: certbot --nginx ${domains}`);
     this.logger.log(`Installing SSL for ${domain} (email: ${email})`);
@@ -255,8 +255,8 @@ export class SslService {
         message += '. ACME challenge failed. Ensure: (1) DNS A record points to this server, (2) Port 80 is open, (3) Nginx is running and serving the domain.';
       } else if (allOutput.includes('Could not bind') || allOutput.includes('Address already in use')) {
         message += '. Port 80 is in use by another process. Stop any conflicting services.';
-      } else if (allOutput.includes('sudo') || allOutput.includes('password')) {
-        message += '. Permission denied. Check sudoers configuration for the clearpanel user.';
+      } else if (allOutput.includes('sudo') || allOutput.includes('password') || allOutput.includes('terminal')) {
+        message += '. Permission denied. The backend must be run as root or with passwordless sudo to perform this action. Check sudoers configuration.';
       }
 
       return { success: false, message, logs };
@@ -275,7 +275,7 @@ export class SslService {
 
     try {
       const { stdout } = await execAsync(
-        `sudo certbot certificates --domain ${domain} 2>/dev/null`,
+        `sudo -n certbot certificates --domain ${domain} 2>/dev/null`,
         { timeout: 15000 },
       );
 
@@ -357,7 +357,7 @@ export class SslService {
    */
   async listCertificates(): Promise<SslCertificate[]> {
     try {
-      const { stdout } = await execAsync('sudo certbot certificates 2>/dev/null', {
+      const { stdout } = await execAsync('sudo -n certbot certificates 2>/dev/null', {
         timeout: 15000,
       });
 
@@ -418,8 +418,8 @@ export class SslService {
 
     try {
       const cmd = domain
-        ? `sudo certbot renew --cert-name ${domain} --force-renewal`
-        : `sudo certbot renew`;
+        ? `sudo -n certbot renew --cert-name ${domain} --force-renewal`
+        : `sudo -n certbot renew`;
 
       logs.push(`Running: ${cmd}`);
       const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
@@ -452,12 +452,12 @@ export class SslService {
    */
   async removeCertificate(domain: string): Promise<{ success: boolean; message: string }> {
     try {
-      await execAsync(`sudo certbot delete --cert-name ${domain} --non-interactive`, {
+      await execAsync(`sudo -n certbot delete --cert-name ${domain} --non-interactive`, {
         timeout: 30000,
       });
 
       // Reload nginx to apply changes
-      await execAsync('sudo systemctl reload nginx');
+      await execAsync('sudo -n systemctl reload nginx');
 
       return { success: true, message: `SSL certificate removed for ${domain}` };
     } catch (error) {

@@ -1132,7 +1132,7 @@ export default function DatabasesPage() {
                                 setGrantUser(u.user);
                                 setGrantHost(u.host);
                                 setGrantDb('');
-                                setGrantPrivs(['ALL PRIVILEGES']);
+                                setGrantPrivs([activeEngine === 'postgresql' ? 'ALL' : 'ALL PRIVILEGES']);
                                 setGrantOpen(true);
                               }}>
                                 <LinkIcon fontSize="small" />
@@ -1514,7 +1514,9 @@ export default function DatabasesPage() {
               <Box>
                 <Typography variant="subtitle2" gutterBottom>Privileges</Typography>
                 <FormGroup row>
-                  {PRIVS_OPTIONS.map((priv) => (
+                  {PRIVS_OPTIONS.map((priv) => {
+                    const allPrivText = activeEngine === 'postgresql' ? 'ALL' : 'ALL PRIVILEGES';
+                    return (
                     <FormControlLabel
                       key={priv}
                       control={
@@ -1522,21 +1524,21 @@ export default function DatabasesPage() {
                           size="small"
                           checked={grantPrivs.includes(priv)}
                           onChange={(_, checked) => {
-                            if (priv === 'ALL PRIVILEGES') {
-                              setGrantPrivs(checked ? ['ALL PRIVILEGES'] : []);
+                            if (priv === allPrivText) {
+                              setGrantPrivs(checked ? [allPrivText] : []);
                             } else {
-                              let next = grantPrivs.filter(p => p !== 'ALL PRIVILEGES');
+                              let next = grantPrivs.filter(p => p !== allPrivText);
                               if (checked) next.push(priv);
                               else next = next.filter(p => p !== priv);
                               setGrantPrivs(next);
                             }
                           }}
-                          disabled={priv !== 'ALL PRIVILEGES' && grantPrivs.includes('ALL PRIVILEGES')}
+                          disabled={priv !== allPrivText && grantPrivs.includes(allPrivText)}
                         />
                       }
                       label={<Typography variant="body2">{priv}</Typography>}
                     />
-                  ))}
+                  )})}
                 </FormGroup>
               </Box>
             </Stack>

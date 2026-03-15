@@ -63,10 +63,10 @@ export default function WebserverPage() {
     try {
       const [s, d] = await Promise.all([
         webserverApi.status(),
-        domainsApi.list().catch(() => ({ domains: [] })),
+        domainsApi.list().catch(() => []),
       ]);
       setStatus(s);
-      setDomains(d.domains || []);
+      setDomains(Array.isArray(d) ? d : []);
     } catch (err: any) {
       toast(err.message || 'Failed to load status', 'error');
     } finally {

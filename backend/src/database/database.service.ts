@@ -65,8 +65,15 @@ export class DatabaseService {
    * Run a command that requires root — use sudo directly
    */
   private async sudo(cmd: string, timeout = 30000): Promise<string> {
-    const { stdout } = await exec(`sudo ${cmd}`, { timeout });
-    return stdout.trim();
+    try {
+      const { stdout } = await exec(`sudo -n ${cmd}`, { timeout });
+      return stdout.trim();
+    } catch (e: any) {
+      if (e.message && (e.message.includes('password is required') || e.message.includes('terminal is required'))) {
+        throw new Error('Permission denied: The backend must be run as root or with passwordless sudo to perform this action.');
+      }
+      throw e;
+    }
   }
 
   /**
@@ -74,7 +81,24 @@ export class DatabaseService {
    */
   private async mysqlExec(sql: string): Promise<string> {
     const escaped = sql.replace(/"/g, '\\"');
-    return this.sudo(`mysql -N -B -e "${escaped}"`, 30000);
+    const pwd = process.env.DB_ROOT_PASSWORD;
+    const auth = pwd ? `-uroot -p"${pwd}"` : '';
+    const cmd = `mysql ${auth} -N -B -e "${escaped}"`;
+
+    try {
+      return await this.sudo(cmd, 30000);
+    } catch (sudoErr: any) {
+      if (sudoErr.message?.includes('Access denied') || sudoErr.message?.includes('Permission denied')) {
+        // Fallback for local development environments without sudo
+        try {
+          const { stdout } = await exec(cmd);
+          return stdout.trim();
+        } catch (localErr: any) {
+          throw localErr.message?.includes('Access denied') ? localErr : sudoErr;
+        }
+      }
+      throw sudoErr;
+    }
   }
 
   /**
@@ -191,19 +215,19 @@ export class DatabaseService {
 
     try {
       logs.push('Updating package list...');
-      await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq', { timeout: 60000 });
+      await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -qq', { timeout: 60000 });
 
       if (engine === 'mariadb') {
         logs.push('Installing MariaDB server and client...');
-        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
+        await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client', { timeout: 300000 });
 
         logs.push('Enabling MariaDB service...');
-        await exec('sudo systemctl enable mariadb', { timeout: 10000 });
-        await exec('sudo systemctl start mariadb', { timeout: 15000 });
+        await exec('sudo -n systemctl enable mariadb', { timeout: 10000 });
+        await exec('sudo -n systemctl start mariadb', { timeout: 15000 });
 
         // Verify
         try {
-          await exec('sudo mysqladmin ping 2>/dev/null', { timeout: 5000 });
+          await exec('sudo -n mysqladmin ping', { timeout: 5000 });
           logs.push('MariaDB is running and responding');
         } catch {
           logs.push('Warning: MariaDB installed but may need a moment to start');
@@ -212,14 +236,20 @@ export class DatabaseService {
 
       } else if (engine === 'mysql') {
         logs.push('Installing MySQL server and client...');
-        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client', { timeout: 300000 });
+        await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client', { timeout: 300000 });
 
         logs.push('Enabling MySQL service...');
-        await exec('sudo systemctl enable mysql', { timeout: 10000 });
-        await exec('sudo systemctl start mysql', { timeout: 15000 });
+        await exec('sudo -n systemctl enable mysql', { timeout: 10000 }).catch(() => {});
+        // In local environments or some setups, MySQL service might fail to start if MariaDB is running or port conflicting.
+        try {
+          await exec('sudo -n systemctl start mysql', { timeout: 15000 });
+        } catch (e: any) {
+           logs.push(`Warning: mysql.service failed to start. Error: ${e.message}`);
+           return { success: false, message: 'MySQL installed but failed to start due to service conflict or configuration error. Check system logs.', logs };
+        }
 
         try {
-          await exec('sudo mysqladmin ping 2>/dev/null', { timeout: 5000 });
+          await exec('sudo -n mysqladmin ping', { timeout: 5000 });
           logs.push('MySQL is running and responding');
         } catch {
           logs.push('Warning: MySQL installed but may need a moment to start');
@@ -228,14 +258,14 @@ export class DatabaseService {
 
       } else if (engine === 'postgresql') {
         logs.push('Installing PostgreSQL server and client...');
-        await exec('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib', { timeout: 300000 });
+        await exec('sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-client postgresql-contrib', { timeout: 300000 });
 
         logs.push('Enabling PostgreSQL service...');
-        await exec('sudo systemctl enable postgresql', { timeout: 10000 });
-        await exec('sudo systemctl start postgresql', { timeout: 15000 });
+        await exec('sudo -n systemctl enable postgresql', { timeout: 10000 });
+        await exec('sudo -n systemctl start postgresql', { timeout: 15000 });
 
         try {
-          await exec('sudo -u postgres psql -c "SELECT 1" 2>/dev/null', { timeout: 5000 });
+          await exec('sudo -n -u postgres psql -c "SELECT 1"', { timeout: 5000 });
           logs.push('PostgreSQL is running and responding');
         } catch {
           logs.push('Warning: PostgreSQL installed but may need a moment to start');

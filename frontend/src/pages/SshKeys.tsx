@@ -84,8 +84,28 @@ export default function SshKeysPage() {
 
   const copyToClipboard = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast('Public key copied to clipboard', 'info');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast('Public key copied to clipboard', 'info');
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";  // Avoid scrolling to bottom
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+            toast('Public key copied to clipboard', 'info');
+          } else {
+            toast('Failed to copy — please select and copy manually', 'error');
+          }
+        } catch (err) {
+          toast('Failed to copy — please select and copy manually', 'error');
+        }
+        document.body.removeChild(textArea);
+      }
     } catch {
       toast('Failed to copy — please select and copy manually', 'error');
     }
@@ -557,8 +577,28 @@ function GenerateKeyDialog({
 
   const copyKey = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast('Public key copied!', 'info');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast('Public key copied!', 'info');
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+            toast('Public key copied!', 'info');
+          } else {
+            toast('Failed to copy', 'error');
+          }
+        } catch (err) {
+          toast('Failed to copy', 'error');
+        }
+        document.body.removeChild(textArea);
+      }
     } catch {
       toast('Failed to copy', 'error');
     }

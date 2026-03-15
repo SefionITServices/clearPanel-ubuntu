@@ -514,24 +514,6 @@ export default function SettingsPage() {
                 <Divider component="li" />
                 <ListItem>
                   <ListItemText
-                    primary="Backend"
-                    secondary="NestJS 10 + TypeScript"
-                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
-                    secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
-                  />
-                </ListItem>
-                <Divider component="li" />
-                <ListItem>
-                  <ListItemText
-                    primary="Frontend"
-                    secondary="React 18 + MUI v7 + Vite"
-                    primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}
-                    secondaryTypographyProps={{ variant: 'body1', fontFamily: 'monospace' }}
-                  />
-                </ListItem>
-                <Divider component="li" />
-                <ListItem>
-                  <ListItemText
                     primary="DNS Server"
                     secondary="BIND9 (managed)"
                     primaryTypographyProps={{ variant: 'body2', fontWeight: 500, color: 'text.secondary' }}

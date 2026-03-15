@@ -107,18 +107,28 @@ export class FtpService {
   }
 
   private async sudo(cmd: string, timeout = 30000): Promise<string> {
-    const { stdout } = await exec(`sudo ${cmd}`, { timeout });
-    return stdout.trim();
+    try {
+      const { stdout } = await exec(`sudo -n ${cmd}`, { timeout });
+      return stdout.trim();
+    } catch (e: any) {
+      if (e.message && (e.message.includes('password is required') || e.message.includes('terminal is required'))) {
+        throw new Error('Permission denied: The backend must be run as root or with passwordless sudo to perform this action.');
+      }
+      throw e;
+    }
   }
 
   private async setPassword(login: string, password: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn('sudo', ['/usr/sbin/chpasswd'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn('sudo', ['-n', '/usr/sbin/chpasswd'], { stdio: ['pipe', 'pipe', 'pipe'] });
       let stderr = '';
       child.stderr.on('data', (data) => { stderr += data.toString(); });
       child.on('error', reject);
       child.on('close', (code) => {
         if (code === 0) return resolve();
+        if (stderr.includes('password is required') || stderr.includes('terminal is required')) {
+          return reject(new Error('Permission denied: The backend must be run as root or with passwordless sudo to perform this action.'));
+        }
         reject(new Error(stderr || `chpasswd failed (code ${code})`));
       });
       child.stdin.write(`${login}:${password}\n`);

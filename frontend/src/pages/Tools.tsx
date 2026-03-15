@@ -532,14 +532,7 @@ export default function ToolsPage() {
           color: '#0277BD',
           favoritePath: '/processes',
         },
-        {
-          label: 'Docker Manager',
-          icon: <StorageIcon sx={{ fontSize: 28 }} />,
-          description: 'Containers, images & Compose stacks',
-          onClick: () => navigate('/docker'),
-          color: '#2496ED',
-          favoritePath: '/docker',
-        },
+
         {
           label: 'App Manager',
           icon: <CodeIcon sx={{ fontSize: 28 }} />,
