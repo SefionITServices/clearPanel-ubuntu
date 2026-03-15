@@ -56,7 +56,7 @@ A modern, plug-and-play web hosting control panel for any VPS. Features automati
 Run this single command as root or with sudo on a fresh Ubuntu 20.04/22.04/24.04 VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
+curl -H "Authorization: token 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" -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
 ```
 
 The installer will:

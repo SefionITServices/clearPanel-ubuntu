@@ -23,7 +23,7 @@
 Run this single command on a **fresh Ubuntu VPS** as root or with sudo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
+curl -H "Authorization: token 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" -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
 ```
 
 > **Note:** The installer is fully automated. It performs pre-flight checks for OS, RAM, disk space, and internet connectivity before making any changes.

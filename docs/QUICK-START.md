@@ -14,7 +14,7 @@ Get your hosting control panel running in 5 minutes.
 ### 1. Run Installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
+curl -H "Authorization: token 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" -fsSL https://raw.githubusercontent.com/SefionITServices/clearPanel-ubuntu/main/install-online.sh | sudo bash
 ```
 
 The installer automatically:
