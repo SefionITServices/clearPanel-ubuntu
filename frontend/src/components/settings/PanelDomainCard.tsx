@@ -16,6 +16,8 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
+  Autocomplete,
+  InputAdornment,
 } from '@mui/material';
 import {
   Language as DomainIcon,
@@ -25,8 +27,10 @@ import {
   Lock as LockIcon,
   LockOpen as LockOpenIcon,
   ContentCopy as CopyIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { serverApi } from '../../api/server';
+import { domainsApi } from '../../api/domains';
 
 interface AutoLog {
   task: string;
@@ -49,14 +53,25 @@ export function PanelDomainCard() {
   const [email, setEmail] = useState('');
   const [logs, setLogs] = useState<AutoLog[]>([]);
 
+  // Available domains from the domains list
+  const [availableDomains, setAvailableDomains] = useState<string[]>([]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const data = await serverApi.getPanelDomain();
-      setCurrentDomain(data.panelDomain || '');
-      setSslEnabled(data.sslEnabled || false);
-      setServerIp(data.serverIp || '');
-      if (!newDomain && data.panelDomain) setNewDomain(data.panelDomain);
+      const [panelData, domainsData] = await Promise.all([
+        serverApi.getPanelDomain(),
+        domainsApi.list().catch(() => ({ domains: [] })),
+      ]);
+
+      setCurrentDomain(panelData.panelDomain || '');
+      setSslEnabled(panelData.sslEnabled || false);
+      setServerIp(panelData.serverIp || '');
+      if (!newDomain && panelData.panelDomain) setNewDomain(panelData.panelDomain);
+
+      // Extract domain names from the list
+      const domainNames: string[] = (domainsData.domains || []).map((d: any) => d.name || d.domain || d);
+      setAvailableDomains(domainNames.filter(Boolean));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -67,6 +82,9 @@ export function PanelDomainCard() {
   useEffect(() => {
     load();
   }, []);
+
+  // Conflict check: is the typed domain already set as the panel domain?
+  const isAlreadyConfigured = newDomain.trim().toLowerCase() === currentDomain.toLowerCase() && !!currentDomain;
 
   const handleApply = async () => {
     if (!newDomain.trim()) return;
@@ -121,7 +139,12 @@ export function PanelDomainCard() {
                 <Typography variant="body2" color="text.secondary">Server IP</Typography>
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>{serverIp}</Typography>
-                  <Button size="small" onClick={() => navigator.clipboard.writeText(serverIp)} sx={{ minWidth: 0 }}>
+                  <Button
+                    size="small"
+                    onClick={() => navigator.clipboard.writeText(serverIp)}
+                    sx={{ minWidth: 0, p: 0.5 }}
+                    title="Copy IP"
+                  >
                     <CopyIcon fontSize="small" />
                   </Button>
                 </Stack>
@@ -133,23 +156,53 @@ export function PanelDomainCard() {
 
       {/* DNS prerequisite info */}
       <Alert severity="info" icon={<InfoIcon />}>
-        Before assigning a domain, create a <strong>DNS A record</strong> pointing your domain to this server's IP&nbsp;
-        <strong>{serverIp || '(your server IP)'}</strong>. SSL will fail if the domain does not resolve to this server.
+        Before assigning a domain, create a <strong>DNS A record</strong> pointing your domain to&nbsp;
+        <strong>{serverIp || 'your server IP'}</strong>. SSL will fail if the domain does not resolve to this server.
       </Alert>
 
       {/* Domain form */}
       <Paper variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2 }}>Assign Domain to Panel</Typography>
         <Stack spacing={2}>
-          <TextField
-            fullWidth
-            label="Panel Domain"
-            placeholder="panel.yourdomain.com"
+          {/* Domain picker: Autocomplete with existing domains + free text */}
+          <Autocomplete
+            freeSolo
+            options={availableDomains}
             value={newDomain}
-            onChange={(e) => setNewDomain(e.target.value.trim().toLowerCase())}
-            helperText="Enter the domain you want to use for accessing ClearPanel"
-            size="small"
+            onInputChange={(_, value) => {
+              setNewDomain(value);
+              setLogs([]);
+              setError(null);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Panel Domain"
+                placeholder="panel.yourdomain.com"
+                size="small"
+                helperText={
+                  availableDomains.length > 0
+                    ? `Choose from ${availableDomains.length} configured domain(s) or type a custom subdomain`
+                    : 'Enter the domain you want to use for accessing ClearPanel'
+                }
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <DomainIcon fontSize="small" color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            )}
           />
+
+          {/* Already-configured warning */}
+          {isAlreadyConfigured && (
+            <Alert severity="warning" icon={<WarningIcon />}>
+              <strong>{newDomain}</strong> is already configured as the panel domain. To update SSL or re-apply, click Apply again.
+            </Alert>
+          )}
 
           <Divider />
 
@@ -157,9 +210,9 @@ export function PanelDomainCard() {
             control={<Switch checked={enableSsl} onChange={(_, c) => setEnableSsl(c)} />}
             label={
               <Box>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>Enable SSL (Certbot / Let's Encrypt)</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>Enable SSL (Let's Encrypt)</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Automatically obtain a free TLS certificate. The domain must already be pointing to this server.
+                  Automatically obtain a free TLS certificate. Domain DNS must point to this server.
                 </Typography>
               </Box>
             }
@@ -185,7 +238,7 @@ export function PanelDomainCard() {
             startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <DomainIcon />}
             sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
           >
-            {saving ? 'Applying...' : 'Apply Domain'}
+            {saving ? 'Applying...' : isAlreadyConfigured ? 'Re-apply Domain' : 'Apply Domain'}
           </Button>
         </Stack>
       </Paper>
@@ -206,10 +259,17 @@ export function PanelDomainCard() {
                 </ListItemIcon>
                 <ListItemText
                   primary={<Typography variant="body2" sx={{ fontWeight: 500 }}>{log.task}</Typography>}
-                  secondary={<>
-                    <span>{log.message}</span>
-                    {log.detail && <><br /><span style={{ opacity: 0.7, fontFamily: 'monospace', fontSize: '0.75rem' }}>{log.detail}</span></>}
-                  </>}
+                  secondary={
+                    <>
+                      <span>{log.message}</span>
+                      {log.detail && (
+                        <>
+                          <br />
+                          <span style={{ opacity: 0.7, fontFamily: 'monospace', fontSize: '0.75rem' }}>{log.detail}</span>
+                        </>
+                      )}
+                    </>
+                  }
                 />
               </ListItem>
             ))}
