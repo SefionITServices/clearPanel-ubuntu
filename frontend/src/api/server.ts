@@ -28,4 +28,11 @@ export const serverApi = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   }),
+  getPanelDomain: () => fetchJSON(`${API_BASE}/panel-domain`),
+  setPanelDomain: (domain: string, enableSsl?: boolean, email?: string) =>
+    fetchJSON(`${API_BASE}/panel-domain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, enableSsl, email }),
+    }),
 };

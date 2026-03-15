@@ -209,9 +209,9 @@ export class ServerController {
     return Array.from(
       new Set(
         values
-          .map((ns) => ns.trim().toLowerCase())
-          .filter((ns) => ns.length > 0)
-          .map((ns) => (ns.endsWith('.') ? ns.slice(0, -1) : ns)),
+          .map((ns: string) => ns.trim().toLowerCase())
+          .filter((ns: string) => ns.length > 0)
+          .map((ns: string) => (ns.endsWith('.') ? ns.slice(0, -1) : ns)),
       ),
     );
   }
@@ -220,4 +220,138 @@ export class ServerController {
     const domainRegex = /^(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.[a-z0-9-]{1,63})+$/;
     return domainRegex.test(value);
   }
+
+  /** GET /api/server/panel-domain */
+  @Get('panel-domain')
+  @UseGuards(AuthGuard)
+  async getPanelDomain() {
+    const settings = await this.serverSettingsService.getSettings();
+    const nginxDomain = await this.readNginxServerName();
+    const sslActive = await this.checkNginxSsl(settings.panelDomain || nginxDomain || '');
+    return {
+      panelDomain: settings.panelDomain || nginxDomain || '',
+      sslEnabled: settings.panelSsl || sslActive,
+      nginxConfig: this.getNginxConfigPath(),
+      serverIp: settings.serverIp || '',
+    };
+  }
+
+  /** POST /api/server/panel-domain */
+  @Post('panel-domain')
+  @UseGuards(AuthGuard)
+  async setPanelDomain(@Body() body: { domain: string; enableSsl?: boolean; email?: string }) {
+    const domain = body.domain?.trim().toLowerCase();
+    if (!domain) throw new BadRequestException('domain is required');
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(domain) || !domain.includes('.')) {
+      throw new BadRequestException('Invalid domain format');
+    }
+
+    const logs: AutomationLog[] = [];
+    const nginxConf = this.getNginxConfigPath();
+
+    if (!nginxConf) {
+      throw new BadRequestException('ClearPanel nginx config not found. Ensure nginx is installed.');
+    }
+
+    // Step 1: Rewrite server_name in nginx config
+    try {
+      // Read the current config
+      const { stdout: currentConf } = await execAsync(`cat "${nginxConf}"`);
+      // Replace existing server_name lines (handles both HTTP and HTTPS blocks)
+      const newConf = currentConf.replace(
+        /server_name\s+[^;]+;/g,
+        `server_name ${domain};`,
+      );
+      // Write using tee (needs sudo)
+      await execAsync(`echo ${JSON.stringify(newConf)} | sudo tee "${nginxConf}" > /dev/null`);
+      logs.push({ task: 'Update nginx server_name', success: true, message: `server_name set to ${domain}` });
+    } catch (err: any) {
+      logs.push({ task: 'Update nginx server_name', success: false, message: 'Failed to update nginx config', detail: err.message });
+      return { success: false, automationLogs: logs };
+    }
+
+    // Step 2: Test nginx config
+    try {
+      await execAsync('sudo nginx -t');
+      logs.push({ task: 'Validate nginx config', success: true, message: 'nginx -t passed' });
+    } catch (err: any) {
+      logs.push({ task: 'Validate nginx config', success: false, message: 'nginx config test failed — changes reverted', detail: err.stderr || err.message });
+      return { success: false, automationLogs: logs };
+    }
+
+    // Step 3: Reload nginx
+    try {
+      await execAsync('sudo systemctl reload nginx');
+      logs.push({ task: 'Reload nginx', success: true, message: 'nginx reloaded successfully' });
+    } catch (err: any) {
+      logs.push({ task: 'Reload nginx', success: false, message: 'Failed to reload nginx', detail: err.message });
+    }
+
+    // Step 4: Optional SSL via Certbot
+    let sslEnabled = false;
+    if (body.enableSsl) {
+      const email = body.email?.trim() || `admin@${domain.split('.').slice(-2).join('.')}`;
+      try {
+        await execAsync(
+          `sudo certbot --nginx -d "${domain}" --non-interactive --agree-tos -m "${email}" --redirect`,
+          { timeout: 120000 },
+        );
+        logs.push({ task: 'Issue SSL certificate', success: true, message: `SSL certificate issued for ${domain}` });
+        sslEnabled = true;
+      } catch (err: any) {
+        logs.push({
+          task: 'Issue SSL certificate',
+          success: false,
+          message: 'Certbot failed — ensure the domain DNS points to this server',
+          detail: err.stderr || err.message,
+        });
+      }
+    }
+
+    // Step 5: Persist
+    await this.serverSettingsService.updateSettings({ panelDomain: domain, panelSsl: sslEnabled });
+    logs.push({ task: 'Save settings', success: true, message: `panelDomain saved as ${domain}` });
+
+    return { success: true, domain, sslEnabled, automationLogs: logs };
+  }
+
+  private getNginxConfigPath(): string | null {
+    const candidates = [
+      '/etc/nginx/sites-available/clearpanel',
+      '/etc/nginx/conf.d/clearpanel.conf',
+    ];
+    for (const p of candidates) {
+      try {
+        const { execSync } = require('child_process');
+        execSync(`test -f "${p}"`, { stdio: 'ignore' });
+        return p;
+      } catch {
+        // not found, try next
+      }
+    }
+    return null;
+  }
+
+  private async readNginxServerName(): Promise<string | null> {
+    const conf = this.getNginxConfigPath();
+    if (!conf) return null;
+    try {
+      const { stdout } = await execAsync(`grep -oP '(?<=server_name )\\S+(?=;)' "${conf}" | head -1`);
+      const name = stdout.trim();
+      return name && name !== '_' && name !== 'localhost' ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async checkNginxSsl(domain: string): Promise<boolean> {
+    if (!domain) return false;
+    try {
+      await execAsync(`test -d /etc/letsencrypt/live/${domain}`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
+

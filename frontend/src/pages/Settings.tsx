@@ -33,10 +33,12 @@ import {
   SystemUpdateAlt as UpdateIcon,
   Verified as VerifiedIcon,
   ContentCopy as ContentCopyIcon,
+  Language as DomainIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { serverApi } from '../api/server';
 import { licenseApi } from '../api/license';
+import { PanelDomainCard } from '../components/settings/PanelDomainCard';
 
 interface AutomationLog {
   task: string;
@@ -208,6 +210,7 @@ export default function SettingsPage() {
           <Tab icon={<DnsIcon />} iconPosition="start" label="Nameservers" />
           <Tab icon={<VpnKeyIcon />} iconPosition="start" label="License & Updates" />
           <Tab icon={<InfoIcon />} iconPosition="start" label="Panel Info" />
+          <Tab icon={<DomainIcon />} iconPosition="start" label="Panel Domain" />
         </Tabs>
 
         {/* ═══════════ TAB 0: General ═══════════ */}
@@ -545,6 +548,23 @@ export default function SettingsPage() {
               </Alert>
             </CardContent>
           </Card>
+        </TabPanel>
+
+        {/* ═══════════ TAB 4: Panel Domain ═══════════ */}
+        <TabPanel value={tab} index={4}>
+          <Stack spacing={3}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Panel Domain</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Assign a custom domain to access ClearPanel. Your domain must have a DNS A record pointing to this server's IP before enabling SSL.
+              </Typography>
+            </Box>
+            <Card>
+              <CardContent sx={{ p: 3 }}>
+                <PanelDomainCard />
+              </CardContent>
+            </Card>
+          </Stack>
         </TabPanel>
       </Box>
     </DashboardLayout>

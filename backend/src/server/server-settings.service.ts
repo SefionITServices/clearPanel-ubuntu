@@ -44,6 +44,8 @@ export class ServerSettingsService implements OnModuleInit {
       serverIp: this.resolveServerIp(update.serverIp ?? current.serverIp),
       nameservers,
       webmailUrl: update.webmailUrl !== undefined ? update.webmailUrl : current.webmailUrl,
+      panelDomain: update.panelDomain !== undefined ? update.panelDomain : current.panelDomain,
+      panelSsl: update.panelSsl !== undefined ? update.panelSsl : current.panelSsl,
       updatedAt: new Date().toISOString(),
     };
 
@@ -74,6 +76,8 @@ export class ServerSettingsService implements OnModuleInit {
         serverIp: this.resolveServerIp(parsed.serverIp),
         nameservers: this.normalizeNameservers(parsed.nameservers ?? []),
         webmailUrl: parsed.webmailUrl,
+        panelDomain: parsed.panelDomain,
+        panelSsl: parsed.panelSsl,
         updatedAt: parsed.updatedAt,
       };
       this.cache = normalized;
@@ -143,6 +147,8 @@ export class ServerSettingsService implements OnModuleInit {
       serverIp: settings.serverIp,
       nameservers: [...settings.nameservers],
       webmailUrl: settings.webmailUrl,
+      panelDomain: settings.panelDomain,
+      panelSsl: settings.panelSsl,
       updatedAt: settings.updatedAt,
     };
   }

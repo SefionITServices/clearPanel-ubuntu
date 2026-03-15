@@ -4,5 +4,7 @@ export interface ServerSettings {
   serverIp?: string;
   nameservers: string[];
   webmailUrl?: string;
+  panelDomain?: string;
+  panelSsl?: boolean;
   updatedAt?: string;
 }
