@@ -133,36 +133,36 @@ apt-get install -y -qq software-properties-common ca-certificates gnupg curl git
 success "Base packages"
 
 # Clean any old Node.js / npm packages that conflict with NodeSource
-# if dpkg -l nodejs 2>/dev/null | grep -q '^ii' || dpkg -l npm 2>/dev/null | grep -q '^ii'; then
-#     info "Removing old nodejs/npm packages to avoid conflicts..."
-#     apt-get purge -y nodejs npm 2>/dev/null || true
-#     apt-get autoremove -y 2>/dev/null || true
-# fi
+if dpkg -l nodejs 2>/dev/null | grep -q '^ii' || dpkg -l npm 2>/dev/null | grep -q '^ii'; then
+    info "Removing old nodejs/npm packages to avoid conflicts..."
+    apt-get purge -y nodejs npm 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+fi
 
 # Node.js 20
-# NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-# if [ "$NODE_VERSION" -lt 20 ]; then
-#     info "Installing Node.js 20 LTS..."
-#     # NodeSource deprecated setup_20.x scripts — use manual GPG key + apt repo
-#     mkdir -p /etc/apt/keyrings
-#     if ! curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg 2>/dev/null; then
-#         fail "Failed to download NodeSource GPG key"
-#     fi
-#     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
-#     apt-get update -qq || fail "apt-get update failed after adding NodeSource repo"
-#     # Install Node.js (NodeSource package includes npm)
-#     # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
-#     if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
-#         fail "Failed to install Node.js"
-#     fi
-#     # Update command hash to recognize newly installed binaries
-#     hash -r
-# fi
-# NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-# if [ "$NODE_VERSION" -lt 20 ]; then
-#     fail "Node.js 20+ required but got $(node -v 2>/dev/null || echo 'none')"
-# fi
-success "Node.js 20 (already installed)"
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
+if [ "$NODE_VERSION" -lt 20 ]; then
+    info "Installing Node.js 20 LTS..."
+    # NodeSource deprecated setup_20.x scripts — use manual GPG key + apt repo
+    mkdir -p /etc/apt/keyrings
+    if ! curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg 2>/dev/null; then
+        fail "Failed to download NodeSource GPG key"
+    fi
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+    apt-get update -qq || fail "apt-get update failed after adding NodeSource repo"
+    # Install Node.js (NodeSource package includes npm)
+    # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
+    if ! apt-get install -y -qq nodejs > /dev/null 2>&1; then
+        fail "Failed to install Node.js"
+    fi
+    # Update command hash to recognize newly installed binaries
+    hash -r
+fi
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
+if [ "$NODE_VERSION" -lt 20 ]; then
+    fail "Node.js 20+ required but got $(node -v 2>/dev/null || echo 'none')"
+fi
+success "Node.js 20"
 
 # Nginx, BIND9, Certbot
 apt-get install -y -qq nginx bind9 bind9utils bind9-doc certbot python3-certbot-nginx > /dev/null 2>&1 || \
