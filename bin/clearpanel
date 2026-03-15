@@ -45,6 +45,21 @@ require_root() {
     fi
 }
 
+# Check if the ClearPanel API is responding.
+# Installs curl silently if not present.
+api_reachable() {
+    if ! command -v curl &>/dev/null; then
+        # curl missing — try to install it quietly
+        apt-get install -y curl &>/dev/null 2>&1 || true
+    fi
+    if command -v curl &>/dev/null; then
+        curl -sf http://127.0.0.1:3334/api/auth/status >/dev/null 2>&1
+    else
+        # Fallback: use /dev/tcp if curl still not available
+        (echo >/dev/tcp/127.0.0.1/3334) 2>/dev/null
+    fi
+}
+
 get_version() {
     if [ -f "$BASE/backend/package.json" ]; then
         node -e "console.log(require('$BASE/backend/package.json').version)" 2>/dev/null || echo "unknown"
@@ -84,7 +99,7 @@ cmd_status() {
     fi
 
     # API health
-    if curl -sf http://127.0.0.1:3334/api/auth/status >/dev/null 2>&1; then
+    if api_reachable; then
         echo -e "${BOLD}API:${NC}      ${GREEN}● reachable${NC}"
     else
         echo -e "${BOLD}API:${NC}      ${RED}● unreachable${NC}"
@@ -242,7 +257,7 @@ cmd_update() {
 
     # Wait for API ready
     for i in $(seq 1 15); do
-        if curl -sf http://127.0.0.1:3334/api/auth/status >/dev/null 2>&1; then
+        if api_reachable; then
             break
         fi
         sleep 2
@@ -251,7 +266,7 @@ cmd_update() {
     local NEW_VER
     NEW_VER=$(get_version)
 
-    if curl -sf http://127.0.0.1:3334/api/auth/status >/dev/null 2>&1; then
+    if api_reachable; then
         echo -e "\n${GREEN}${BOLD}✓ Update complete! ClearPanel v${NEW_VER} is running.${NC}"
     else
         echo -e "\n${RED}Warning: API is not responding after restart.${NC}"
