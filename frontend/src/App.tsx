@@ -1,9 +1,9 @@
 
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
+import { CssBaseline, CircularProgress, Box } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { theme } from './theme';
+import { ThemeProvider } from './theme/theme-provider';
 
 // Lazy-load all pages — only the visited page is downloaded
 const LoginPage = lazy(() => import('./pages/Login'));
@@ -69,7 +69,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
 
 export function App() {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeProvider>
       <CssBaseline />
       <AuthProvider>
         <BrowserRouter>
