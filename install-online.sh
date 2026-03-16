@@ -23,6 +23,7 @@
 # (mail stack, roundcube, BIND9) don't kill the entire installer silently.
 # Each phase handles its own errors and the script always reaches the
 # final status report.
+set -o pipefail
 
 # ── Colors & helpers ──────────────────────────────────────────────
 RED='\033[0;31m'
@@ -131,6 +132,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq || fail "apt-get update failed — check your network/DNS"
 apt-get install -y -qq software-properties-common ca-certificates gnupg curl git ufw acl > /dev/null 2>&1 || fail "Failed to install base packages"
 success "Base packages"
+
+# Native build prerequisites for node-gyp modules (e.g., node-pty)
+apt-get install -y -qq build-essential python3-dev > /dev/null 2>&1 || fail "Failed to install native build dependencies"
+success "Build tools (node-gyp prerequisites)"
 
 # Clean any old Node.js / npm packages that conflict with NodeSource
 if dpkg -l nodejs 2>/dev/null | grep -q '^ii' || dpkg -l npm 2>/dev/null | grep -q '^ii'; then
