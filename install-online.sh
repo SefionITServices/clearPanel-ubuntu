@@ -247,7 +247,7 @@ fi
 
 step "Installing backend dependencies..."
 cd "$INSTALL_DIR/backend"
-if ! sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps 2>&1 | tail -5; then
+if ! sudo -u "$SERVICE_USER" env PATH="$PATH" NODE_ENV=development "$NPM" install --legacy-peer-deps 2>&1 | tail -5; then
     fail "Backend npm install failed. Check: sudo -u $SERVICE_USER env PATH=\$PATH npm install --legacy-peer-deps (in $INSTALL_DIR/backend)"
 fi
 success "Backend dependencies installed"

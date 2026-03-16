@@ -155,7 +155,7 @@ echo -e "${GREEN}✓ npm found at: $NPM${NC}"
 # Install backend dependencies
 echo -e "${YELLOW}📦 Installing backend dependencies...${NC}"
 cd "$INSTALL_DIR/backend"
-sudo -u "$SERVICE_USER" env PATH="$PATH" "$NPM" install --legacy-peer-deps
+sudo -u "$SERVICE_USER" env PATH="$PATH" NODE_ENV=development "$NPM" install --legacy-peer-deps
 
 # Build backend
 echo -e "${YELLOW}🔧 Building backend...${NC}"
