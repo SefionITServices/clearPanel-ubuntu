@@ -140,8 +140,8 @@ if dpkg -l nodejs 2>/dev/null | grep -q '^ii' || dpkg -l npm 2>/dev/null | grep 
 fi
 
 # Node.js 20
-NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-if [ "$NODE_VERSION" -lt 20 ]; then
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "${NODE_VERSION:-0}" -lt 20 ]; then
     info "Installing Node.js 20 LTS..."
     # NodeSource deprecated setup_20.x scripts — use manual GPG key + apt repo
     mkdir -p /etc/apt/keyrings
@@ -158,8 +158,8 @@ if [ "$NODE_VERSION" -lt 20 ]; then
     # Update command hash to recognize newly installed binaries
     hash -r
 fi
-NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-if [ "$NODE_VERSION" -lt 20 ]; then
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "${NODE_VERSION:-0}" -lt 20 ]; then
     fail "Node.js 20+ required but got $(node -v 2>/dev/null || echo 'none')"
 fi
 success "Node.js 20"

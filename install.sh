@@ -60,8 +60,8 @@ else
 fi
 
 # Verify Node.js 20+ is available
-NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo "0")
-if [ "$NODE_VERSION" -lt 20 ]; then
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "${NODE_VERSION:-0}" -lt 20 ]; then
     echo -e "${RED}Node.js 20+ is required but not detected after installation. Please check NodeSource setup.${NC}"
     exit 1
 fi
