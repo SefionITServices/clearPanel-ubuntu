@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { CssBaseline, CircularProgress, Box } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { ThemeProvider } from './theme/theme-provider';
+import { DashboardLayout } from './layouts/dashboard';
 
 // Lazy-load all pages — only the visited page is downloaded
 const LoginPage = lazy(() => import('./pages/Login'));
@@ -85,7 +86,7 @@ export function App() {
                 path="/dashboard"
                 element={
                   <ProtectedRoute>
-                    <DashboardPage />
+                    <DashboardLayout><DashboardLayout><DashboardPage /></DashboardLayout></DashboardLayout>
                   </ProtectedRoute>
               }
             />
@@ -93,7 +94,7 @@ export function App() {
               path="/files"
               element={
                 <ProtectedRoute>
-                  <FileManagerPage />
+                  <DashboardLayout><DashboardLayout><FileManagerPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -101,7 +102,7 @@ export function App() {
               path="/terminal"
               element={
                 <ProtectedRoute>
-                  <TerminalPage />
+                  <DashboardLayout><DashboardLayout><TerminalPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -109,7 +110,7 @@ export function App() {
               path="/tools"
               element={
                 <ProtectedRoute>
-                  <ToolsPage />
+                  <DashboardLayout><DashboardLayout><ToolsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -117,7 +118,7 @@ export function App() {
               path="/domains/new"
               element={
                 <ProtectedRoute>
-                  <DomainCreatePage />
+                  <DashboardLayout><DashboardLayout><DomainCreatePage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -125,7 +126,7 @@ export function App() {
               path="/dns"
               element={
                 <ProtectedRoute>
-                  <DnsEditorPage />
+                  <DashboardLayout><DashboardLayout><DnsEditorPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -133,7 +134,7 @@ export function App() {
               path="/nameservers"
               element={
                 <ProtectedRoute>
-                  <NameserverSetupPage />
+                  <DashboardLayout><DashboardLayout><NameserverSetupPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -141,7 +142,7 @@ export function App() {
               path="/domains"
               element={
                 <ProtectedRoute>
-                  <DomainsListView />
+                  <DashboardLayout><DashboardLayout><DomainsListView /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -149,7 +150,7 @@ export function App() {
               path="/ssl"
               element={
                 <ProtectedRoute>
-                  <SslPage />
+                  <DashboardLayout><DashboardLayout><SslPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -157,7 +158,7 @@ export function App() {
               path="/databases"
               element={
                 <ProtectedRoute>
-                  <DatabasesPage />
+                  <DashboardLayout><DashboardLayout><DatabasesPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -165,7 +166,7 @@ export function App() {
               path="/app-store"
               element={
                 <ProtectedRoute>
-                  <AppStorePage />
+                  <DashboardLayout><DashboardLayout><AppStorePage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -173,7 +174,7 @@ export function App() {
               path="/php"
               element={
                 <ProtectedRoute>
-                  <PhpManagerPage />
+                  <DashboardLayout><DashboardLayout><PhpManagerPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -181,7 +182,7 @@ export function App() {
               path="/mail-domains"
               element={
                 <ProtectedRoute>
-                  <MailDomainsPage />
+                  <DashboardLayout><DashboardLayout><MailDomainsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -189,7 +190,7 @@ export function App() {
               path="/email-accounts"
               element={
                 <ProtectedRoute>
-                  <EmailAccountsPage />
+                  <DashboardLayout><DashboardLayout><EmailAccountsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -197,7 +198,7 @@ export function App() {
               path="/forwarders"
               element={
                 <ProtectedRoute>
-                  <ForwardersPage />
+                  <DashboardLayout><DashboardLayout><ForwardersPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -205,7 +206,7 @@ export function App() {
               path="/email"
               element={
                 <ProtectedRoute>
-                  <EmailPage />
+                  <DashboardLayout><DashboardLayout><EmailPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -213,7 +214,7 @@ export function App() {
               path="/email-filters"
               element={
                 <ProtectedRoute>
-                  <EmailFiltersPage />
+                  <DashboardLayout><DashboardLayout><EmailFiltersPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -221,7 +222,7 @@ export function App() {
               path="/logs"
               element={
                 <ProtectedRoute>
-                  <LogsPage />
+                  <DashboardLayout><DashboardLayout><LogsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -229,7 +230,7 @@ export function App() {
               path="/settings"
               element={
                 <ProtectedRoute>
-                  <SettingsPage />
+                  <DashboardLayout><DashboardLayout><SettingsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -237,7 +238,7 @@ export function App() {
               path="/webserver"
               element={
                 <ProtectedRoute>
-                  <WebserverPage />
+                  <DashboardLayout><DashboardLayout><WebserverPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -245,7 +246,7 @@ export function App() {
               path="/ssh-keys"
               element={
                 <ProtectedRoute>
-                  <SshKeysPage />
+                  <DashboardLayout><DashboardLayout><SshKeysPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -253,7 +254,7 @@ export function App() {
               path="/cron-jobs"
               element={
                 <ProtectedRoute>
-                  <CronJobsPage />
+                  <DashboardLayout><DashboardLayout><CronJobsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -261,7 +262,7 @@ export function App() {
               path="/firewall"
               element={
                 <ProtectedRoute>
-                  <FirewallPage />
+                  <DashboardLayout><DashboardLayout><FirewallPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -269,7 +270,7 @@ export function App() {
               path="/monitoring"
               element={
                 <ProtectedRoute>
-                  <MonitoringPage />
+                  <DashboardLayout><DashboardLayout><MonitoringPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -277,7 +278,7 @@ export function App() {
               path="/backup"
               element={
                 <ProtectedRoute>
-                  <BackupPage />
+                  <DashboardLayout><DashboardLayout><BackupPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -285,7 +286,7 @@ export function App() {
               path="/two-factor"
               element={
                 <ProtectedRoute>
-                  <TwoFactorPage />
+                  <DashboardLayout><DashboardLayout><TwoFactorPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -293,7 +294,7 @@ export function App() {
               path="/processes"
               element={
                 <ProtectedRoute>
-                  <ProcessesPage />
+                  <DashboardLayout><DashboardLayout><ProcessesPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -301,7 +302,7 @@ export function App() {
               path="/git"
               element={
                 <ProtectedRoute>
-                  <GitPage />
+                  <DashboardLayout><DashboardLayout><GitPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -309,7 +310,7 @@ export function App() {
               path="/ftp"
               element={
                 <ProtectedRoute>
-                  <FtpManagerPage />
+                  <DashboardLayout><DashboardLayout><FtpManagerPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -317,7 +318,7 @@ export function App() {
               path="/redirects"
               element={
                 <ProtectedRoute>
-                  <RedirectsPage />
+                  <DashboardLayout><DashboardLayout><RedirectsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -325,7 +326,7 @@ export function App() {
               path="/ip-blocker"
               element={
                 <ProtectedRoute>
-                  <IpBlockerPage />
+                  <DashboardLayout><DashboardLayout><IpBlockerPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -333,7 +334,7 @@ export function App() {
               path="/dir-privacy"
               element={
                 <ProtectedRoute>
-                  <DirPrivacyPage />
+                  <DashboardLayout><DashboardLayout><DirPrivacyPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -341,7 +342,7 @@ export function App() {
               path="/hotlink-protection"
               element={
                 <ProtectedRoute>
-                  <HotlinkProtectionPage />
+                  <DashboardLayout><DashboardLayout><HotlinkProtectionPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -349,7 +350,7 @@ export function App() {
               path="/docker"
               element={
                 <ProtectedRoute>
-                  <DockerPage />
+                  <DashboardLayout><DashboardLayout><DockerPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -357,7 +358,7 @@ export function App() {
               path="/node-apps"
               element={
                 <ProtectedRoute>
-                  <NodeAppsPage />
+                  <DashboardLayout><DashboardLayout><NodeAppsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -365,7 +366,7 @@ export function App() {
               path="/subdomains"
               element={
                 <ProtectedRoute>
-                  <SubdomainsPage />
+                  <DashboardLayout><DashboardLayout><SubdomainsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -373,7 +374,7 @@ export function App() {
               path="/error-pages"
               element={
                 <ProtectedRoute>
-                  <ErrorPagesPage />
+                  <DashboardLayout><DashboardLayout><ErrorPagesPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -381,7 +382,7 @@ export function App() {
               path="/auto-responders"
               element={
                 <ProtectedRoute>
-                  <AutoRespondersPage />
+                  <DashboardLayout><DashboardLayout><AutoRespondersPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -389,7 +390,7 @@ export function App() {
               path="/mailing-lists"
               element={
                 <ProtectedRoute>
-                  <MailingListsPage />
+                  <DashboardLayout><DashboardLayout><MailingListsPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
@@ -397,7 +398,7 @@ export function App() {
               path="/spam-filter"
               element={
                 <ProtectedRoute>
-                  <SpamFilterPage />
+                  <DashboardLayout><DashboardLayout><SpamFilterPage /></DashboardLayout></DashboardLayout>
                 </ProtectedRoute>
               }
             />
