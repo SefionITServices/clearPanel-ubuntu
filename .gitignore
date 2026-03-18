@@ -48,3 +48,8 @@ frontend/src/hooks/
 frontend/src/types/
 frontend/src/global-config.ts
 frontend/src/global.css
+frontend/src/layouts/
+frontend/src/layouts/
+frontend/src/routes/
+frontend/src/components/
+frontend/src/theme/
