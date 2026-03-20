@@ -6,6 +6,15 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
+            'src': path.resolve(__dirname, './src'),
         },
     },
+    optimizeDeps: {
+        include: [
+            '@mui/material',
+            '@mui/icons-material',
+            '@emotion/react',
+            '@emotion/styled'
+        ]
+    }
 });

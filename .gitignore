@@ -53,3 +53,5 @@ frontend/src/layouts/
 frontend/src/routes/
 frontend/src/components/
 frontend/src/theme/
+frontend/src/auth/
+frontend/src/_mock/
