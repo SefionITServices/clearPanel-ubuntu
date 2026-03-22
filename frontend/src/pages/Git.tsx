@@ -848,7 +848,7 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
 function CreateView({ onBack, onCreated, pathOptions }: { onBack: () => void; onCreated: (repo: ManagedRepo) => void; pathOptions: PathOption[] }) {
   const [isClone, setIsClone] = useState(false);
   const [cloneUrl, setCloneUrl] = useState('');
-  const [cloneIntoDir, setCloneIntoDir] = useState(false);
+  const [cloneIntoDir, setCloneIntoDir] = useState(true);
   const [repoPath, setRepoPath] = useState('');
   const [repoPathInput, setRepoPathInput] = useState('');
   const [repoName, setRepoName] = useState('');
