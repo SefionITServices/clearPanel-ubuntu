@@ -70,6 +70,7 @@ export class WebServerService {
     domain: string,
     documentRoot: string,
     phpVersion?: string,
+    proxyPort?: number,
   ): Promise<{ success: boolean; message: string; created: boolean; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
@@ -120,7 +121,7 @@ export class WebServerService {
       };
     }
 
-    const created = await this.createVirtualHost(domain, documentRoot, phpVersion);
+    const created = await this.createVirtualHost(domain, documentRoot, phpVersion, proxyPort);
     return {
       success: created.success,
       created: created.success,
@@ -133,6 +134,7 @@ export class WebServerService {
     domain: string,
     documentRoot: string,
     phpVersion?: string,
+    proxyPort?: number,
   ): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
@@ -141,6 +143,31 @@ export class WebServerService {
 
     // Detect the PHP-FPM socket (per-domain when specified)
     const phpSocket = await this.resolvePhpSocket(phpVersion);
+
+    const locationBlock = proxyPort
+      ? `    # Reverse proxy to app running on localhost:${proxyPort}
+    location / {
+        proxy_pass http://127.0.0.1:${proxyPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }`
+      : `    # Main location
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    
+    # PHP support (if PHP-FPM is installed)
+    location ~ \\.php$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass unix:${phpSocket};
+        fastcgi_index index.php;
+    }`;
 
     const configContent = `server {
     listen 80;
@@ -154,18 +181,7 @@ export class WebServerService {
     access_log /var/log/nginx/${domain}-access.log;
     error_log /var/log/nginx/${domain}-error.log;
     
-    # Main location
-    location / {
-        try_files $uri $uri/ =404;
-    }
-    
-    # PHP support (if PHP-FPM is installed)
-    location ~ \\.php$ {
-        include fastcgi_params;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_pass unix:${phpSocket};
-        fastcgi_index index.php;
-    }
+  ${locationBlock}
     
     # Deny access to hidden files
     location ~ /\\. {

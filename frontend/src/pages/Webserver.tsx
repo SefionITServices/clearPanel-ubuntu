@@ -18,6 +18,7 @@ import {
   LinearProgress,
   IconButton,
   Tooltip,
+  TextField,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -51,6 +52,7 @@ export default function WebserverPage() {
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [proxyPorts, setProxyPorts] = useState<Record<string, string>>({});
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false, message: '', severity: 'success',
   });
@@ -97,9 +99,23 @@ export default function WebserverPage() {
     setBusy(domain.id);
     try {
       const docRoot = domain.folderPath || `/home/${domain.name}/public_html`;
-      const result = await webserverApi.createVhost(domain.name, docRoot, domain.phpVersion);
+      const rawPort = (proxyPorts[domain.id] || '').trim();
+      let proxyPort: number | undefined;
+
+      if (rawPort) {
+        const parsed = Number(rawPort);
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+          toast('Port must be an integer between 1 and 65535', 'error');
+          return;
+        }
+        proxyPort = parsed;
+      }
+
+      const result = await webserverApi.createVhost(domain.name, docRoot, domain.phpVersion, proxyPort);
       if (result.success) {
-        toast(`Vhost created for ${domain.name}`);
+        toast(proxyPort
+          ? `Proxy set: ${domain.name} -> localhost:${proxyPort}`
+          : `Vhost created for ${domain.name}`);
       } else {
         toast(result.message || 'Failed to create vhost', 'error');
       }
@@ -195,6 +211,7 @@ export default function WebserverPage() {
                   <TableCell><strong>Domain</strong></TableCell>
                   <TableCell><strong>Document Root</strong></TableCell>
                   <TableCell><strong>PHP</strong></TableCell>
+                  <TableCell><strong>App Port (optional)</strong></TableCell>
                   <TableCell align="right"><strong>Actions</strong></TableCell>
                 </TableRow>
               </TableHead>
@@ -212,6 +229,16 @@ export default function WebserverPage() {
                     <TableCell>
                       <Chip label={d.phpVersion || 'Default'} size="small" variant="outlined" />
                     </TableCell>
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        placeholder="8080"
+                        value={proxyPorts[d.id] || ''}
+                        onChange={(e) => setProxyPorts((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                        inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                        sx={{ width: 130 }}
+                      />
+                    </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Button
@@ -220,7 +247,7 @@ export default function WebserverPage() {
                           onClick={() => handleCreateVhost(d)}
                           disabled={busy === d.id}
                         >
-                          {busy === d.id ? <CircularProgress size={16} /> : 'Create Vhost'}
+                          {busy === d.id ? <CircularProgress size={16} /> : 'Apply'}
                         </Button>
                         <Tooltip title="Remove vhost">
                           <IconButton

@@ -24,7 +24,7 @@ export class WebServerController {
 
   @Post('vhost/:domain')
   async createVirtualHost(@Param('domain') domain: string, @Body() body: CreateVhostDto) {
-    return this.webServerService.createVirtualHost(domain, body.documentRoot, body.phpVersion);
+    return this.webServerService.createVirtualHost(domain, body.documentRoot, body.phpVersion, body.proxyPort);
   }
 
   @Delete('vhost/:domain')

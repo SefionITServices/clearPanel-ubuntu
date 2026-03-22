@@ -14,11 +14,11 @@ async function fetchJSON<T = any>(url: string, opts?: RequestInit): Promise<T> {
 export const webserverApi = {
   status: () => fetchJSON(`${API_BASE}/status`),
   install: () => fetchJSON(`${API_BASE}/install`, { method: 'POST' }),
-  createVhost: (domain: string, documentRoot: string, phpVersion?: string) =>
+  createVhost: (domain: string, documentRoot: string, phpVersion?: string, proxyPort?: number) =>
     fetchJSON(`${API_BASE}/vhost/${encodeURIComponent(domain)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ documentRoot, phpVersion }),
+      body: JSON.stringify({ documentRoot, phpVersion, proxyPort }),
     }),
   removeVhost: (domain: string) =>
     fetchJSON(`${API_BASE}/vhost/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
