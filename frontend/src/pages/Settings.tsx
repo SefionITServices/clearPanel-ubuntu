@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Typography,
@@ -20,6 +20,7 @@ import {
   FormControlLabel,
   Tabs,
   Tab,
+  LinearProgress,
 } from '@mui/material';
 import {
   Computer as ComputerIcon,
@@ -572,6 +573,16 @@ export default function SettingsPage() {
 }
 
 /* ── License & Updates Tab ── */
+
+const UPDATE_STEP_LABELS = [
+  'Pulling latest code',
+  'Installing backend dependencies',
+  'Building backend',
+  'Installing frontend dependencies',
+  'Building frontend',
+  'Restarting service',
+];
+
 function LicenseAndUpdatesTab() {
   const [license, setLicense] = useState<any>(null);
   const [update, setUpdate] = useState<any>(null);
@@ -580,12 +591,21 @@ function LicenseAndUpdatesTab() {
   const [activating, setActivating] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [msg, setMsg] = useState<{ text: string; severity: 'success' | 'error' | 'info' } | null>(null);
+  const [upProgress, setUpProgress] = useState<any>(null);
+  const [updating, setUpdating] = useState(false);
+  const [restartWaiting, setRestartWaiting] = useState(false);
+  const [updateDone, setUpdateDone] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     licenseApi.getStatus()
       .then(setLicense)
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   const handleActivate = async () => {
@@ -629,6 +649,78 @@ function LicenseAndUpdatesTab() {
     setCheckingUpdate(false);
   };
 
+  const beginRestartPoll = () => {
+    const deadline = Date.now() + 120_000;
+    const timer = setInterval(async () => {
+      if (Date.now() > deadline) {
+        clearInterval(timer);
+        setRestartWaiting(false);
+        setMsg({ text: 'Server restart timed out. Please check server status manually.', severity: 'error' });
+        return;
+      }
+
+      try {
+        const status = await licenseApi.getStatus();
+        if (status?.panelVersion) {
+          clearInterval(timer);
+          setRestartWaiting(false);
+          setUpdateDone(true);
+          setLicense(status);
+          licenseApi.checkUpdate().then(setUpdate).catch(() => {});
+          setTimeout(() => window.location.reload(), 1500);
+        }
+      } catch {
+      }
+    }, 2500);
+  };
+
+  const handleStartUpdate = async () => {
+    setMsg(null);
+    setUpdateDone(false);
+    setRestartWaiting(false);
+    setUpProgress(null);
+
+    try {
+      const res = await licenseApi.startUpdate();
+      if (!res.started) {
+        setMsg({ text: res.error || 'Could not start update', severity: 'error' });
+        return;
+      }
+
+      setUpdating(true);
+      pollRef.current = setInterval(async () => {
+        try {
+          const prog = await licenseApi.getUpdateProgress();
+          setUpProgress(prog);
+
+          if (prog.error) {
+            clearInterval(pollRef.current!);
+            setUpdating(false);
+            setMsg({ text: prog.error, severity: 'error' });
+          } else if (prog.needsRestart && prog.percent >= 90) {
+            clearInterval(pollRef.current!);
+            setUpdating(false);
+            setRestartWaiting(true);
+            beginRestartPoll();
+          } else if (prog.done) {
+            clearInterval(pollRef.current!);
+            setUpdating(false);
+            setUpdateDone(true);
+            licenseApi.getStatus().then(setLicense).catch(() => {});
+            licenseApi.checkUpdate().then(setUpdate).catch(() => {});
+          }
+        } catch {
+          clearInterval(pollRef.current!);
+          setUpdating(false);
+          setRestartWaiting(true);
+          beginRestartPoll();
+        }
+      }, 1200);
+    } catch (e: any) {
+      setMsg({ text: e.message, severity: 'error' });
+    }
+  };
+
   const copyFingerprint = async () => {
     if (license?.fingerprint) {
       try {
@@ -649,7 +741,6 @@ function LicenseAndUpdatesTab() {
 
   return (
     <Stack spacing={3}>
-      {/* License Status Card */}
       <Card>
         <CardContent sx={{ p: 3 }}>
           <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2.5 }}>
@@ -675,7 +766,6 @@ function LicenseAndUpdatesTab() {
             {license?.message || 'License information unavailable'}
           </Typography>
 
-          {/* Details */}
           <List dense sx={{ mb: 2 }}>
             <ListItem disableGutters>
               <ListItemText
@@ -744,7 +834,6 @@ function LicenseAndUpdatesTab() {
             )}
           </List>
 
-          {/* Activate form */}
           {(!license?.key || license?.status === 'unactivated' || license?.status === 'invalid') && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
               <TextField
@@ -767,7 +856,6 @@ function LicenseAndUpdatesTab() {
             </Stack>
           )}
 
-          {/* Deactivate button (for active licenses) */}
           {license?.status === 'active' && (
             <Button
               variant="outlined"
@@ -788,7 +876,6 @@ function LicenseAndUpdatesTab() {
         </CardContent>
       </Card>
 
-      {/* Updates Card */}
       <Card>
         <CardContent sx={{ p: 3 }}>
           <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
@@ -796,55 +883,163 @@ function LicenseAndUpdatesTab() {
             <Typography variant="h6" fontWeight={600}>Updates</Typography>
           </Stack>
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Check for new ClearPanel releases. Updates preserve all your data, domains, email, and SSL certificates.
-          </Typography>
+          {!updating && !restartWaiting && !updateDone && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Check for new ClearPanel releases. Updates preserve all your data, domains, email, and SSL certificates.
+              </Typography>
 
-          <Button
-            variant="outlined"
-            onClick={handleCheckUpdate}
-            disabled={checkingUpdate}
-            startIcon={checkingUpdate ? <CircularProgress size={16} /> : <UpdateIcon />}
-            sx={{ textTransform: 'none', mb: 2 }}
-          >
-            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
-          </Button>
+              <Button
+                variant="outlined"
+                onClick={handleCheckUpdate}
+                disabled={checkingUpdate}
+                startIcon={checkingUpdate ? <CircularProgress size={16} /> : <UpdateIcon />}
+                sx={{ textTransform: 'none', mb: 2 }}
+              >
+                {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+              </Button>
 
-          {update && (
-            <Paper variant="outlined" sx={{ p: 2.5, mt: 1 }}>
-              {update.available ? (
-                <>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <Chip label="Update Available" size="small" color="primary" sx={{ fontWeight: 700 }} />
-                    <Typography variant="subtitle2">v{update.latestVersion}</Typography>
-                  </Stack>
-                  {update.releaseDate && (
-                    <Typography variant="caption" color="text.secondary">
-                      Released: {new Date(update.releaseDate).toLocaleDateString()}
-                    </Typography>
+              {update && (
+                <Paper variant="outlined" sx={{ p: 2.5 }}>
+                  {update.available ? (
+                    <>
+                      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }} flexWrap="wrap">
+                        <Chip label="Update Available" size="small" color="primary" sx={{ fontWeight: 700 }} />
+                        <Typography variant="subtitle2" fontWeight={700}>v{update.latestVersion}</Typography>
+                        {update.releaseDate && (
+                          <Typography variant="caption" color="text.secondary">
+                            · Released {new Date(update.releaseDate).toLocaleDateString()}
+                          </Typography>
+                        )}
+                      </Stack>
+                      {update.changelog && (
+                        <Typography variant="body2" sx={{ mb: 2, whiteSpace: 'pre-wrap', fontSize: '0.82rem', color: 'text.secondary' }}>
+                          {update.changelog}
+                        </Typography>
+                      )}
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<UpdateIcon />}
+                        onClick={handleStartUpdate}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        Update to v{update.latestVersion}
+                      </Button>
+                    </>
+                  ) : (
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <CheckIcon color="success" fontSize="small" />
+                      <Typography variant="body2">
+                        You’re running the latest version (v{update.currentVersion})
+                      </Typography>
+                    </Stack>
                   )}
-                  {update.changelog && (
-                    <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap', fontSize: '0.82rem' }}>
-                      {update.changelog}
-                    </Typography>
-                  )}
-                  <Alert severity="info" sx={{ mt: 2, fontSize: 12 }}>
-                    Run <code>sudo clearpanel update</code> on your server to apply the update.
-                  </Alert>
-                </>
-              ) : (
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <CheckIcon color="success" fontSize="small" />
-                  <Typography variant="body2">
-                    You're running the latest version (v{update.currentVersion})
-                  </Typography>
-                </Stack>
+                </Paper>
               )}
-            </Paper>
+            </>
+          )}
+
+          {(updating || upProgress?.running) && !restartWaiting && (
+            <UpdateProgressPanel progress={upProgress} />
+          )}
+
+          {restartWaiting && <RestartWaitingPanel />}
+
+          {updateDone && (
+            <Alert severity="success" icon={<CheckIcon />}>
+              <Typography variant="body2" fontWeight={700}>Update complete!</Typography>
+              <Typography variant="caption">
+                ClearPanel has been updated successfully.
+                {license?.panelVersion ? ` Running v${license.panelVersion}.` : ''}
+                {' Reloading…'}
+              </Typography>
+            </Alert>
+          )}
+
+          {msg && !updating && !restartWaiting && (
+            <Alert severity={msg.severity} sx={{ mt: 2 }} onClose={() => setMsg(null)}>
+              {msg.text}
+            </Alert>
           )}
         </CardContent>
       </Card>
     </Stack>
+  );
+}
+
+function UpdateProgressPanel({ progress }: { progress: any }) {
+  const percent = Math.round(progress?.percent ?? 0);
+  const currentStep = progress?.stepIndex ?? 0;
+
+  return (
+    <Box>
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 0.5 }}>
+        <LinearProgress
+          variant="determinate"
+          value={percent}
+          sx={{ flex: 1, height: 10, borderRadius: 5 }}
+        />
+        <Typography variant="body2" fontWeight={700} sx={{ minWidth: 44, textAlign: 'right' }}>
+          {percent}%
+        </Typography>
+      </Stack>
+
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, mt: 0.5 }}>
+        {progress?.stepLabel || 'Initializing…'}
+      </Typography>
+
+      <List dense disablePadding>
+        {UPDATE_STEP_LABELS.map((label, i) => {
+          const isPast = i < currentStep;
+          const isRunning = i === currentStep && progress?.running && !progress?.error;
+          const isError = !!progress?.error && i === currentStep;
+
+          return (
+            <ListItem key={i} disableGutters sx={{ py: 0.4 }}>
+              <ListItemIcon sx={{ minWidth: 30 }}>
+                {isError ? (
+                  <ErrorIcon fontSize="small" color="error" />
+                ) : isPast ? (
+                  <CheckIcon fontSize="small" color="success" />
+                ) : isRunning ? (
+                  <CircularProgress size={16} thickness={5} />
+                ) : (
+                  <Box sx={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid', borderColor: 'divider' }} />
+                )}
+              </ListItemIcon>
+              <ListItemText
+                primary={label}
+                primaryTypographyProps={{
+                  variant: 'body2',
+                  color: isError ? 'error' : isPast ? 'success.main' : isRunning ? 'text.primary' : 'text.disabled',
+                  fontWeight: isRunning ? 600 : 400,
+                }}
+              />
+            </ListItem>
+          );
+        })}
+      </List>
+
+      {progress?.error && (
+        <Alert severity="error" sx={{ mt: 2 }}>{progress.error}</Alert>
+      )}
+    </Box>
+  );
+}
+
+function RestartWaitingPanel() {
+  return (
+    <Box sx={{ textAlign: 'center', py: 4 }}>
+      <CircularProgress size={52} thickness={3} sx={{ mb: 2 }} />
+      <Typography variant="h6" fontWeight={600} gutterBottom>
+        Service Restarting…
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 380, mx: 'auto' }}>
+        ClearPanel is restarting to apply the update. This page will reload automatically once the service is back online.
+      </Typography>
+      <LinearProgress sx={{ borderRadius: 2, maxWidth: 320, mx: 'auto' }} />
+    </Box>
   );
 }
 

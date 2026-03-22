@@ -33,4 +33,16 @@ export class LicenseController {
   async checkUpdate() {
     return this.licenseService.checkForUpdate();
   }
+
+  /** POST /api/license/start-update — Kick off a background update */
+  @Post('start-update')
+  async startUpdate() {
+    return this.licenseService.startUpdate();
+  }
+
+  /** GET /api/license/update-progress — Poll current update progress */
+  @Get('update-progress')
+  async getUpdateProgress() {
+    return this.licenseService.getUpdateProgress();
+  }
 }

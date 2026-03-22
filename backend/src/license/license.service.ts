@@ -4,7 +4,11 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as os from 'os';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { getPanelVersion } from '../migrations/migration-runner';
+
+const execAsync = promisify(exec);
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -42,6 +46,27 @@ interface UpdateInfo {
   releaseDate: string | null;
 }
 
+export interface UpdateProgress {
+  running: boolean;
+  percent: number;
+  stepIndex: number;
+  stepTotal: number;
+  stepLabel: string;
+  done: boolean;
+  error: string | null;
+  needsRestart: boolean;
+  startedAt: string | null;
+}
+
+const UPDATE_STEPS: { label: string; cmd: string; subdir?: string; from: number; to: number }[] = [
+  { label: 'Pulling latest code',              cmd: 'git pull origin main',  from:  0, to: 15 },
+  { label: 'Installing backend dependencies',  cmd: 'npm ci',                subdir: 'backend',  from: 15, to: 35 },
+  { label: 'Building backend',                 cmd: 'npm run build',          subdir: 'backend',  from: 35, to: 55 },
+  { label: 'Installing frontend dependencies', cmd: 'npm ci',                subdir: 'frontend', from: 55, to: 70 },
+  { label: 'Building frontend',                cmd: 'npm run build',          subdir: 'frontend', from: 70, to: 90 },
+  { label: 'Restarting service',               cmd: 'sudo systemctl restart clearpanel', from: 90, to: 100 },
+];
+
 // ─── Constants ────────────────────────────────────────────────────────
 
 const API_BASE = 'https://api.clearpanel.net/v1';
@@ -56,6 +81,10 @@ export class LicenseService implements OnModuleInit {
   private cache: LicenseCache | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private fingerprint: string = '';
+  private updateProgress: UpdateProgress = {
+    running: false, percent: 0, stepIndex: 0, stepTotal: UPDATE_STEPS.length,
+    stepLabel: '', done: false, error: null, needsRestart: false, startedAt: null,
+  };
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -453,5 +482,68 @@ export class LicenseService implements OnModuleInit {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  // ─── Panel Update ───────────────────────────────────────────
+
+  /** Start a background update. Non-blocking — returns immediately. */
+  async startUpdate(): Promise<{ started: boolean; error?: string }> {
+    if (this.updateProgress.running) {
+      return { started: false, error: 'An update is already in progress' };
+    }
+    this.runUpdate().catch(() => {});
+    return { started: true };
+  }
+
+  /** Return a snapshot of the current update progress. */
+  getUpdateProgress(): UpdateProgress {
+    return { ...this.updateProgress };
+  }
+
+  private async runUpdate(): Promise<void> {
+    const backendDir = process.cwd();          // /opt/clearpanel/backend
+    const projectRoot = path.resolve(backendDir, '..');  // /opt/clearpanel
+
+    this.updateProgress = {
+      running: true, percent: 0,
+      stepIndex: 0, stepTotal: UPDATE_STEPS.length,
+      stepLabel: 'Starting update…', done: false,
+      error: null, needsRestart: false,
+      startedAt: new Date().toISOString(),
+    };
+
+    for (let i = 0; i < UPDATE_STEPS.length; i++) {
+      const step = UPDATE_STEPS[i];
+      const cwd = step.subdir ? path.join(projectRoot, step.subdir) : projectRoot;
+      const isRestart = step.cmd.includes('systemctl restart');
+
+      this.updateProgress.stepIndex = i;
+      this.updateProgress.stepLabel = step.label;
+      this.updateProgress.percent = step.from;
+      if (isRestart) this.updateProgress.needsRestart = true;
+
+      try {
+        await execAsync(step.cmd, { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024 });
+      } catch (err: any) {
+        if (isRestart) {
+          // systemctl restart kills this process — this is expected; mark done before dying
+          this.updateProgress.percent = 100;
+          this.updateProgress.done = true;
+          this.updateProgress.running = false;
+          return;
+        }
+        const detail = (err.stderr || err.message || '').toString().slice(0, 500);
+        this.updateProgress.error = `"${step.label}" failed: ${detail}`;
+        this.updateProgress.running = false;
+        return;
+      }
+
+      this.updateProgress.percent = step.to;
+    }
+
+    this.updateProgress.percent = 100;
+    this.updateProgress.done = true;
+    this.updateProgress.running = false;
+    this.updateProgress.stepLabel = 'Update complete!';
   }
 }

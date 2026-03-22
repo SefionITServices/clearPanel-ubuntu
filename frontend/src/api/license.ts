@@ -29,4 +29,15 @@ export const licenseApi = {
 
   /** Check for updates */
   checkUpdate: () => fetchJSON(`${API_BASE}/update`),
+
+  /** Start a background panel update */
+  startUpdate: (): Promise<{ started: boolean; error?: string }> =>
+    fetchJSON(`${API_BASE}/start-update`, { method: 'POST' }),
+
+  /** Poll current update progress */
+  getUpdateProgress: (): Promise<{
+    running: boolean; percent: number; stepIndex: number; stepTotal: number;
+    stepLabel: string; done: boolean; error: string | null;
+    needsRestart: boolean; startedAt: string | null;
+  }> => fetchJSON(`${API_BASE}/update-progress`),
 };
