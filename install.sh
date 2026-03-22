@@ -212,8 +212,13 @@ elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
 fi
 
 if [ -n "$NGINX_CONF_FILE" ]; then
-    # Replace server_name with _ to allow IP access
-    sed -i 's/server_name your-domain.com www.your-domain.com;/server_name _;/' "$NGINX_CONF_FILE"
+    # Replace placeholder with server IP + localhost (prevents wildcard catch-all panel exposure)
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -n "$SERVER_IP" ]; then
+        sed -i "s/server_name your-domain.com www.your-domain.com;/server_name ${SERVER_IP} localhost;/" "$NGINX_CONF_FILE"
+    else
+        sed -i 's/server_name your-domain.com www.your-domain.com;/server_name localhost;/' "$NGINX_CONF_FILE"
+    fi
 fi
 
 if [ -d "/etc/nginx/sites-enabled" ]; then

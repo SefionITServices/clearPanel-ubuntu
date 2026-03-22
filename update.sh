@@ -133,8 +133,8 @@ echo -e "${YELLOW}🔐 Refreshing sudoers permissions...${NC}"
 bash "$INSTALL_DIR/scripts/update-sudoers.sh"
 echo -e "${GREEN}✓ Sudoers updated${NC}"
 
-# ── Step 2c: Patch nginx config (add /socket.io block if missing) ──
-echo -e "${YELLOW}🌐 Checking nginx config for WebSocket proxy...${NC}"
+# ── Step 2c: Patch nginx config (socket.io + strict catch-all) ─────
+echo -e "${YELLOW}🌐 Checking nginx config for WebSocket proxy and catch-all rules...${NC}"
 NGINX_CONF=""
 if [ -f "/etc/nginx/sites-available/clearpanel" ]; then
     NGINX_CONF="/etc/nginx/sites-available/clearpanel"
@@ -142,18 +142,55 @@ elif [ -f "/etc/nginx/conf.d/clearpanel.conf" ]; then
     NGINX_CONF="/etc/nginx/conf.d/clearpanel.conf"
 fi
 
-if [ -n "$NGINX_CONF" ] && ! grep -q "location /socket.io" "$NGINX_CONF"; then
-    echo -e "${YELLOW}  Adding /socket.io proxy block for WebSocket terminal...${NC}"
-    # Insert the socket.io block before the first "location /api {" line
-    sed -i '/location \/api {/i \    # Socket.IO (WebSocket terminal)\n    location /socket.io {\n        proxy_pass http://127.0.0.1:3334;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_read_timeout 3600;\n        proxy_send_timeout 3600;\n    }\n' "$NGINX_CONF"
-    if nginx -t > /dev/null 2>&1; then
-        systemctl reload nginx
-        echo -e "${GREEN}✓ WebSocket proxy block added and nginx reloaded${NC}"
-    else
-        echo -e "${RED}⚠ Nginx config test failed after socket.io patch — check: sudo nginx -t${NC}"
+if [ -n "$NGINX_CONF" ]; then
+    NGINX_CHANGED=0
+
+    if ! grep -q "location /socket.io" "$NGINX_CONF"; then
+        echo -e "${YELLOW}  Adding /socket.io proxy block for WebSocket terminal...${NC}"
+        sed -i '/location \/api {/i \    # Socket.IO (WebSocket terminal)\n    location /socket.io {\n        proxy_pass http://127.0.0.1:3334;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_read_timeout 3600;\n        proxy_send_timeout 3600;\n    }\n' "$NGINX_CONF"
+        NGINX_CHANGED=1
     fi
-else
-    echo -e "${GREEN}✓ Nginx WebSocket proxy already configured${NC}"
+
+    # Migrate legacy broad catch-all panel config to explicit panel hosts
+    if grep -q "server_name _;" "$NGINX_CONF"; then
+        SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        if [ -n "$SERVER_IP" ]; then
+            sed -i "0,/server_name _;/s//server_name ${SERVER_IP} localhost;/" "$NGINX_CONF"
+        else
+            sed -i "0,/server_name _;/s//server_name localhost;/" "$NGINX_CONF"
+        fi
+        NGINX_CHANGED=1
+    fi
+
+    # Ensure strict catch-all block exists for unmatched domains
+    if ! grep -q "clearpanel-catchall" "$NGINX_CONF"; then
+        TMP_NGINX="$(mktemp)"
+        cat > "$TMP_NGINX" << 'EOF'
+# clearpanel-catchall: block unmatched domains so they never fall through to panel UI
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+
+EOF
+        cat "$NGINX_CONF" >> "$TMP_NGINX"
+        cat "$TMP_NGINX" > "$NGINX_CONF"
+        rm -f "$TMP_NGINX"
+        NGINX_CHANGED=1
+    fi
+
+    if [ "$NGINX_CHANGED" -eq 1 ]; then
+        if nginx -t > /dev/null 2>&1; then
+            systemctl reload nginx
+            echo -e "${GREEN}✓ Nginx config patched and reloaded${NC}"
+        else
+            echo -e "${RED}⚠ Nginx config test failed after patch — check: sudo nginx -t${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ Nginx config already up-to-date${NC}"
+    fi
 fi
 
 # ── Step 2d: Sanitize BIND9 named.conf.local (remove stray };) ─────

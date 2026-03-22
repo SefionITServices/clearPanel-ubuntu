@@ -1,5 +1,14 @@
+# clearpanel-catchall: block unmatched domains so they never fall through to panel UI
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+
 server {
     listen 80;
+    listen [::]:80;
     server_name your-domain.com www.your-domain.com;
 
     # Redirect HTTP to HTTPS (uncomment after setting up SSL)

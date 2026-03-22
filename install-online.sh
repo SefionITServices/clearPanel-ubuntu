@@ -339,8 +339,13 @@ else
     cp "$INSTALL_DIR/nginx.conf.example" "$NGINX_DEST"
 fi
 
-# Allow IP access (replace domain placeholder with catch-all)
-sed -i 's/server_name your-domain.com www.your-domain.com;/server_name _;/' "$NGINX_DEST"
+# Allow panel access by server IP/localhost (without wildcard catch-all behavior)
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -n "$SERVER_IP" ]; then
+    sed -i "s/server_name your-domain.com www.your-domain.com;/server_name ${SERVER_IP} localhost;/" "$NGINX_DEST"
+else
+    sed -i 's/server_name your-domain.com www.your-domain.com;/server_name localhost;/' "$NGINX_DEST"
+fi
 
 if nginx -t > /dev/null 2>&1; then
     systemctl enable nginx > /dev/null 2>&1
