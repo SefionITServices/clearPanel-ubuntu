@@ -50,4 +50,11 @@ export const projectDetectorApi = {
 
   scanPath: (folderPath: string): Promise<ProjectDetection> =>
     fetchJSON(`${API_BASE}/scan?path=${encodeURIComponent(folderPath)}`),
+
+  runCommand: (folderPath: string, command: string): Promise<{ success: boolean; output?: string; error?: string }> =>
+    fetchJSON(`${API_BASE}/run-command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath, command }),
+    }),
 };

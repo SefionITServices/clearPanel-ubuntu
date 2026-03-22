@@ -1,8 +1,13 @@
-import { Controller, Get, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ProjectDetectorService } from './project-detector.service';
 import { getDataFilePath } from '../common/paths';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 @Controller('api/project-detector')
 export class ProjectDetectorController {
@@ -43,6 +48,40 @@ export class ProjectDetectorController {
       return res.json({ success: true, folderPath, ...result });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  /**
+   * POST /api/project-detector/run-command
+   * { folderPath, command } — runs a safe, short-lived command inside the project folder.
+   * Only allowed commands: npm install, npm run build, npm run start, pip install, composer install.
+   */
+  @Post('run-command')
+  async runCommand(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    const { folderPath, command } = body ?? {};
+    if (!folderPath || !command) {
+      return res.status(400).json({ success: false, error: 'folderPath and command required' });
+    }
+    // Allowlist: only permit specific safe commands
+    const allowed = [
+      /^npm (install|ci|run build|run start|run dev)$/,
+      /^pnpm (install|run build|run start|run dev)$/,
+      /^yarn (install|build|start|dev)$/,
+      /^pip install -r requirements\.txt$/,
+      /^composer install$/,
+    ];
+    if (!allowed.some((re) => re.test(command.trim()))) {
+      return res.status(403).json({ success: false, error: `Command not allowed: ${command}` });
+    }
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: folderPath,
+        timeout: 120_000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      return res.json({ success: true, output: stdout + stderr });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message, output: e.stdout + e.stderr });
     }
   }
 

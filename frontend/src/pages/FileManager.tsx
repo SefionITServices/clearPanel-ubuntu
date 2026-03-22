@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -178,6 +179,8 @@ const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
 // ==========================================================
 
 export default function FileManagerPage() {
+  const [searchParams] = useSearchParams();
+
   // Core state
   const [currentPath, setCurrentPath] = useState('');
   const [items, setItems] = useState<FileItem[]>([]);
@@ -275,7 +278,8 @@ export default function FileManagerPage() {
   }, []);
 
   useEffect(() => {
-    void loadFiles(currentPath);
+    const initialPath = searchParams.get('path') ?? '';
+    void loadFiles(initialPath);
     void loadDiskUsage();
   }, []);
 

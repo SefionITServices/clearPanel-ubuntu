@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -39,6 +40,9 @@ import {
   Close as CloseIcon,
   Info as InfoIcon,
   VpnKey as VpnKeyIcon,
+  PlayArrow as PlayArrowIcon,
+  Build as BuildIcon,
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { webserverApi } from '../api/webserver';
@@ -92,6 +96,7 @@ function projectTypeIcon(type: ProjectType) {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function WebserverPage() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<NginxStatus | null>(null);
   const [domains, setDomains] = useState<DomainInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +115,11 @@ export default function WebserverPage() {
   const [drawerPort, setDrawerPort] = useState('');
   const [drawerApplying, setDrawerApplying] = useState(false);
 
+  // Run command state
+  const [runOutput, setRunOutput] = useState<string | null>(null);
+  const [runLoading, setRunLoading] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false, message: '', severity: 'success',
   });
@@ -125,7 +135,16 @@ export default function WebserverPage() {
         domainsApi.list().catch(() => []),
       ]);
       setStatus(s);
-      setDomains(Array.isArray(d) ? d : []);
+      const domainList: DomainInfo[] = Array.isArray(d) ? d : [];
+      setDomains(domainList);
+      // Auto-scan all domains after loading
+      domainList.forEach((domain) => {
+        setDetecting((prev) => ({ ...prev, [domain.id]: true }));
+        projectDetectorApi.scanDomain(domain.name)
+          .then((result) => setDetections((prev) => ({ ...prev, [domain.id]: result })))
+          .catch(() => { /* silent fail per domain */ })
+          .finally(() => setDetecting((prev) => ({ ...prev, [domain.id]: false })));
+      });
     } catch (err: any) {
       toast(err.message || 'Failed to load status', 'error');
     } finally {
@@ -219,6 +238,8 @@ export default function WebserverPage() {
   const openSetup = async (domain: DomainInfo) => {
     setDrawerDomain(domain);
     setDrawerOpen(true);
+    setRunOutput(null);
+    setRunError(null);
     let detection: ProjectDetection | null = detections[domain.id] ?? null;
     if (!detection) {
       detection = (await detectProject(domain)) ?? null;
@@ -234,6 +255,31 @@ export default function WebserverPage() {
     setDrawerDomain(null);
     setDrawerDetection(null);
     setDrawerPort('');
+    setRunOutput(null);
+    setRunError(null);
+  };
+
+  // ── Run command ─────────────────────────────────────────
+
+  const handleRunCommand = async (cmd: string) => {
+    if (!drawerDetection?.folderPath && !drawerDomain) return;
+    const folder = drawerDetection?.folderPath || drawerDomain?.folderPath || '';
+    setRunLoading(true);
+    setRunOutput(null);
+    setRunError(null);
+    try {
+      const result = await projectDetectorApi.runCommand(folder, cmd);
+      if (result.success) {
+        setRunOutput(result.output || '(no output)');
+      } else {
+        setRunError(result.error || 'Command failed');
+        setRunOutput(result.output || null);
+      }
+    } catch (e: any) {
+      setRunError(e.message);
+    } finally {
+      setRunLoading(false);
+    }
   };
 
   const handleDrawerApply = async () => {
@@ -446,21 +492,92 @@ export default function WebserverPage() {
             </Alert>
           </Box>
         )}
+
+        {/* Run Commands */}
+        {drawerDetection && (drawerDetection.buildCommand || drawerDetection.startCommand) && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              <BuildIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
+              Run Commands
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {drawerDetection.buildCommand && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={runLoading ? <CircularProgress size={14} /> : <BuildIcon fontSize="small" />}
+                  disabled={runLoading}
+                  onClick={() => handleRunCommand(drawerDetection!.buildCommand!)}
+                >
+                  {drawerDetection.buildCommand}
+                </Button>
+              )}
+              {drawerDetection.startCommand && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="success"
+                  startIcon={runLoading ? <CircularProgress size={14} /> : <PlayArrowIcon fontSize="small" />}
+                  disabled={runLoading}
+                  onClick={() => handleRunCommand(drawerDetection!.startCommand!)}
+                >
+                  {drawerDetection.startCommand}
+                </Button>
+              )}
+            </Stack>
+            {runError && (
+              <Alert severity="error" sx={{ mt: 1.5 }}>{runError}</Alert>
+            )}
+            {runOutput !== null && (
+              <Box
+                component="pre"
+                sx={{
+                  mt: 1.5,
+                  p: 1.5,
+                  borderRadius: 1,
+                  bgcolor: 'grey.900',
+                  color: 'grey.100',
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {runOutput}
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
 
       {/* Drawer footer */}
       <Box sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={2}>
-          <Button
-            variant="contained"
-            fullWidth
-            onClick={handleDrawerApply}
-            disabled={drawerApplying}
-            startIcon={drawerApplying ? <CircularProgress size={16} color="inherit" /> : <SettingsIcon />}
-          >
-            {drawerApplying ? 'Applying…' : 'Apply Configuration'}
-          </Button>
-          <Button variant="outlined" onClick={closeDrawer}>Cancel</Button>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={2}>
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleDrawerApply}
+              disabled={drawerApplying}
+              startIcon={drawerApplying ? <CircularProgress size={16} color="inherit" /> : <SettingsIcon />}
+            >
+              {drawerApplying ? 'Applying…' : 'Apply Configuration'}
+            </Button>
+            <Button variant="outlined" onClick={closeDrawer}>Cancel</Button>
+          </Stack>
+          {drawerDetection?.folderPath && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<OpenInNewIcon />}
+              onClick={() => navigate(`/files?path=${encodeURIComponent(drawerDetection!.folderPath!)}`)}
+              fullWidth
+            >
+              Open in File Manager
+            </Button>
+          )}
         </Stack>
       </Box>
     </Drawer>
