@@ -93,6 +93,11 @@ function getFileExtension(name: string): string {
   return idx > 0 ? name.slice(idx + 1).toLowerCase() : '';
 }
 
+function isEnvLikeFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === '.env' || lower.startsWith('.env.');
+}
+
 function isArchive(name: string): boolean {
   const ext = getFileExtension(name);
   return ['zip', 'tar', 'gz', 'tgz', 'tar.gz', 'bz2'].includes(ext) || name.endsWith('.tar.gz');
@@ -103,6 +108,7 @@ function isImage(name: string): boolean {
 }
 
 function isEditable(name: string): boolean {
+  if (isEnvLikeFile(name)) return true;
   const ext = getFileExtension(name);
   const editable = [
     'txt', 'md', 'html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'json', 'xml', 'yml', 'yaml',
@@ -117,6 +123,7 @@ function isEditable(name: string): boolean {
 }
 
 function getMonacoLanguage(name: string): string {
+  if (isEnvLikeFile(name)) return 'plaintext';
   const ext = getFileExtension(name);
   const map: Record<string, string> = {
     js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
