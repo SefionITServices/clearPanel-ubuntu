@@ -40,6 +40,10 @@ export const databaseApi = {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, password, host, engine }),
   }),
+  updateUserHost: (name: string, oldHost: string, newHost: string, engine?: string) => fetchJSON(`${API_BASE}/users/host`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, oldHost, newHost, engine }),
+  }),
   grant: (user: string, database: string, privileges?: string[], host?: string, engine?: string) =>
     fetchJSON(`${API_BASE}/privileges/grant`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

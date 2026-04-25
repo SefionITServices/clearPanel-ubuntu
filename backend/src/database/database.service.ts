@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { exec as execCb, execSync } from 'child_process';
 import { promisify } from 'util';
+import { FirewallService } from '../firewall/firewall.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -39,6 +40,8 @@ interface UserPrivilege {
 export class DatabaseService {
   private readonly logger = new Logger(DatabaseService.name);
   private prefix = '';
+
+  constructor(private readonly firewall: FirewallService) {}
 
   private getPrefix(): string {
     if (this.prefix) return this.prefix;
@@ -748,6 +751,29 @@ export class DatabaseService {
     return { success: true, message: 'Password changed' };
   }
 
+  /**
+   * Change a MySQL user's host (e.g. from localhost to %)
+   */
+  async updateUserHost(name: string, oldHost: string, newHost: string): Promise<{ success: boolean; message: string }> {
+    const prefix = this.getPrefix();
+    if (!name.startsWith(`${prefix}_`)) throw new Error('Access denied');
+    
+    const safeOldHost = oldHost.replace(/[^a-zA-Z0-9.%_-]/g, '') || 'localhost';
+    const safeNewHost = newHost.replace(/[^a-zA-Z0-9.%_-]/g, '') || 'localhost';
+    
+    await this.mysqlExec(`RENAME USER '${name}'@'${safeOldHost}' TO '${name}'@'${safeNewHost}'`);
+    await this.mysqlExec(`FLUSH PRIVILEGES`);
+    return { success: true, message: `User host updated to ${newHost}` };
+  }
+
+  /**
+   * PostgreSQL roles don't have host restrictions in the same way (handled via pg_hba.conf),
+   * but for consistency we'll provide a placeholder or handle specific cases if needed.
+   */
+  async updatePgUserHost(name: string, newHost: string): Promise<{ success: boolean; message: string }> {
+    return { success: true, message: 'PostgreSQL user hosts are managed via global remote access settings' };
+  }
+
   // ========================
   // POSTGRESQL — Privileges
   // ========================
@@ -1230,6 +1256,24 @@ export class DatabaseService {
         }
       }
 
+      // Also handle firewall
+      try {
+        if (enabled) {
+          await this.firewall.addRule({
+            action: 'allow',
+            port: '3306',
+            protocol: 'tcp',
+            comment: 'MySQL Remote Access (Auto)',
+          });
+        } else {
+          // We don't necessarily want to delete it if it was manually added,
+          // but for consistency we can try to find and remove the auto-added one
+          // or just leave it. For now, let's just make sure it's open when enabled.
+        }
+      } catch (fwErr: any) {
+        this.logger.warn(`Failed to update firewall for MySQL: ${fwErr.message}`);
+      }
+
       return {
         success: true,
         message: `MySQL remote access ${enabled ? 'enabled' : 'disabled'}. Service restarted.`,
@@ -1249,6 +1293,14 @@ export class DatabaseService {
             await this.sudo(`bash -c "echo 'host    all    all    0.0.0.0/0    md5' >> '${hbaConf}'"`, 5000);
             await this.sudo(`bash -c "echo 'host    all    all    ::/0         md5' >> '${hbaConf}'"`, 5000);
           }
+          
+          // Firewall
+          await this.firewall.addRule({
+            action: 'allow',
+            port: '5432',
+            protocol: 'tcp',
+            comment: 'PostgreSQL Remote Access (Auto)',
+          });
         } else {
           // Remove remote entries
           await this.sudo(`sed -i '/0\\.0\\.0\\.0\\/0/d' "${hbaConf}"`, 5000);

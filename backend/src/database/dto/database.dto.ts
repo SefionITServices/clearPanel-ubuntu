@@ -148,3 +148,21 @@ export class SetRemoteAccessDto {
   @IsBoolean()
   enabled!: boolean;
 }
+
+export class UpdateUserHostDto {
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  oldHost!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  newHost!: string;
+
+  @IsString()
+  @IsOptional()
+  engine?: string;
+}

@@ -26,6 +26,7 @@ import {
   Search as SearchIcon,
   Security,
   Person,
+  Public,
 } from '@mui/icons-material';
 import { DbUser } from './utils';
 
@@ -36,6 +37,7 @@ interface UserManagerProps {
   onDelete: (name: string, host: string) => void;
   onChangePasswordOpen: (name: string, host: string) => void;
   onViewPrivileges: (name: string, host: string) => void;
+  onUpdateHost: (name: string, host: string, newHost: string) => void;
   loading?: boolean;
 }
 
@@ -46,6 +48,7 @@ export function UserManager({
   onDelete,
   onChangePasswordOpen,
   onViewPrivileges,
+  onUpdateHost,
   loading,
 }: UserManagerProps) {
   const [search, setSearch] = useState('');
@@ -137,6 +140,15 @@ export function UserManager({
                       <Tooltip title="View/Edit Privileges">
                         <IconButton size="small" color="primary" onClick={() => onViewPrivileges(user.user, user.host)}>
                           <Security fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title={user.host === 'localhost' ? 'Allow Remote Access (%)' : 'Disable Remote Access (localhost)'}>
+                        <IconButton 
+                          size="small" 
+                          color="primary" 
+                          onClick={() => onUpdateHost(user.user, user.host, user.host === 'localhost' ? '%' : 'localhost')}
+                        >
+                          <Public fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Change Password">

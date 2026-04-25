@@ -363,6 +363,13 @@ export default function DatabaseManagerPage() {
                   onDelete={handleDeleteUser}
                   onChangePasswordOpen={(u, h) => { setChangePassData({ u, h }); setChangePassOpen(true); }}
                   onViewPrivileges={handleViewPrivs}
+                  onUpdateHost={async (user, oldHost, newHost) => {
+                    try {
+                      await dbAPI.updateUserHost(user, oldHost, newHost, engineParam);
+                      setSuccess(`User host updated to ${newHost}`);
+                      loadData();
+                    } catch (e: any) { setError(e.message); }
+                  }}
                 />
               )}
               {tab === 2 && (

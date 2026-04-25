@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query, UseInterceptors, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Req, Res, HttpStatus, Query, UseInterceptors, UseGuards } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { DatabaseService } from './database.service';
@@ -6,7 +6,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import {
   CreateDatabaseDto, DeleteDatabaseDto, CreateUserDto, DeleteUserDto,
   ChangePasswordDto, GrantPrivilegesDto, RevokePrivilegesDto, ExecuteQueryDto,
-  EngineActionDto, TableOperationDto, SetRemoteAccessDto,
+  EngineActionDto, TableOperationDto, SetRemoteAccessDto, UpdateUserHostDto,
 } from './dto/database.dto';
 
 @Controller('database')
@@ -186,6 +186,22 @@ export class DatabaseController {
       const data = this.isPg(body.engine)
         ? await this.db.changePgPassword(body.name, body.password)
         : await this.db.changePassword(body.name, body.password, body.host);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('users/host')
+  async updateUserHost(
+    @Body() body: UpdateUserHostDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    try {
+      const data = this.isPg(body.engine)
+        ? await this.db.updatePgUserHost(body.name, body.newHost)
+        : await this.db.updateUserHost(body.name, body.oldHost, body.newHost);
       return res.json(data);
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
