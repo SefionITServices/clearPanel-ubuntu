@@ -1227,7 +1227,10 @@ export class DatabaseService {
     engine: 'mysql' | 'postgresql',
     enabled: boolean,
   ): Promise<{ success: boolean; message: string }> {
+    const actions: string[] = [];
+
     if (engine === 'mysql') {
+      // 1. Update bind-address in config
       const confPaths = [
         '/etc/mysql/mariadb.conf.d/50-server.cnf',
         '/etc/mysql/mysql.conf.d/mysqld.cnf',
@@ -1238,14 +1241,15 @@ export class DatabaseService {
         try {
           await this.sudo(`test -f "${confPath}"`, 3000);
           const newBind = enabled ? '0.0.0.0' : '127.0.0.1';
-          await this.sudo(`sed -i "s/^bind-address\\s*=.*/bind-address = ${newBind}/" "${confPath}"`, 5000);
+          await this.sudo(`sed -i "s/^bind-address\\\\s*=.*/bind-address = ${newBind}/" "${confPath}"`, 5000);
           found = true;
+          actions.push(`bind-address set to ${newBind}`);
           break;
         } catch {}
       }
       if (!found) throw new Error('MySQL/MariaDB configuration file not found');
 
-      // Restart the service
+      // 2. Restart the service
       try {
         await exec('sudo systemctl restart mariadb', { timeout: 15000 });
       } catch {
@@ -1255,8 +1259,9 @@ export class DatabaseService {
           await exec('sudo systemctl restart mysqld', { timeout: 15000 });
         }
       }
+      actions.push('Service restarted');
 
-      // Also handle firewall
+      // 3. Firewall: open port 3306
       try {
         if (enabled) {
           await this.firewall.addRule({
@@ -1265,52 +1270,85 @@ export class DatabaseService {
             protocol: 'tcp',
             comment: 'MySQL Remote Access (Auto)',
           });
-        } else {
-          // We don't necessarily want to delete it if it was manually added,
-          // but for consistency we can try to find and remove the auto-added one
-          // or just leave it. For now, let's just make sure it's open when enabled.
+          actions.push('Firewall port 3306 opened');
         }
       } catch (fwErr: any) {
         this.logger.warn(`Failed to update firewall for MySQL: ${fwErr.message}`);
+        actions.push(`Firewall warning: ${fwErr.message}`);
+      }
+
+      // 4. Update all user hosts: localhost ↔ %
+      try {
+        const users = await this.listUsers();
+        for (const user of users) {
+          try {
+            if (enabled && user.host === 'localhost') {
+              await this.mysqlExec(`RENAME USER '${user.user}'@'localhost' TO '${user.user}'@'%'`);
+              actions.push(`User ${user.user}: localhost → %`);
+            } else if (!enabled && user.host === '%') {
+              await this.mysqlExec(`RENAME USER '${user.user}'@'%' TO '${user.user}'@'localhost'`);
+              actions.push(`User ${user.user}: % → localhost`);
+            }
+          } catch (userErr: any) {
+            this.logger.warn(`Failed to update host for user ${user.user}: ${userErr.message}`);
+          }
+        }
+        await this.mysqlExec(`FLUSH PRIVILEGES`);
+      } catch (userErr: any) {
+        this.logger.warn(`Failed to update user hosts: ${userErr.message}`);
+        actions.push(`User host warning: ${userErr.message}`);
       }
 
       return {
         success: true,
-        message: `MySQL remote access ${enabled ? 'enabled' : 'disabled'}. Service restarted.`,
+        message: `MySQL remote access ${enabled ? 'enabled' : 'disabled'}. ${actions.join('; ')}.`,
       };
     } else if (engine === 'postgresql') {
       try {
+        // 1. Update listen_addresses
         const pgConf = (await this.sudo(`-u postgres psql -t -A -c "SHOW config_file"`, 5000)).trim();
         const newListen = enabled ? "'*'" : "'localhost'";
-        await this.sudo(`sed -i "s/^#\\?listen_addresses\\s*=.*/listen_addresses = ${newListen}/" "${pgConf}"`, 5000);
+        await this.sudo(`sed -i "s/^#\\\\?listen_addresses\\\\s*=.*/listen_addresses = ${newListen}/" "${pgConf}"`, 5000);
+        actions.push(`listen_addresses set to ${enabled ? '*' : 'localhost'}`);
 
-        // Also update pg_hba.conf to allow remote connections
+        // 2. Update pg_hba.conf
         const hbaConf = (await this.sudo(`-u postgres psql -t -A -c "SHOW hba_file"`, 5000)).trim();
         if (enabled) {
-          // Add entry for remote connections if not already present
           const hbaContent = await this.sudo(`cat "${hbaConf}"`, 5000);
           if (!hbaContent.includes('0.0.0.0/0')) {
             await this.sudo(`bash -c "echo 'host    all    all    0.0.0.0/0    md5' >> '${hbaConf}'"`, 5000);
             await this.sudo(`bash -c "echo 'host    all    all    ::/0         md5' >> '${hbaConf}'"`, 5000);
+            actions.push('pg_hba.conf updated for remote connections');
           }
-          
-          // Firewall
-          await this.firewall.addRule({
-            action: 'allow',
-            port: '5432',
-            protocol: 'tcp',
-            comment: 'PostgreSQL Remote Access (Auto)',
-          });
         } else {
-          // Remove remote entries
-          await this.sudo(`sed -i '/0\\.0\\.0\\.0\\/0/d' "${hbaConf}"`, 5000);
-          await this.sudo(`sed -i '/::\\/0/d' "${hbaConf}"`, 5000);
+          await this.sudo(`sed -i '/0\\\\.0\\\\.0\\\\.0\\\\/0/d' "${hbaConf}"`, 5000);
+          await this.sudo(`sed -i '/::\\\\/0/d' "${hbaConf}"`, 5000);
+          actions.push('pg_hba.conf remote entries removed');
         }
 
+        // 3. Firewall
+        try {
+          if (enabled) {
+            await this.firewall.addRule({
+              action: 'allow',
+              port: '5432',
+              protocol: 'tcp',
+              comment: 'PostgreSQL Remote Access (Auto)',
+            });
+            actions.push('Firewall port 5432 opened');
+          }
+        } catch (fwErr: any) {
+          this.logger.warn(`Failed to update firewall for PostgreSQL: ${fwErr.message}`);
+          actions.push(`Firewall warning: ${fwErr.message}`);
+        }
+
+        // 4. Restart service
         await exec('sudo systemctl restart postgresql', { timeout: 15000 });
+        actions.push('Service restarted');
+
         return {
           success: true,
-          message: `PostgreSQL remote access ${enabled ? 'enabled' : 'disabled'}. Service restarted.`,
+          message: `PostgreSQL remote access ${enabled ? 'enabled' : 'disabled'}. ${actions.join('; ')}.`,
         };
       } catch (e: any) {
         throw new Error(`Failed to configure PostgreSQL remote access: ${e.message}`);
@@ -1320,3 +1358,4 @@ export class DatabaseService {
     throw new Error('Invalid engine');
   }
 }
+
