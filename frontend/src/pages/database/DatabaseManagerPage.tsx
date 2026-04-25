@@ -44,6 +44,7 @@ import { UserManager } from '../../components/database/UserManager';
 import { PrivilegeManager } from '../../components/database/PrivilegeManager';
 import { SqlConsole } from '../../components/database/SqlConsole';
 import { MaintenancePanel } from '../../components/database/MaintenancePanel';
+import { ConnectionInfo } from '../../components/database/ConnectionInfo';
 
 export default function DatabaseManagerPage() {
   const [tab, setTab] = useState(0);
@@ -60,6 +61,7 @@ export default function DatabaseManagerPage() {
   const [databases, setDatabases] = useState<DbInfo[]>([]);
   const [users, setUsers] = useState<DbUser[]>([]);
   const [remoteAccess, setRemoteAccess] = useState<any>({});
+  const [connectionInfo, setConnectionInfo] = useState<any>(null);
 
   // Dialogs
   const [createDbOpen, setCreateDbOpen] = useState(false);
@@ -114,14 +116,16 @@ export default function DatabaseManagerPage() {
     }
 
     try {
-      const [dbData, userData, raData] = await Promise.all([
+      const [dbData, userData, raData, connData] = await Promise.all([
         dbAPI.listDatabases(engineParam),
         dbAPI.listUsers(engineParam),
         dbAPI.remoteAccess(),
+        dbAPI.connectionInfo(),
       ]);
       setDatabases(dbData.databases || []);
       setUsers(userData.users || []);
       setRemoteAccess(raData);
+      setConnectionInfo(connData);
     } catch (e: any) { setError(e.message); }
   }, [engines, activeEngine, engineParam]);
 
@@ -320,6 +324,7 @@ export default function DatabaseManagerPage() {
                 <Tab label="Users" sx={{ textTransform: 'none' }} />
                 <Tab label="SQL Console" sx={{ textTransform: 'none' }} />
                 <Tab label="Maintenance" sx={{ textTransform: 'none' }} />
+                <Tab label="Connection Info" sx={{ textTransform: 'none' }} />
               </Tabs>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 {activeEngineObj && (
@@ -375,6 +380,22 @@ export default function DatabaseManagerPage() {
                   onCheck={(db, t) => dbAPI.checkTable(db, t)}
                   onRepair={(db, t) => dbAPI.repairTable(db, t)}
                   onOptimize={(db, t) => dbAPI.optimizeTable(db, t)}
+                />
+              )}
+              {tab === 4 && (
+                <ConnectionInfo
+                  engine={activeEngine}
+                  connectionInfo={
+                    activeEngine === 'postgresql'
+                      ? connectionInfo?.postgresql
+                      : connectionInfo?.mysql
+                  }
+                  remoteEnabled={
+                    activeEngine === 'postgresql'
+                      ? remoteAccess?.postgresql?.enabled
+                      : remoteAccess?.mysql?.enabled
+                  }
+                  users={users}
                 />
               )}
             </Box>

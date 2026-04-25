@@ -1014,11 +1014,44 @@ export class DatabaseService {
   // CONNECTION INFO
   // ========================
 
+  /**
+   * Get the server's public/external IP address for remote connections
+   */
+  private async getServerPublicIp(): Promise<string> {
+    // Try hostname -I (first non-loopback IP)
+    try {
+      const { stdout } = await exec('hostname -I 2>/dev/null', { timeout: 5000 });
+      const ips = stdout.trim().split(/\s+/);
+      const nonLocal = ips.find(ip => ip && !ip.startsWith('127.') && !ip.startsWith('::1'));
+      if (nonLocal) return nonLocal;
+    } catch {}
+
+    // Try curl to external service
+    try {
+      const { stdout } = await exec('curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || curl -s --connect-timeout 3 icanhazip.com 2>/dev/null', { timeout: 8000 });
+      const ip = stdout.trim();
+      if (ip && /^[\d.]+$/.test(ip)) return ip;
+    } catch {}
+
+    // Fallback to Node's os.networkInterfaces
+    try {
+      const nets = os.networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          if (net.family === 'IPv4' && !net.internal) return net.address;
+        }
+      }
+    } catch {}
+
+    return 'localhost';
+  }
+
   async getConnectionInfo(): Promise<{
-    mysql: { host: string; port: number; socket: string } | null;
-    postgresql: { host: string; port: number } | null;
+    mysql: { host: string; port: number; socket: string; publicIp: string } | null;
+    postgresql: { host: string; port: number; publicIp: string } | null;
   }> {
     const result: any = { mysql: null, postgresql: null };
+    const publicIp = await this.getServerPublicIp();
 
     // MySQL / MariaDB
     try {
@@ -1029,6 +1062,7 @@ export class DatabaseService {
         host: hostnameRaw?.trim() || 'localhost',
         port: parseInt(portRaw?.trim(), 10) || 3306,
         socket: socketRaw?.trim() || '/var/run/mysqld/mysqld.sock',
+        publicIp,
       };
     } catch {}
 
@@ -1038,6 +1072,7 @@ export class DatabaseService {
       result.postgresql = {
         host: 'localhost',
         port: parseInt(portRaw?.trim(), 10) || 5432,
+        publicIp,
       };
     } catch {}
 
