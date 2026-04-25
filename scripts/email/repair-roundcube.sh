@@ -176,6 +176,27 @@ elif [[ "$DB_DSN" == *mysql* ]]; then
   fi
 else
   warn "Could not detect database type from config (db_dsnw: ${DB_DSN:-not set})"
+  # Try to fix by including Debian's auto-generated DB config
+  if [[ -f "/etc/roundcube/debian-db.php" ]] && ! grep -q "debian-db.php" "$ROUNDCUBE_CONF"; then
+    sed -i '1a\\nif (file_exists("/etc/roundcube/debian-db.php")) include_once("/etc/roundcube/debian-db.php");' "$ROUNDCUBE_CONF" 2>/dev/null || true
+    fix "Added debian-db.php include (may contain db_dsnw)"
+    FIXES=$((FIXES + 1))
+  fi
+  # As last resort, add SQLite db_dsnw directly
+  if ! grep -q "\$config\['db_dsnw'\]" "$ROUNDCUBE_CONF"; then
+    printf "\n\$config['db_dsnw'] = 'sqlite:////var/lib/roundcube/db/sqlite.db?mode=0646';\n" >> "$ROUNDCUBE_CONF"
+    # Ensure the DB file exists
+    mkdir -p /var/lib/roundcube/db
+    SCHEMA="/usr/share/roundcube/SQL/sqlite.initial.sql"
+    if [[ ! -f "/var/lib/roundcube/db/sqlite.db" ]] && [[ -f "$SCHEMA" ]]; then
+      apt-get install -y -qq sqlite3 2>/dev/null || true
+      sqlite3 /var/lib/roundcube/db/sqlite.db < "$SCHEMA" 2>/dev/null || true
+    fi
+    chown -R www-data:www-data /var/lib/roundcube/db
+    chmod 660 /var/lib/roundcube/db/sqlite.db 2>/dev/null || true
+    fix "Set db_dsnw to SQLite with initialized database"
+    FIXES=$((FIXES + 1))
+  fi
 fi
 
 set -u
@@ -194,6 +215,73 @@ ok "/var/lib/roundcube owned by www-data"
 VHOST=$(grep -Rl "roundcube" /etc/nginx/sites-enabled/ 2>/dev/null | head -1 || true)
 if [[ -n "$VHOST" ]]; then
   ok "Nginx vhost: ${VHOST}"
+
+  # Check for the broken alias + $request_filename pattern (causes infinite reload)
+  VHOST_CONTENT=$(cat "$VHOST" 2>/dev/null || true)
+  if echo "$VHOST_CONTENT" | grep -q 'request_filename' && echo "$VHOST_CONTENT" | grep -q 'alias /usr/share/roundcube'; then
+    warn "Detected broken nginx pattern: alias + \$request_filename (causes page reload loop)"
+
+    # Detect PHP version from existing config
+    VHOST_PHP_VER=$(echo "$VHOST_CONTENT" | grep -oP 'php\K[\d.]+(?=-fpm)' | head -1)
+    if [[ -z "$VHOST_PHP_VER" ]]; then
+      VHOST_PHP_VER="$PHP_VER"
+    fi
+
+    # Replace the broken roundcube location blocks with the fixed version
+    awk '
+      /# Roundcube webmail/     { skip=1; brace=0; next }
+      /location = \/roundcube/  { skip=1; next }
+      /location \/roundcube\//  { skip=1; brace=0 }
+      skip && /{/               { brace++ }
+      skip && /}/               { brace--; if(brace<=0){skip=0}; next }
+      skip                      { next }
+      { print }
+    ' "$VHOST" > "${VHOST}.tmp"
+
+    # Now insert the fixed block before "location / {"
+    FIXED_BLOCK="
+    # Roundcube webmail
+    location /roundcube/ {
+        alias /usr/share/roundcube/;
+        index index.php;
+
+        location ~ ^/roundcube/(config|temp|logs|bin|SQL)/ { deny all; }
+        location ~ ^/roundcube/\\.(git|svn|ht) { deny all; }
+
+        location ~ ^/roundcube/(.*\\.php)\$ {
+            alias /usr/share/roundcube/\$1;
+            include fastcgi_params;
+            fastcgi_pass unix:/var/run/php/php${VHOST_PHP_VER}-fpm.sock;
+            fastcgi_param SCRIPT_FILENAME /usr/share/roundcube/\$1;
+            fastcgi_param DOCUMENT_ROOT /usr/share/roundcube;
+            fastcgi_index index.php;
+            fastcgi_intercept_errors on;
+        }
+
+        location ~* ^/roundcube/.*\\.(css|js|gif|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot)\$ {
+            expires 30d;
+            add_header Cache-Control \"public, immutable\";
+            try_files \$uri =404;
+        }
+    }
+    location = /roundcube { return 301 /roundcube/; }"
+
+    awk -v block="$FIXED_BLOCK" '
+      /^[[:space:]]+location \/ \{/ && !done {
+        print block
+        done=1
+      }
+      { print }
+    ' "${VHOST}.tmp" > "${VHOST}" && rm -f "${VHOST}.tmp"
+
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx 2>/dev/null || true
+      fix "Rewrote Roundcube nginx config with correct alias+PHP pattern"
+      FIXES=$((FIXES + 1))
+    else
+      err "Nginx config test failed after rewrite — manual intervention needed"
+    fi
+  fi
 else
   VHOST_AVAIL=$(grep -Rl "roundcube" /etc/nginx/sites-available/ 2>/dev/null | head -1 || true)
   if [[ -n "$VHOST_AVAIL" ]]; then

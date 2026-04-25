@@ -153,6 +153,43 @@ EOF
     sed -i "s|\$config\['plugins'\] = array(|\$config['plugins'] = array(\n  'managesieve',\n  'archive',\n  'zipdownload',\n  'newmail_notifier',|" "$ROUNDCUBE_CONF" 2>/dev/null || true
   fi
 
+  # Ensure Debian's dbconfig-common auto-generated DB config is included
+  # This file contains the db_dsnw setting created during apt installation
+  if [[ -f "/etc/roundcube/debian-db.php" ]]; then
+    if ! grep -q "debian-db.php" "$ROUNDCUBE_CONF"; then
+      # Add the include at the top of the config (after <?php)
+      sed -i '1a\\nif (file_exists("/etc/roundcube/debian-db.php")) include_once("/etc/roundcube/debian-db.php");' "$ROUNDCUBE_CONF" 2>/dev/null || true
+      echo "[✓] Added debian-db.php include"
+    fi
+  fi
+
+  # Ensure db_dsnw is set as a fallback (SQLite default)
+  if ! grep -q "\$config\['db_dsnw'\]" "$ROUNDCUBE_CONF"; then
+    if [[ "$DB_TYPE" == "sqlite" ]]; then
+      printf "\n\$config['db_dsnw'] = 'sqlite:////var/lib/roundcube/db/sqlite.db?mode=0646';\n" >> "$ROUNDCUBE_CONF"
+      echo "[✓] Set db_dsnw to SQLite"
+    fi
+  fi
+
+  # Set product_name for branding
+  if ! grep -q "\$config\['product_name'\]" "$ROUNDCUBE_CONF"; then
+    printf "\n\$config['product_name'] = 'ClearPanel Webmail';\n" >> "$ROUNDCUBE_CONF"
+  fi
+
+  # Ensure IMAP connection options allow self-signed certs (common on local installs)
+  if ! grep -q "\$config\['imap_conn_options'\]" "$ROUNDCUBE_CONF"; then
+    cat >>"$ROUNDCUBE_CONF" <<'EOF'
+$config['imap_conn_options'] = [
+    'ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false,
+        'allow_self_signed' => true,
+    ],
+];
+EOF
+    echo "[✓] Added IMAP connection options (self-signed cert support)"
+  fi
+
   set -u
   echo "[✓] Roundcube configuration updated"
 fi
@@ -214,33 +251,62 @@ if [[ "$PATH_ONLY" == "true" ]]; then
   fi
 
   if [ -n "$MAIN_NGINX" ]; then
-    if ! grep -q "location /roundcube/" "$MAIN_NGINX"; then
-      # Insert Roundcube location before the catch-all "location /" block
-      ROUNDCUBE_BLOCK="
+    # Remove any existing roundcube location blocks first (for clean re-install)
+    if grep -q "location.*roundcube" "$MAIN_NGINX"; then
+      echo "[~] Removing existing /roundcube/ location from nginx config..."
+      # Use awk to remove the roundcube blocks
+      awk '
+        /# Roundcube webmail/     { skip=1; brace=0; next }
+        /location = \/roundcube/  { skip=1; next }
+        /location \/roundcube\//  { skip=1; brace=0 }
+        skip && /{/               { brace++ }
+        skip && /}/               { brace--; if(brace<=0){skip=0}; next }
+        skip                      { next }
+        { print }
+      ' "$MAIN_NGINX" > "${MAIN_NGINX}.tmp" && mv "${MAIN_NGINX}.tmp" "$MAIN_NGINX"
+    fi
+
+    # Insert new Roundcube location before the catch-all "location /" block
+    ROUNDCUBE_BLOCK="
     # Roundcube webmail
     location /roundcube/ {
         alias /usr/share/roundcube/;
         index index.php;
-        location ~ \\.php\$ {
-            fastcgi_pass unix:/var/run/php/php${PHP_VER}-fpm.sock;
-            fastcgi_index index.php;
+
+        # Deny access to sensitive directories and files
+        location ~ ^/roundcube/(config|temp|logs|bin|SQL)/ { deny all; }
+        location ~ ^/roundcube/\\\.(git|svn|ht) { deny all; }
+
+        # Handle PHP files — explicit path construction avoids alias resolution bugs
+        location ~ ^/roundcube/(.*\\.php)\$ {
+            alias /usr/share/roundcube/\$1;
             include fastcgi_params;
-            fastcgi_param SCRIPT_FILENAME \$request_filename;
+            fastcgi_pass unix:/var/run/php/php${PHP_VER}-fpm.sock;
+            fastcgi_param SCRIPT_FILENAME /usr/share/roundcube/\$1;
+            fastcgi_param DOCUMENT_ROOT /usr/share/roundcube;
+            fastcgi_param PATH_INFO \$2;
+            fastcgi_index index.php;
+            fastcgi_intercept_errors on;
+        }
+
+        # Cache static assets
+        location ~* ^/roundcube/.*\\.(css|js|gif|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot)\$ {
+            expires 30d;
+            add_header Cache-Control \"public, immutable\";
+            try_files \$uri =404;
         }
     }
     location = /roundcube { return 301 /roundcube/; }"
-      # Use awk to insert before the "location /" block
-      awk -v block="$ROUNDCUBE_BLOCK" '
-        /^[[:space:]]+location \/ \{/ && !done {
-          print block
-          done=1
-        }
-        { print }
-      ' "$MAIN_NGINX" > "${MAIN_NGINX}.tmp" && mv "${MAIN_NGINX}.tmp" "$MAIN_NGINX"
-      echo "[✓] Added /roundcube/ location to main nginx config"
-    else
-      echo "[✓] /roundcube/ location already present in nginx config"
-    fi
+    # Use awk to insert before the "location /" block
+    awk -v block="$ROUNDCUBE_BLOCK" '
+      /^[[:space:]]+location \/ \{/ && !done {
+        print block
+        done=1
+      }
+      { print }
+    ' "$MAIN_NGINX" > "${MAIN_NGINX}.tmp" && mv "${MAIN_NGINX}.tmp" "$MAIN_NGINX"
+    echo "[✓] Added /roundcube/ location to main nginx config"
+
     if nginx -t 2>/dev/null; then
       systemctl reload nginx 2>/dev/null || true
       echo "[✓] Nginx reloaded"

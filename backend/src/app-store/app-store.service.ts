@@ -1692,6 +1692,43 @@ location /pgadmin {
       detail: postfixRunning ? 'Postfix is running' : 'Postfix is NOT running — sending mail will fail',
     });
 
+    // Check for the broken alias + $request_filename nginx pattern
+    if (vhostPath) {
+      try {
+        const conf = await this.sudo(`cat "${vhostPath}"`);
+        const hasBrokenPattern = conf.includes('request_filename') && conf.includes('alias /usr/share/roundcube');
+        if (hasBrokenPattern) {
+          checks.push({
+            name: 'Nginx Alias Config',
+            status: 'error',
+            detail: 'Broken pattern: alias + $request_filename causes infinite page reload. Run "Repair" to fix.',
+          });
+        } else {
+          checks.push({
+            name: 'Nginx Alias Config',
+            status: 'ok',
+            detail: 'Nginx PHP configuration pattern is correct',
+          });
+        }
+      } catch {}
+    }
+
+    // HTTP reachability check
+    let httpStatus = '';
+    try {
+      httpStatus = await this.sudo(`curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost/roundcube/ 2>/dev/null`);
+    } catch { httpStatus = '000'; }
+    const httpOk = httpStatus.startsWith('2') || httpStatus.startsWith('3');
+    checks.push({
+      name: 'HTTP Response (/roundcube/)',
+      status: httpOk ? 'ok' : 'error',
+      detail: httpOk ? `HTTP ${httpStatus} — Roundcube is reachable`
+        : httpStatus === '502' ? 'HTTP 502 Bad Gateway — PHP-FPM socket/config mismatch'
+        : httpStatus === '404' ? 'HTTP 404 — Nginx not serving /roundcube/ path'
+        : httpStatus === '000' ? 'Could not connect — Nginx may not be running'
+        : `HTTP ${httpStatus}`,
+    });
+
     return checks;
   }
 
