@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { theme } from './theme';
+import { AppThemeProvider } from './theme/ThemeContext';
 
 // Lazy-load all pages — only the visited page is downloaded
 const LoginPage = lazy(() => import('./pages/Login'));
@@ -69,7 +70,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
 
 export function App() {
   return (
-    <ThemeProvider theme={theme}>
+    <AppThemeProvider>
       <CssBaseline />
       <AuthProvider>
         <BrowserRouter>
@@ -408,7 +409,7 @@ export function App() {
           </Suspense>
         </BrowserRouter>
       </AuthProvider>
-    </ThemeProvider>
+    </AppThemeProvider>
   );
 }
 

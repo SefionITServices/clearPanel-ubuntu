@@ -48,11 +48,14 @@ import {
   Warning as WarningIcon,
   EventNote as EventNoteIcon,
   People as PeopleIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GlobalSearch } from '../../components/GlobalSearch';
 import { useAuth } from '../../auth/AuthContext';
+import { useThemeMode } from '../../theme/ThemeContext';
 import { DashboardContent } from './content';
 import { dashboardLayoutVars } from './css-vars';
 
@@ -99,7 +102,9 @@ const BASE_NAV_SECTIONS: NavSection[] = [
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+  const [notifAnchorEl, setNotifAnchorEl] = React.useState<null | HTMLElement>(null);
   const { username, logout } = useAuth();
+  const { mode, toggleTheme } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
   const [favoriteNavItems, setFavoriteNavItems] = React.useState<NavItem[]>([]);
@@ -180,6 +185,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleNotifOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setNotifAnchorEl(event.currentTarget);
+  };
+
+  const handleNotifClose = () => {
+    setNotifAnchorEl(null);
   };
 
   const navSections: NavSection[] = React.useMemo(() => {
@@ -345,15 +358,22 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
           {/* Right Side Actions */}
           <Stack direction="row" spacing={0.5} alignItems="center">
+            <Tooltip title={mode === 'light' ? 'Dark Mode' : 'Light Mode'}>
+              <IconButton onClick={toggleTheme} sx={{ color: 'text.secondary' }}>
+                {mode === 'light' ? <DarkModeIcon sx={{ fontSize: 22 }} /> : <LightModeIcon sx={{ fontSize: 22 }} />}
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title="Notifications">
               <IconButton
                 size="small"
+                onClick={handleNotifOpen}
                 sx={{
                   color: 'text.secondary',
                   '&:hover': { bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08) },
                 }}
               >
-                <Badge badgeContent={0} color="error">
+                <Badge badgeContent={1} color="error">
                   <NotificationsIcon sx={{ fontSize: 22 }} />
                 </Badge>
               </IconButton>
@@ -431,6 +451,48 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 <LogoutIcon fontSize="small" sx={{ color: 'error.main' }} />
               </ListItemIcon>
               Logout
+            </MenuItem>
+          </Menu>
+
+          <Menu
+            anchorEl={notifAnchorEl}
+            open={Boolean(notifAnchorEl)}
+            onClose={handleNotifClose}
+            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            PaperProps={{
+              elevation: 0,
+              sx: {
+                overflow: 'visible',
+                filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.1))',
+                mt: 1.5,
+                minWidth: 280,
+                '&:before': {
+                  content: '""',
+                  display: 'block',
+                  position: 'absolute',
+                  top: 0,
+                  right: 14,
+                  width: 10,
+                  height: 10,
+                  bgcolor: 'background.paper',
+                  transform: 'translateY(-50%) rotate(45deg)',
+                  zIndex: 0,
+                },
+              },
+            }}
+          >
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="subtitle2" fontWeight={600}>
+                Notifications
+              </Typography>
+            </Box>
+            <Divider />
+            <MenuItem sx={{ py: 1.5, whiteSpace: 'normal' }}>
+              <Box>
+                <Typography variant="body2" fontWeight={600}>Welcome to clearPanel!</Typography>
+                <Typography variant="caption" color="text.secondary">Your system is running smoothly.</Typography>
+              </Box>
             </MenuItem>
           </Menu>
         </Toolbar>
