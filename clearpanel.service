@@ -22,7 +22,7 @@ Environment=NODE_ENV=production
 Environment=PORT=3334
 
 # Security — allow broad write access for panel management operations
-ReadWritePaths=/opt/clearpanel /home /etc /var /run
+ReadWritePaths=/opt/clearpanel /home /etc/nginx /etc/bind /etc/letsencrypt /etc/postfix /etc/dovecot /var/log /var/lib/bind /var/run /run/php
 
 # Performance
 LimitNOFILE=65535

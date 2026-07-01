@@ -11,6 +11,7 @@ import { ServerSettingsService } from '../server/server-settings.service';
 import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
 import { getDataFilePath } from '../common/paths';
+import { getFileLock } from '../common/mutex';
 
 export interface AutomationLog {
   task: string;
@@ -273,15 +274,21 @@ export class DomainsService {
     }
 
     if (!existing) {
-      domains.push(domain);
-      await this.writeDomains(domains);
+      await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+        const currentDomains = await this.readDomains();
+        currentDomains.push(domain);
+        await this.writeDomains(currentDomains);
+      });
     } else {
       // Persist any updated folderPath/nameservers if needed.
-      const idx = domains.findIndex((d) => d.id === existing.id);
-      if (idx !== -1) {
-        domains[idx] = domain;
-        await this.writeDomains(domains);
-      }
+      await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+        const currentDomains = await this.readDomains();
+        const idx = currentDomains.findIndex((d) => d.id === existing.id);
+        if (idx !== -1) {
+          currentDomains[idx] = domain;
+          await this.writeDomains(currentDomains);
+        }
+      });
     }
 
     let mailResult: MailDomainResult | undefined;
@@ -354,7 +361,14 @@ export class DomainsService {
     const oldPath = domain.folderPath;
     domain.folderPath = newPath;
     await fs.mkdir(newPath, { recursive: true });
-    await this.writeDomains(domains);
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const domainRef = currentDomains.find((d) => d.id === id);
+      if (domainRef) {
+        domainRef.folderPath = newPath;
+        await this.writeDomains(currentDomains);
+      }
+    });
 
     // Update the nginx vhost if path actually changed
     if (oldPath !== newPath) {
@@ -403,7 +417,22 @@ export class DomainsService {
     if (updates.phpVersion !== undefined) {
       domain.phpVersion = updates.phpVersion.trim() || undefined;
     }
-    await this.writeDomains(domains);
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const domainRef = currentDomains.find((d) => d.id === id);
+      if (domainRef) {
+        if (updates.folderPath !== undefined && updates.folderPath !== domain.folderPath) {
+          domainRef.folderPath = updates.folderPath;
+        }
+        if (updates.nameservers !== undefined) {
+          domainRef.nameservers = updates.nameservers.filter(Boolean);
+        }
+        if (updates.phpVersion !== undefined) {
+          domainRef.phpVersion = updates.phpVersion.trim() || undefined;
+        }
+        await this.writeDomains(currentDomains);
+      }
+    });
     return { domain, logs };
   }
 
@@ -518,7 +547,14 @@ export class DomainsService {
 
     // Remove from list
     domains.splice(domainIndex, 1);
-    await this.writeDomains(domains);
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const idx = currentDomains.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        currentDomains.splice(idx, 1);
+        await this.writeDomains(currentDomains);
+      }
+    });
 
     logs.push({
       task: 'Update domains.json',

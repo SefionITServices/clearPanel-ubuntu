@@ -45,7 +45,7 @@ WARNINGS=()
 add_warn() { warn "$*"; WARNINGS+=("$*"); }
 
 # ── Configuration ─────────────────────────────────────────────────
-REPO_URL="https://github.com/SefionITServices/clearPanel-ubuntu.git"
+REPO_URL="${REPO_URL:-https://github.com/SefionITServices/clearPanel-ubuntu.git}"
 INSTALL_DIR="/opt/clearpanel"
 SERVICE_USER="clearpanel"
 MIN_RAM_MB=1024

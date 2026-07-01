@@ -1,49 +1,6 @@
 import { createTheme, alpha } from '@mui/material/styles';
 
-export const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#4285F4',
-      light: '#669DF6',
-      dark: '#1A73E8',
-      contrastText: '#ffffff',
-    },
-    secondary: {
-      main: '#5F6368',
-      light: '#80868B',
-      dark: '#3C4043',
-    },
-    success: {
-      main: '#34A853',
-      light: '#81C995',
-      dark: '#1E8E3E',
-    },
-    warning: {
-      main: '#FBBC04',
-      light: '#FDD663',
-      dark: '#F9AB00',
-    },
-    error: {
-      main: '#EA4335',
-      light: '#F28B82',
-      dark: '#D93025',
-    },
-    info: {
-      main: '#4285F4',
-      light: '#8AB4F8',
-      dark: '#1967D2',
-    },
-    background: {
-      default: '#f5f5f5',
-      paper: '#ffffff',
-    },
-    text: {
-      primary: '#202124',
-      secondary: '#5F6368',
-    },
-    divider: '#e0e0e0',
-  },
+const commonSettings = {
   typography: {
     fontFamily: [
       'Google Sans',
@@ -56,33 +13,18 @@ export const theme = createTheme({
       'Arial',
       'sans-serif',
     ].join(','),
-    h4: {
-      fontWeight: 600,
-      letterSpacing: '-0.02em',
-    },
-    h5: {
-      fontWeight: 600,
-      letterSpacing: '-0.01em',
-    },
-    h6: {
-      fontWeight: 600,
-    },
-    subtitle1: {
-      fontWeight: 600,
-    },
-    button: {
-      textTransform: 'none' as const,
-      fontWeight: 500,
-    },
+    h4: { fontWeight: 600, letterSpacing: '-0.02em' },
+    h5: { fontWeight: 600, letterSpacing: '-0.01em' },
+    h6: { fontWeight: 600 },
+    subtitle1: { fontWeight: 600 },
+    button: { textTransform: 'none' as const, fontWeight: 500 },
   },
-  shape: {
-    borderRadius: 10,
-  },
+  shape: { borderRadius: 10 },
   components: {
     MuiButton: {
       styleOverrides: {
         root: {
-          textTransform: 'none',
+          textTransform: 'none' as const,
           borderRadius: 8,
           fontWeight: 500,
           padding: '8px 16px',
@@ -105,21 +47,35 @@ export const theme = createTheme({
     },
     MuiPaper: {
       styleOverrides: {
-        root: {
-          borderRadius: 12,
-        },
-        elevation0: {
-          boxShadow: 'none',
-        },
+        root: { borderRadius: 12 },
+        elevation0: { boxShadow: 'none' },
       },
     },
     MuiChip: {
-      styleOverrides: {
-        root: {
-          fontWeight: 500,
-        },
-      },
+      styleOverrides: { root: { fontWeight: 500 } },
     },
+    MuiAppBar: {
+      styleOverrides: { root: { boxShadow: 'none' } },
+    },
+  }
+};
+
+export const lightTheme = createTheme({
+  ...commonSettings,
+  palette: {
+    mode: 'light',
+    primary: { main: '#4285F4', light: '#669DF6', dark: '#1A73E8', contrastText: '#ffffff' },
+    secondary: { main: '#5F6368', light: '#80868B', dark: '#3C4043' },
+    success: { main: '#34A853', light: '#81C995', dark: '#1E8E3E' },
+    warning: { main: '#FBBC04', light: '#FDD663', dark: '#F9AB00' },
+    error: { main: '#EA4335', light: '#F28B82', dark: '#D93025' },
+    info: { main: '#4285F4', light: '#8AB4F8', dark: '#1967D2' },
+    background: { default: '#f5f5f5', paper: '#ffffff' },
+    text: { primary: '#202124', secondary: '#5F6368' },
+    divider: '#e0e0e0',
+  },
+  components: {
+    ...commonSettings.components,
     MuiTableHead: {
       styleOverrides: {
         root: {
@@ -134,26 +90,53 @@ export const theme = createTheme({
     },
     MuiTableRow: {
       styleOverrides: {
+        root: { '&:hover': { backgroundColor: '#f8f9fa' } },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: { paper: { borderRight: '1px solid #e0e0e0' } },
+    },
+  },
+});
+
+export const darkTheme = createTheme({
+  ...commonSettings,
+  palette: {
+    mode: 'dark',
+    primary: { main: '#8AB4F8', light: '#AECBFA', dark: '#669DF6', contrastText: '#202124' },
+    secondary: { main: '#9AA0A6', light: '#BDC1C6', dark: '#80868B' },
+    success: { main: '#81C995', light: '#A8DAB5', dark: '#5BB974' },
+    warning: { main: '#FDD663', light: '#FDE293', dark: '#FCC934' },
+    error: { main: '#F28B82', light: '#F6AEA9', dark: '#EE675C' },
+    info: { main: '#8AB4F8', light: '#AECBFA', dark: '#669DF6' },
+    background: { default: '#202124', paper: '#303134' },
+    text: { primary: '#E8EAED', secondary: '#9AA0A6' },
+    divider: '#5F6368',
+  },
+  components: {
+    ...commonSettings.components,
+    MuiTableHead: {
+      styleOverrides: {
         root: {
-          '&:hover': {
-            backgroundColor: '#f8f9fa',
+          '& .MuiTableCell-head': {
+            fontWeight: 600,
+            color: '#E8EAED',
+            backgroundColor: '#28292C',
+            borderBottom: '2px solid #5F6368',
           },
         },
       },
     },
-    MuiAppBar: {
+    MuiTableRow: {
       styleOverrides: {
-        root: {
-          boxShadow: 'none',
-        },
+        root: { '&:hover': { backgroundColor: '#3C4043' } },
       },
     },
     MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          borderRight: '1px solid #e0e0e0',
-        },
-      },
+      styleOverrides: { paper: { borderRight: '1px solid #5F6368' } },
     },
   },
 });
+
+// For backward compatibility until everything is moved to Context
+export const theme = lightTheme;
