@@ -299,9 +299,8 @@ if [[ "$PATH_ONLY" == "true" ]]; then
     location = /roundcube { return 301 /roundcube/; }"
     # Use awk to insert before the "location /" block
     awk -v block="$ROUNDCUBE_BLOCK" '
-      /^[[:space:]]+location \/ \{/ && !done {
+      /^[[:space:]]+location \/ \{/ {
         print block
-        done=1
       }
       { print }
     ' "$MAIN_NGINX" > "${MAIN_NGINX}.tmp" && mv "${MAIN_NGINX}.tmp" "$MAIN_NGINX"
