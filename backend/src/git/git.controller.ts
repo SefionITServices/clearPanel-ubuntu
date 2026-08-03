@@ -460,4 +460,14 @@ export class GitController {
       return res.status(400).json({ success: false, error: e.message });
     }
   }
+
+  @Get('webhook-logs')
+  async getWebhookLogs(@Query('path') p: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      const logs = await this.git.getWebhookLogsForRepo(p);
+      return res.json({ success: true, logs });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
 }

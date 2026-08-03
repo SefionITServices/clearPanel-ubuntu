@@ -22,6 +22,16 @@ export interface ManagedRepo {
   autoDeployEnabled?: boolean;
 }
 
+export interface WebhookLog {
+  id: string;
+  repoPath: string;
+  date: string;
+  status: 'deploying' | 'success' | 'failed';
+  output?: string;
+  error?: string;
+  branch?: string;
+}
+
 const execFile = promisify(execFileCb);
 
 
@@ -102,6 +112,43 @@ export class GitService {
     delete creds[abs];
     await this.writeCreds(username, creds);
     return { success: true };
+  }
+
+  // ── Webhook Logs ──────────────────────────────────────────────────────────
+
+  private getWebhookLogsFile(): string {
+    return getDataFilePath('webhook-logs.json');
+  }
+
+  private async readWebhookLogs(): Promise<WebhookLog[]> {
+    try {
+      const raw = await fs.readFile(this.getWebhookLogsFile(), 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeWebhookLogs(logs: WebhookLog[]) {
+    // Keep only the last 500 logs globally to prevent file bloat
+    const trimmed = logs.slice(0, 500);
+    await fs.writeFile(this.getWebhookLogsFile(), JSON.stringify(trimmed, null, 2), { mode: 0o600 });
+  }
+
+  async getWebhookLogsForRepo(repoPath: string): Promise<WebhookLog[]> {
+    const allLogs = await this.readWebhookLogs();
+    return allLogs.filter(log => log.repoPath === repoPath);
+  }
+
+  private async addOrUpdateWebhookLog(logEntry: WebhookLog) {
+    const logs = await this.readWebhookLogs();
+    const existingIndex = logs.findIndex(l => l.id === logEntry.id);
+    if (existingIndex >= 0) {
+      logs[existingIndex] = { ...logs[existingIndex], ...logEntry };
+    } else {
+      logs.unshift(logEntry);
+    }
+    await this.writeWebhookLogs(logs);
   }
 
   // ── Core git runner ───────────────────────────────────────────────────────
@@ -703,17 +750,26 @@ export class GitService {
       throw new Error('Could not deduce username from repository path');
     }
 
+    // Get branch from ref, e.g. refs/heads/main -> main
+    const ref = payload.ref || '';
+    const branchMatch = ref.match(/^refs\/heads\/(.*)$/);
+    let branchToPull = '';
+    if (branchMatch) {
+       branchToPull = branchMatch[1];
+    }
+
+    const logEntry: WebhookLog = {
+      id: crypto.randomUUID(),
+      repoPath: repo.path,
+      date: new Date().toISOString(),
+      status: 'deploying',
+      branch: branchToPull || 'unknown',
+    };
+
     try {
       this.logger.log(`Processing auto-deploy for webhook ${webhookId} (repo: ${repo.path})`);
+      await this.addOrUpdateWebhookLog(logEntry);
       
-      // Get branch from ref, e.g. refs/heads/main -> main
-      const ref = payload.ref || '';
-      const branchMatch = ref.match(/^refs\/heads\/(.*)$/);
-      let branchToPull = '';
-      if (branchMatch) {
-         branchToPull = branchMatch[1];
-      }
-
       // Check current checked out branch
       const abs = this.validatePath(repo.path, username);
       const currentBranch = await this.runGit(['rev-parse', '--abbrev-ref', 'HEAD'], abs, username).catch(() => '');
@@ -721,19 +777,32 @@ export class GitService {
       // If a specific branch was pushed, and it doesn't match the current branch, we can skip or log.
       if (branchToPull && currentBranch && branchToPull !== currentBranch.trim()) {
          this.logger.log(`Push was to branch ${branchToPull}, but repo is on ${currentBranch}. Skipping auto-deploy.`);
+         logEntry.status = 'failed';
+         logEntry.error = `Skipped: Push was to branch ${branchToPull}, but repo is on ${currentBranch}.`;
+         await this.addOrUpdateWebhookLog(logEntry);
          return { success: true, message: `Skipped: Push to ${branchToPull} ignored` };
       }
 
       // Pull
-      await this.pull(username, repo.path, 'origin', currentBranch.trim());
+      const pullResult = await this.pull(username, repo.path, 'origin', currentBranch.trim());
       
       // Deploy
       const deployResult = await this.deploy(username, repo.path);
       
       this.logger.log(`Auto-deploy successful for ${repo.path}`);
+      
+      logEntry.status = 'success';
+      logEntry.output = `=== GIT PULL ===\n${pullResult.output || 'Already up to date.'}\n\n=== DEPLOY SCRIPT ===\n${deployResult.output}`;
+      await this.addOrUpdateWebhookLog(logEntry);
+      
       return { success: true, output: deployResult.output };
     } catch (error: any) {
       this.logger.error(`Auto-deploy failed for ${repo.path}: ${error.message}`);
+      
+      logEntry.status = 'failed';
+      logEntry.error = error.message;
+      await this.addOrUpdateWebhookLog(logEntry);
+      
       throw error;
     }
   }

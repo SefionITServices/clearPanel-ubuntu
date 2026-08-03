@@ -61,7 +61,7 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import SaveIcon from '@mui/icons-material/Save';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import UndoIcon from '@mui/icons-material/Undo';
-import { gitApi, Commit, GitStatus, PathOption, ManagedRepo, HeadCommit } from '../api/git';
+import { gitApi, Commit, GitStatus, PathOption, ManagedRepo, HeadCommit, WebhookLog } from '../api/git';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -279,6 +279,8 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
   const [deployScriptLoaded, setDeployScriptLoaded] = useState(false);
   const [deployOutput, setDeployOutput] = useState('');
   const [pullOutput, setPullOutput] = useState('');
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
   
   // Webhook state
   const [webhookId, setWebhookId] = useState(repo.webhookId || '');
@@ -328,10 +330,23 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
     try { const r = await gitApi.getDeployScript(repoPath); setDeployScript(r.script); setDeployScriptLoaded(true); } catch { }
   }, [repoPath, deployScriptLoaded]);
 
+  const loadWebhookLogs = useCallback(async () => {
+    try { const r = await gitApi.getWebhookLogs(repoPath); setWebhookLogs(r.logs); } catch { }
+  }, [repoPath]);
+
   useEffect(() => { loadBasicInfo(); }, [loadBasicInfo]);
   useEffect(() => { if (tab === 1) loadDeployScript(); }, [tab, loadDeployScript]);
   useEffect(() => { if (tab === 2) loadStatus(); }, [tab, loadStatus]);
   useEffect(() => { if (tab === 2 && historyTab === 1) loadCommits(); }, [tab, historyTab, loadCommits]);
+  useEffect(() => { if (tab === 3) loadWebhookLogs(); }, [tab, loadWebhookLogs]);
+
+  // Polling for webhook logs if deploying
+  useEffect(() => {
+    if (tab === 3 && webhookLogs.some(l => l.status === 'deploying')) {
+      const t = setInterval(loadWebhookLogs, 3000);
+      return () => clearInterval(t);
+    }
+  }, [tab, webhookLogs, loadWebhookLogs]);
 
   const doUpdateName = async () => {
     if (!repoName.trim()) return;
@@ -504,6 +519,7 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
           <Tab label="Basic Information" sx={{ minHeight: 40, fontSize: 13 }} />
           <Tab label="Pull or Deploy" sx={{ minHeight: 40, fontSize: 13 }} />
           <Tab label="Working Tree" sx={{ minHeight: 40, fontSize: 13 }} />
+          <Tab label="Deploy Logs" sx={{ minHeight: 40, fontSize: 13 }} />
         </Tabs>
       </Box>
 
@@ -694,6 +710,70 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
                 </Box>
               )}
             </Paper>
+          </Box>
+        )}
+
+        {/* ── Deploy Logs ── */}
+        {tab === 3 && (
+          <Box sx={{ p: 3, maxWidth: 860 }}>
+            <Typography variant="h6" fontWeight={700} gutterBottom>Webhook Auto-Deploy Logs</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              History of automatic deployments triggered by GitHub webhooks.
+            </Typography>
+            
+            <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
+              <Button size="small" startIcon={<RefreshIcon />} onClick={loadWebhookLogs}>Refresh Logs</Button>
+            </Stack>
+
+            {webhookLogs.length === 0 ? (
+              <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 2, bgcolor: 'action.hover' }}>
+                <Typography variant="body2" color="text.secondary">No webhook deployments have occurred for this repository yet.</Typography>
+              </Paper>
+            ) : (
+              <Stack spacing={2}>
+                {webhookLogs.map(log => (
+                  <Paper key={log.id} variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                    <Box
+                      sx={{ p: 2, display: 'flex', alignItems: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                      onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
+                    >
+                      <Box sx={{ mr: 2 }}>
+                        {log.status === 'deploying' && <CircularProgress size={20} color="primary" />}
+                        {log.status === 'success' && <CheckIcon color="success" />}
+                        {log.status === 'failed' && <DeleteOutlineIcon color="error" />}
+                      </Box>
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="subtitle2" fontWeight={700}>
+                          {log.status === 'deploying' ? 'Deploying...' : log.status === 'success' ? 'Deployed Successfully' : 'Deployment Failed'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {new Date(log.date).toLocaleString()} · Branch: <strong style={{ fontFamily: 'monospace' }}>{log.branch}</strong>
+                        </Typography>
+                      </Box>
+                      <ChevronRightIcon sx={{ color: 'text.disabled', transform: expandedLog === log.id ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                    </Box>
+                    
+                    {expandedLog === log.id && (
+                      <Box sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: '#0d1117', p: 2 }}>
+                        {log.error && (
+                          <Box sx={{ mb: 2, p: 1.5, bgcolor: 'rgba(244,67,54,0.1)', color: '#ff8a80', borderRadius: 1, fontFamily: 'monospace', fontSize: 12 }}>
+                            {log.error}
+                          </Box>
+                        )}
+                        {log.output && (
+                          <Box sx={{ fontFamily: 'monospace', fontSize: 12, color: '#e6edf3', whiteSpace: 'pre-wrap', overflowX: 'auto', maxHeight: 400 }}>
+                            {log.output}
+                          </Box>
+                        )}
+                        {!log.error && !log.output && (
+                          <Typography variant="caption" color="text.secondary">No output available.</Typography>
+                        )}
+                      </Box>
+                    )}
+                  </Paper>
+                ))}
+              </Stack>
+            )}
           </Box>
         )}
 

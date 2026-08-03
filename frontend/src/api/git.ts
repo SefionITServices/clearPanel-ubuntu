@@ -88,6 +88,16 @@ export interface HeadCommit {
   remoteUrl: string;
 }
 
+export interface WebhookLog {
+  id: string;
+  repoPath: string;
+  date: string;
+  status: 'deploying' | 'success' | 'failed';
+  output?: string;
+  error?: string;
+  branch?: string;
+}
+
 // ─── API Object ───────────────────────────────────────────────────────────────
 
 export const gitApi = {
@@ -266,4 +276,9 @@ export const gitApi = {
 
   disableWebhook: (path: string) =>
     post(`${API_BASE}/webhook/disable`, { path }),
+
+  getWebhookLogs: (path: string) =>
+    fetchJSON<{ success: boolean; logs: WebhookLog[] }>(
+      `${API_BASE}/webhook-logs?path=${encodeURIComponent(path)}`,
+    ),
 };
