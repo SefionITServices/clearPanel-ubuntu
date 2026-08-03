@@ -181,6 +181,16 @@ EOF
         NGINX_CHANGED=1
     fi
 
+    # Fix nested static asset block that breaks React router SPA fallback on reload
+    if grep -q "location ~\* \\\.(js|css" "$NGINX_CONF"; then
+        # Check if it is nested inside location /
+        if grep -q "try_files.*index.html.*location ~\*" -P -z "$NGINX_CONF" 2>/dev/null || perl -0777 -ne 'exit(m/location \/ \{\s*try_files.*?location ~\*/s ? 0 : 1)' "$NGINX_CONF" 2>/dev/null; then
+            echo -e "${YELLOW}  Fixing nested SPA routing block...${NC}"
+            perl -0777 -pi -e 's/location \/ \{\s*try_files \$uri \$uri\/ \/index\.html;\s*(# Cache static assets\s*)?location ~\* \\.(js\|css\|png\|jpg\|jpeg\|gif\|ico\|svg\|woff\|woff2\|ttf\|eot)\$ \{\s*expires 1y;\s*add_header Cache-Control "public, immutable";\s*\}\s*\}/location \/ {\n        try_files \$uri \$uri\/ \/index.html;\n    }\n\n    # Cache static assets\n    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {\n        try_files \$uri =404;\n        expires 1y;\n        add_header Cache-Control "public, immutable";\n    }/g' "$NGINX_CONF" 2>/dev/null || true
+            NGINX_CHANGED=1
+        fi
+    fi
+
     if [ "$NGINX_CHANGED" -eq 1 ]; then
         if nginx -t > /dev/null 2>&1; then
             systemctl reload nginx

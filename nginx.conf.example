@@ -59,12 +59,13 @@ server {
     # Static files - served by nginx
     location / {
         try_files $uri $uri/ /index.html;
+    }
         
-        # Cache static assets
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
     }
 
     # Security headers
@@ -138,11 +139,12 @@ server {
 #     # Static files
 #     location / {
 #         try_files $uri $uri/ /index.html;
+#     }
 #         
-#         location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-#             expires 1y;
-#             add_header Cache-Control "public, immutable";
-#         }
+#     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+#         try_files $uri =404;
+#         expires 1y;
+#         add_header Cache-Control "public, immutable";
 #     }
 #
 #     # Security headers
