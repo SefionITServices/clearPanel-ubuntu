@@ -177,7 +177,8 @@ export class GitService {
     this.logger.debug(`Executing /usr/bin/git ${args.join(' ')} in ${cwd}`);
 
     try {
-      const { stdout } = await execFile('/usr/bin/git', args, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
+      const gitArgs = ['-c', 'safe.directory=*', ...args];
+      const { stdout } = await execFile('/usr/bin/git', gitArgs, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
       return stdout.trim();
     } catch (e: any) {
       this.logger.error(`Git command failed: git ${args.join(' ')} - Error: ${e.message}`, e.stack);
