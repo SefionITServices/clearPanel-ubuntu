@@ -35,4 +35,6 @@ export const serverApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain, enableSsl, email }),
     }),
+  triggerUpdate: () =>
+    fetchJSON(`${API_BASE}/update`, { method: 'POST' }),
 };

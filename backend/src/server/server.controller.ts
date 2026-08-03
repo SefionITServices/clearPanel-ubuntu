@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { isIP } from 'node:net';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { ServerSettingsService } from './server-settings.service';
 import { DnsService } from '../dns/dns.service';
@@ -369,6 +369,28 @@ export class ServerController {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /** POST /api/server/update — trigger system update */
+  @Post('update')
+  @UseGuards(AuthGuard)
+  async triggerUpdate() {
+    try {
+      // We spawn the update script in detached mode and do not wait for it.
+      // This is because the update script restarts this very Node.js process (clearpanel service),
+      // which would otherwise kill the request and return an error to the frontend.
+      const updateScript = '/opt/clearpanel/update.sh';
+      const p = spawn('bash', [updateScript], {
+        cwd: '/opt/clearpanel',
+        detached: true,
+        stdio: 'ignore'
+      });
+      p.unref();
+
+      return { status: 'updating' };
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to start update: ${err.message}`);
     }
   }
 }

@@ -21,7 +21,11 @@ import {
   Tabs,
   Tab,
   LinearProgress,
+  Dialog,
+  DialogContent,
+  Slide,
 } from '@mui/material';
+import { TransitionProps } from '@mui/material/transitions';
 import {
   Computer as ComputerIcon,
   CheckCircle as CheckIcon,
@@ -58,6 +62,15 @@ function TabPanel({ children, value, index }: TabPanelProps) {
   return value === index ? <Box sx={{ pt: 3 }}>{children}</Box> : null;
 }
 
+const Transition = React.forwardRef(function Transition(
+  props: TransitionProps & {
+    children: React.ReactElement<any, any>;
+  },
+  ref: React.Ref<unknown>,
+) {
+  return <Slide direction="up" ref={ref} {...props} />;
+});
+
 export default function SettingsPage() {
   const [tab, setTab] = useState(0);
 
@@ -92,6 +105,12 @@ export default function SettingsPage() {
     memTotal: string;
     memFree: string;
   } | null>(null);
+
+  // ── System Update state ──
+  const [systemUpdating, setSystemUpdating] = useState(false);
+  const [systemRestartWaiting, setSystemRestartWaiting] = useState(false);
+  const [systemUpdateDone, setSystemUpdateDone] = useState(false);
+  const [systemMsg, setSystemMsg] = useState<{ text: string, severity: 'success'|'error' } | null>(null);
 
   // ── Load current hostname ──
   useEffect(() => {
@@ -161,6 +180,46 @@ export default function SettingsPage() {
       setError(err.message || 'Failed to update hostname');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const beginSystemRestartPoll = () => {
+    const deadline = Date.now() + 60_000;
+    const timer = setInterval(async () => {
+      if (Date.now() > deadline) {
+        clearInterval(timer);
+        setSystemRestartWaiting(false);
+        setSystemMsg({ text: 'Server restart timed out. Please check server status manually via SSH.', severity: 'error' });
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/status');
+        if (res.ok) {
+          clearInterval(timer);
+          setSystemRestartWaiting(false);
+          setSystemUpdateDone(true);
+          setSystemMsg({ text: 'Successfully Updated!', severity: 'success' });
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      } catch {}
+    }, 3000);
+  };
+
+  const handleSystemUpdate = async () => {
+    setSystemMsg(null);
+    setSystemUpdateDone(false);
+    setSystemUpdating(true);
+    try {
+      await serverApi.triggerUpdate();
+      // Assume the backend is detached and restarting now.
+      setTimeout(() => {
+        setSystemUpdating(false);
+        setSystemRestartWaiting(true);
+        beginSystemRestartPoll();
+      }, 1500);
+    } catch (e: any) {
+      setSystemUpdating(false);
+      setSystemMsg({ text: e.message || 'Failed to start update', severity: 'error' });
     }
   };
 
@@ -303,6 +362,76 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* System Update Card */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+                <UpdateIcon color="primary" />
+                <Typography variant="h6" fontWeight={600}>
+                  System Update
+                </Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                Trigger the built-in system update script safely. This pulls the latest code and restarts Clear Panel automatically.
+              </Typography>
+
+              {systemUpdateDone ? (
+                <Alert severity="success" icon={<CheckIcon />}>
+                  <Typography variant="body2" fontWeight={700}>Update complete!</Typography>
+                  <Typography variant="caption">ClearPanel has been updated successfully. Reloading…</Typography>
+                </Alert>
+              ) : (
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  onClick={handleSystemUpdate} 
+                  disabled={systemUpdating}
+                  startIcon={systemUpdating ? <CircularProgress size={16} color="inherit" /> : <UpdateIcon />}
+                >
+                  {systemUpdating ? 'Starting Update...' : 'Update Clear Panel'}
+                </Button>
+              )}
+
+              {systemMsg && !systemRestartWaiting && (
+                <Alert severity={systemMsg.severity} sx={{ mt: 2 }} onClose={() => setSystemMsg(null)}>
+                  {systemMsg.text}
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Full Screen Update Overlay */}
+          <Dialog
+            fullScreen
+            open={systemRestartWaiting}
+            TransitionComponent={Transition}
+            PaperProps={{
+              sx: {
+                bgcolor: 'rgba(0, 0, 0, 0.85)',
+                backdropFilter: 'blur(12px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
+            }}
+          >
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <Box sx={{ position: 'relative', display: 'inline-flex', mb: 4 }}>
+                <CircularProgress size={100} thickness={2} sx={{ color: 'primary.main', opacity: 0.2 }} />
+                <CircularProgress size={100} thickness={2} sx={{ color: 'primary.light', position: 'absolute', left: 0, animationDuration: '3s' }} disableShrink />
+                <Box sx={{ top: 0, left: 0, bottom: 0, right: 0, position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <UpdateIcon sx={{ fontSize: 40, color: 'white' }} />
+                </Box>
+              </Box>
+              <Typography variant="h4" fontWeight={700} color="white" gutterBottom>
+                Updating Clear Panel
+              </Typography>
+              <Typography variant="body1" color="rgba(255,255,255,0.7)" sx={{ maxWidth: 400, textAlign: 'center' }}>
+                The server is currently pulling the latest changes and restarting. Please do not close this window. Reconnecting shortly...
+              </Typography>
+            </DialogContent>
+          </Dialog>
 
           {/* Security Reminder */}
           <Card>
