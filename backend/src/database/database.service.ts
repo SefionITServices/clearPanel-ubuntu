@@ -159,7 +159,19 @@ export class DatabaseService {
           try {
             const { stdout } = await exec('sudo systemctl is-active mariadb 2>/dev/null', { timeout: 5000 });
             status.running = stdout.trim() === 'active';
-          } catch { status.running = false; }
+          } catch {
+            try {
+              const { stdout } = await exec('sudo systemctl is-active mysql 2>/dev/null', { timeout: 5000 });
+              status.running = stdout.trim() === 'active';
+            } catch {
+              try {
+                const { stdout } = await exec('sudo systemctl is-active mysqld 2>/dev/null', { timeout: 5000 });
+                status.running = stdout.trim() === 'active';
+              } catch {
+                status.running = false;
+              }
+            }
+          }
         }
       } else if (engine === 'mysql') {
         try {
