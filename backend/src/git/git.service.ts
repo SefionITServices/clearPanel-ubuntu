@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import { getDataFilePath } from '../common/paths';
@@ -16,6 +17,9 @@ export interface ManagedRepo {
   isCloning?: boolean;
   cloneError?: string;
   currentBranch?: string;
+  webhookId?: string;
+  webhookSecret?: string;
+  autoDeployEnabled?: boolean;
 }
 
 const execFile = promisify(execFileCb);
@@ -634,6 +638,104 @@ export class GitService {
       await fs.rm(abs, { recursive: true, force: true });
     }
     return { success: true };
+  }
+
+  // ── Webhooks ──────────────────────────────────────────────────────────────
+
+  async enableWebhook(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const repos = await this.readAllManagedRepos();
+    const repo = repos.find((r) => r.path === abs);
+    if (!repo) throw new Error('Repository not found in managed list');
+    
+    repo.webhookId = crypto.randomUUID();
+    repo.webhookSecret = crypto.randomBytes(32).toString('hex');
+    repo.autoDeployEnabled = true;
+    
+    await this.writeAllManagedRepos(repos);
+    return { success: true, webhookId: repo.webhookId, webhookSecret: repo.webhookSecret };
+  }
+
+  async disableWebhook(username: string, repoPath: string) {
+    const abs = this.validatePath(repoPath, username);
+    const repos = await this.readAllManagedRepos();
+    const repo = repos.find((r) => r.path === abs);
+    if (!repo) throw new Error('Repository not found in managed list');
+    
+    delete repo.webhookId;
+    delete repo.webhookSecret;
+    repo.autoDeployEnabled = false;
+    
+    await this.writeAllManagedRepos(repos);
+    return { success: true };
+  }
+
+  async processGithubWebhook(webhookId: string, signature: string, payload: any) {
+    const repos = await this.readAllManagedRepos();
+    // We need to find which user and repo this belongs to
+    // In a real multi-tenant scenario we might need the username from context,
+    // but the webhook ID should be globally unique across all repos in clearpanel.
+    const repo = repos.find((r) => r.webhookId === webhookId);
+    if (!repo || !repo.webhookSecret) {
+      throw new Error('Webhook not found or not configured');
+    }
+
+    // Validate signature
+    const payloadString = JSON.stringify(payload);
+    const hmac = crypto.createHmac('sha256', repo.webhookSecret);
+    const digest = 'sha256=' + hmac.update(payloadString).digest('hex');
+    
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+         throw new Error('Invalid signature');
+      }
+    } catch {
+       throw new Error('Invalid signature');
+    }
+
+    // Since we don't store the username in ManagedRepo currently, we have to deduce it from the path.
+    // path is /home/clearpanel/username/repo
+    const pathParts = repo.path.split(path.sep).filter(Boolean);
+    // Assuming structure: /home/clearpanel/<username>/...
+    const username = pathParts[2]; // e.g. ["home", "clearpanel", "username", ...]
+
+    if (!username) {
+      throw new Error('Could not deduce username from repository path');
+    }
+
+    try {
+      this.logger.log(`Processing auto-deploy for webhook ${webhookId} (repo: ${repo.path})`);
+      
+      // Get branch from ref, e.g. refs/heads/main -> main
+      const ref = payload.ref || '';
+      const branchMatch = ref.match(/^refs\/heads\/(.*)$/);
+      let branchToPull = '';
+      if (branchMatch) {
+         branchToPull = branchMatch[1];
+      }
+
+      // Check current checked out branch
+      const abs = this.validatePath(repo.path, username);
+      const currentBranch = await this.runGit(['rev-parse', '--abbrev-ref', 'HEAD'], abs, username).catch(() => '');
+      
+      // If a specific branch was pushed, and it doesn't match the current branch, we can skip or log.
+      if (branchToPull && currentBranch && branchToPull !== currentBranch.trim()) {
+         this.logger.log(`Push was to branch ${branchToPull}, but repo is on ${currentBranch}. Skipping auto-deploy.`);
+         return { success: true, message: `Skipped: Push to ${branchToPull} ignored` };
+      }
+
+      // Pull
+      await this.pull(username, repo.path, 'origin', currentBranch.trim());
+      
+      // Deploy
+      const deployResult = await this.deploy(username, repo.path);
+      
+      this.logger.log(`Auto-deploy successful for ${repo.path}`);
+      return { success: true, output: deployResult.output };
+    } catch (error: any) {
+      this.logger.error(`Auto-deploy failed for ${repo.path}: ${error.message}`);
+      throw error;
+    }
   }
 
   // ── Repository Info ───────────────────────────────────────────────────────

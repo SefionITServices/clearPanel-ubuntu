@@ -73,6 +73,9 @@ export interface ManagedRepo {
   isCloning?: boolean;
   cloneError?: string;
   currentBranch?: string;
+  webhookId?: string;
+  webhookSecret?: string;
+  autoDeployEnabled?: boolean;
 }
 
 export interface HeadCommit {
@@ -255,4 +258,12 @@ export const gitApi = {
 
   deploy: (path: string) =>
     post<{ success: boolean; output: string }>(`${API_BASE}/deploy`, { path }),
+
+  // ── Webhooks ──────────────────────────────────────────────────────────────
+
+  enableWebhook: (path: string) =>
+    post(`${API_BASE}/webhook/enable`, { path }),
+
+  disableWebhook: (path: string) =>
+    post(`${API_BASE}/webhook/disable`, { path }),
 };

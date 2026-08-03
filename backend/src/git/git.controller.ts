@@ -438,4 +438,26 @@ export class GitController {
       return res.status(400).json({ success: false, error: e.message });
     }
   }
+
+  // ── Webhooks ──────────────────────────────────────────────────────────────
+
+  @Post('webhook/enable')
+  async enableWebhook(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.enableWebhook(this.user(req), body.path);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('webhook/disable')
+  async disableWebhook(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.disableWebhook(this.user(req), body.path);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
 }

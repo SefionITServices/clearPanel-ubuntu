@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -279,6 +279,11 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
   const [deployScriptLoaded, setDeployScriptLoaded] = useState(false);
   const [deployOutput, setDeployOutput] = useState('');
   const [pullOutput, setPullOutput] = useState('');
+  
+  // Webhook state
+  const [webhookId, setWebhookId] = useState(repo.webhookId || '');
+  const [webhookSecret, setWebhookSecret] = useState(repo.webhookSecret || '');
+  const [autoDeploy, setAutoDeploy] = useState(repo.autoDeployEnabled || false);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [diffContent, setDiffContent] = useState('');
   const [diffTitle, setDiffTitle] = useState('');
@@ -368,6 +373,30 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
     setOpBusy(true); setDeployOutput('Running deploy script...');
     try { const r = await gitApi.deploy(repoPath); setDeployOutput(r.output || '(no output)'); showToast('Deploy completed'); }
     catch (e: any) { setDeployOutput(`Error: ${e.message}`); showToast(e.message, 'error'); }
+    finally { setOpBusy(false); }
+  };
+
+  const doEnableWebhook = async () => {
+    setOpBusy(true);
+    try {
+      const r = await gitApi.enableWebhook(repoPath);
+      setWebhookId(r.webhookId);
+      setWebhookSecret(r.webhookSecret);
+      setAutoDeploy(true);
+      showToast('Webhook enabled');
+    } catch (e: any) { showToast(e.message, 'error'); }
+    finally { setOpBusy(false); }
+  };
+
+  const doDisableWebhook = async () => {
+    setOpBusy(true);
+    try {
+      await gitApi.disableWebhook(repoPath);
+      setWebhookId('');
+      setWebhookSecret('');
+      setAutoDeploy(false);
+      showToast('Webhook disabled');
+    } catch (e: any) { showToast(e.message, 'error'); }
     finally { setOpBusy(false); }
   };
 
@@ -626,6 +655,42 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
               {deployOutput && (
                 <Box sx={{ mt: 2, p: 2, bgcolor: '#0d1117', borderRadius: 1, fontFamily: 'monospace', fontSize: 12, color: '#e6edf3', whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
                   {deployOutput}
+                </Box>
+              )}
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={700} gutterBottom>Auto-Deploy (Webhook)</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Enable automatic pull and deployment when pushing code to a remote (e.g., GitHub, GitLab).
+                  </Typography>
+                </Box>
+                <Switch checked={autoDeploy} onChange={e => e.target.checked ? doEnableWebhook() : doDisableWebhook()} disabled={opBusy} />
+              </Box>
+              
+              {autoDeploy && (
+                <Box sx={{ mt: 2 }}>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Add this webhook to your GitHub repository settings. Set Content type to <strong>application/json</strong>.
+                  </Alert>
+                  <InfoRow label="Payload URL">
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Typography variant="body2" fontFamily="monospace" sx={{ wordBreak: 'break-all' }}>
+                        {`${window.location.origin}/api/git-webhook/github/${webhookId}`}
+                      </Typography>
+                      <CopyButton text={`${window.location.origin}/api/git-webhook/github/${webhookId}`} />
+                    </Stack>
+                  </InfoRow>
+                  <InfoRow label="Secret">
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Typography variant="body2" fontFamily="monospace" sx={{ wordBreak: 'break-all' }}>
+                        {webhookSecret}
+                      </Typography>
+                      <CopyButton text={webhookSecret} />
+                    </Stack>
+                  </InfoRow>
                 </Box>
               )}
             </Paper>
