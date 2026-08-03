@@ -742,10 +742,9 @@ export class GitService {
     }
 
     // Since we don't store the username in ManagedRepo currently, we have to deduce it from the path.
-    // path is /home/clearpanel/username/repo
-    const pathParts = repo.path.split(path.sep).filter(Boolean);
-    // Assuming structure: /home/clearpanel/<username>/...
-    const username = pathParts[2]; // e.g. ["home", "clearpanel", "username", ...]
+    const pathParts = repo.path.replace(/\\/g, '/').split('/').filter(Boolean);
+    // Assuming structure: /home/<username>/...
+    const username = pathParts[1];
 
     if (!username) {
       throw new Error('Could not deduce username from repository path');
