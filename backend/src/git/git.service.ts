@@ -62,8 +62,9 @@ export class GitService {
     }
 
     if (!full.startsWith(rootResolved)) {
-      this.logger.error(`Access denied: ${full} is outside of ${rootResolved}`);
-      throw new Error('Access denied');
+      const msg = `Access denied: full='${full}' outside rootResolved='${rootResolved}' (req='${requestedPath}', user='${username}')`;
+      this.logger.error(msg);
+      throw new Error(msg);
     }
     return full;
   }
@@ -742,9 +743,18 @@ export class GitService {
     }
 
     // Since we don't store the username in ManagedRepo currently, we have to deduce it from the path.
-    const pathParts = repo.path.replace(/\\/g, '/').split('/').filter(Boolean);
-    // Assuming structure: /home/<username>/...
-    const username = pathParts[1];
+    const envRoot = process.env.ROOT_PATH?.trim();
+    const base = envRoot && envRoot.length > 0 ? path.resolve(envRoot).replace(/\\/g, '/') : '/home/clearpanel';
+    const normalizedRepoPath = repo.path.replace(/\\/g, '/');
+    
+    let username: string;
+    if (normalizedRepoPath.startsWith(base)) {
+      const relPath = normalizedRepoPath.substring(base.length).replace(/^\/+/, '');
+      username = relPath.split('/')[0];
+    } else {
+      const pathParts = normalizedRepoPath.split('/').filter(Boolean);
+      username = pathParts[1];
+    }
 
     if (!username) {
       throw new Error('Could not deduce username from repository path');
