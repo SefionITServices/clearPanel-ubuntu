@@ -179,8 +179,27 @@ export class GitService {
 
     try {
       const gitArgs = ['-c', 'safe.directory=*', ...args];
-      const { stdout } = await execFile('/usr/bin/git', gitArgs, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
-      return stdout.trim();
+      
+      const isWindows = process.platform === 'win32';
+      // In production/Linux, run git as the specific user to avoid permission errors
+      if (!isWindows) {
+        // We use env to pass the environment variables explicitly through sudo
+        const sudoArgs = [
+          '-u', username, '-n',
+          '/usr/bin/env',
+          `GIT_SSH_COMMAND=${env.GIT_SSH_COMMAND}`,
+          `GIT_AUTHOR_NAME=${env.GIT_AUTHOR_NAME}`,
+          `GIT_COMMITTER_NAME=${env.GIT_COMMITTER_NAME}`,
+          `HOME=${env.HOME}`,
+          '/usr/bin/git',
+          ...gitArgs
+        ];
+        const { stdout } = await execFile('sudo', sudoArgs, { cwd, maxBuffer: 10 * 1024 * 1024 });
+        return stdout.trim();
+      } else {
+        const { stdout } = await execFile('/usr/bin/git', gitArgs, { cwd, env: env as NodeJS.ProcessEnv, maxBuffer: 10 * 1024 * 1024 });
+        return stdout.trim();
+      }
     } catch (e: any) {
       this.logger.error(`Git command failed: git ${args.join(' ')} - Error: ${e.message}`, e.stack);
       if (e.code === 'ENOENT') {
