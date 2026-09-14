@@ -145,11 +145,23 @@ export class MailService {
         if (detectedIpv6) break;
       }
 
-      // Ensure a base zone exists (creates @ A and www CNAME at minimum)
+      // Ensure a base zone exists in clearPanel's DNS JSON store
       const zone = await this.dnsService.ensureDefaultZone(normalized, {
         serverIp: primaryIp,
         nameservers: settings.nameservers ?? [],
       });
+
+      // If BIND9 is installed on the server, attempt to create a live zone file so syncs will apply
+      try {
+        const createResult = await this.dnsServerService.createZone(normalized, primaryIp, settings.nameservers ?? []);
+        if (createResult && createResult.success) {
+          logs.push({ task: 'DNS', success: true, message: `Created BIND9 zone for ${normalized}` });
+        } else {
+          logs.push({ task: 'DNS', success: false, message: `BIND9 zone not created: ${createResult?.message || 'unknown'}` });
+        }
+      } catch (e: any) {
+        logs.push({ task: 'DNS', success: false, message: `BIND9 zone creation failed: ${e?.message || String(e)}` });
+      }
 
       // Add mail.<domain> A/AAAA records if missing
       const hasMailA = zone.records.some(r => r.type === 'A' && r.name === 'mail');
