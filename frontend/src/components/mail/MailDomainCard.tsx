@@ -22,6 +22,7 @@ import { MailboxManager } from './MailboxManager';
 import { AliasManager } from './AliasManager';
 import { SecuritySettings } from './SecuritySettings';
 import { DomainLogs } from './DomainLogs';
+import { MailDnsPanel } from './MailDnsPanel';
 
 interface MailDomainCardProps {
   domain: MailDomain;
@@ -82,6 +83,7 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
               <Tab label="Mailboxes" />
               <Tab label="Forwarders" />
               <Tab label="Security & Limits" />
+              <Tab label="DNS" />
               <Tab label="Audit Logs" />
             </Tabs>
           </Box>
@@ -89,7 +91,8 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
             {tab === 0 && <MailboxManager domain={domain} onDomainUpdate={onDomainUpdate} onFeedback={onFeedback} />}
             {tab === 1 && <AliasManager domain={domain} onDomainUpdate={onDomainUpdate} onFeedback={onFeedback} />}
             {tab === 2 && <SecuritySettings domain={domain} onDomainUpdate={onDomainUpdate} onFeedback={onFeedback} />}
-            {tab === 3 && <DomainLogs domainId={domain.id} />}
+            {tab === 3 && <MailDnsPanel domainId={domain.id} />}
+            {tab === 4 && <DomainLogs domainId={domain.id} />}
           </Box>
         </CardContent>
       </Collapse>
