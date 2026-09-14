@@ -80,6 +80,11 @@ export interface SearchResponse extends ApiResponse {
   results: SearchResult[];
 }
 
+export interface ShareResponse extends ApiResponse {
+  url?: string;
+  token?: string;
+}
+
 const API_BASE = '/api/files';
 
 async function fetchJSON<T = any>(url: string, options?: RequestInit): Promise<T> {
@@ -170,6 +175,14 @@ export const filesAPI = {
 
   getRawUrl(path: string): string {
     return `${API_BASE}/raw?path=${encodeURIComponent(path)}`;
+  },
+
+  async share(path: string, ttl: number = 3600, disposition: 'inline' | 'attachment' = 'attachment'): Promise<ShareResponse> {
+    return fetchJSON<ShareResponse>(`${API_BASE}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, ttl, disposition }),
+    });
   },
 
   async copy(sources: string[], destination: string): Promise<ApiResponse> {

@@ -41,6 +41,7 @@ import {
   Email as EmailIcon,
   Storage as StorageIcon,
   VpnKey as PasswordIcon,
+  ContentCopy as CopyIcon,
   Settings as SettingsIcon,
   Search as SearchIcon,
   CheckCircle as CheckCircleIcon,
@@ -159,6 +160,10 @@ export default function EmailAccountsPage() {
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Client settings dialog
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsMailbox, setSettingsMailbox] = useState<FlatMailbox | null>(null);
+
   // -- state: form fields --------------------------------------------------
   const [newLocalPart, setNewLocalPart] = useState('');
   const [newDomainId, setNewDomainId] = useState('');
@@ -257,6 +262,33 @@ export default function EmailAccountsPage() {
   };
   const closeMenu = () => {
     setMenuAnchor(null);
+  };
+
+  const openClientSettings = (mb: FlatMailbox) => {
+    setSettingsMailbox(mb);
+    setSettingsOpen(true);
+    closeMenu();
+  };
+
+  const copyClientConfig = async (protocol: 'imap' | 'pop3' | 'smtp') => {
+    if (!settingsMailbox) return;
+    const host = `mail.${settingsMailbox.domain}`;
+    const email = settingsMailbox.email;
+    let text = '';
+    if (protocol === 'imap') {
+      text = `IMAP (SSL/TLS)\nServer: ${host}\nPort: 993\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\n\nIMAP (STARTTLS)\nServer: ${host}\nPort: 143\nSecurity: STARTTLS\nUsername: ${email}`;
+    } else if (protocol === 'pop3') {
+      text = `POP3 (SSL/TLS)\nServer: ${host}\nPort: 995\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\n\nPOP3 (STARTTLS)\nServer: ${host}\nPort: 110\nSecurity: STARTTLS\nUsername: ${email}`;
+    } else {
+      text = `SMTP (Submission / STARTTLS)\nServer: ${host}\nPort: 587\nSecurity: STARTTLS\nAuthentication: Yes (username = full email)\nUsername: ${email}\nPassword: (your mailbox password)\n\nSMTP (SMTPS / Implicit TLS)\nServer: ${host}\nPort: 465\nSecurity: SSL/TLS (implicit)`;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setSnack({ open: true, message: `${protocol.toUpperCase()} settings copied`, severity: 'success' });
+    } catch (e: any) {
+      setSnack({ open: true, message: 'Clipboard not available', severity: 'error' });
+    }
   };
 
   // -- handlers: create ----------------------------------------------------
@@ -668,6 +700,53 @@ export default function EmailAccountsPage() {
             </Typography>
           </Alert>
         </Paper>
+
+        {/* Client Settings Dialog for selected mailbox */}
+        <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Client Settings</DialogTitle>
+          <DialogContent>
+            {settingsMailbox ? (
+              <Box>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Account: <strong>{settingsMailbox.email}</strong>
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 1 }}>IMAP</Typography>
+                <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                  <Typography>Server: mail.{settingsMailbox.domain}</Typography>
+                  <Typography>Port: 993 (SSL/TLS) or 143 (STARTTLS)</Typography>
+                  <Typography>Username: {settingsMailbox.email}</Typography>
+                  <Typography>Password: your mailbox password</Typography>
+                  <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('imap')}>Copy IMAP Settings</Button>
+                </Box>
+
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 2 }}>POP3</Typography>
+                <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                  <Typography>Server: mail.{settingsMailbox.domain}</Typography>
+                  <Typography>Port: 995 (SSL/TLS) or 110 (STARTTLS)</Typography>
+                  <Typography>Username: {settingsMailbox.email}</Typography>
+                  <Typography>Password: your mailbox password</Typography>
+                  <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('pop3')}>Copy POP3 Settings</Button>
+                </Box>
+
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 2 }}>SMTP (Outgoing)</Typography>
+                <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                  <Typography>Server: mail.{settingsMailbox.domain}</Typography>
+                  <Typography>Port: 587 (STARTTLS) or 465 (SSL/TLS)</Typography>
+                  <Typography>Authentication: Yes — use full email address as username</Typography>
+                  <Typography>Username: {settingsMailbox.email}</Typography>
+                  <Typography>Password: your mailbox password</Typography>
+                  <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('smtp')}>Copy SMTP Settings</Button>
+                </Box>
+              </Box>
+            ) : (
+              <Typography>No mailbox selected</Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSettingsOpen(false)}>Close</Button>
+            <Button variant="contained" onClick={() => { setSettingsOpen(false); setPasswordOpen(true); }}>Change Password</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
 
       {/* ===== Context Menu ===== */}
@@ -689,6 +768,10 @@ export default function EmailAccountsPage() {
         >
           <SettingsIcon sx={{ mr: 1, fontSize: 20 }} />
           Manage Quota
+        </MenuItem>
+        <MenuItem onClick={() => openClientSettings(selectedMailbox as FlatMailbox)}>
+          <CopyIcon sx={{ mr: 1, fontSize: 20 }} />
+          Client Settings
         </MenuItem>
         <MenuItem onClick={handleWebmail}>
           <OpenInNewIcon sx={{ mr: 1, fontSize: 20 }} />

@@ -246,8 +246,71 @@ export default function FileManagerPage() {
   const [symlinkLinkPath, setSymlinkLinkPath] = useState('');
   const [uploadOverwrite, setUploadOverwrite] = useState(false);
 
+  // Share / link dialog state
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharePath, setSharePath] = useState('');
+  const [shareExpiry, setShareExpiry] = useState<number>(3600);
+  const [shareDisposition, setShareDisposition] = useState<'inline' | 'attachment'>('attachment');
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
+
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ mouseX: number; mouseY: number; item: FileItem | null } | null>(null);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSuccessMsg('Link copied to clipboard');
+    } catch (e: any) {
+      setError(e?.message || 'Clipboard not available');
+    }
+  };
+
+  const handleCopyInternalLink = (name: string) => {
+    const p = currentPath ? `${currentPath}/${name}` : name;
+    const url = `${window.location.origin}${filesAPI.downloadURL(p)}`;
+    copyToClipboard(url);
+    closeCtxMenu();
+  };
+
+  const handleCopyPreviewLink = (name: string) => {
+    const p = currentPath ? `${currentPath}/${name}` : name;
+    const url = `${window.location.origin}${filesAPI.getRawUrl(p)}`;
+    copyToClipboard(url);
+    closeCtxMenu();
+  };
+
+  const openShareDialog = (name: string) => {
+    const p = currentPath ? `${currentPath}/${name}` : name;
+    setSharePath(p);
+    // default to inline for previewable media
+    const isVid = name.match(/\.(mp4|webm|ogg)$/i);
+    const isImg = isImage(name);
+    setShareDisposition(isVid || isImg ? 'inline' : 'attachment');
+    setShareExpiry(3600);
+    setShareUrl('');
+    setShareOpen(true);
+    closeCtxMenu();
+  };
+
+  const createShare = async () => {
+    setShareLoading(true);
+    setShareUrl('');
+    try {
+      const resp = await filesAPI.share(sharePath, shareExpiry, shareDisposition);
+      if (resp && (resp as any).url) {
+        const url = `${window.location.origin}${(resp as any).url}`;
+        setShareUrl(url);
+        setSuccessMsg('Share link created');
+      } else {
+        setError('Failed to create share link');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setShareLoading(false);
+    }
+  };
 
   // Drag & drop
   const [dragOver, setDragOver] = useState(false);
@@ -1030,10 +1093,31 @@ export default function FileManagerPage() {
                 <ListItemText>Preview</ListItemText>
               </MenuItem>
             ),
-            ctxMenu.item.type === 'file' && (
+            (ctxMenu.item.type === 'file' || ctxMenu.item.type === 'directory') && (
               <MenuItem key="download" onClick={() => ctxAction(() => handleDownload(ctxMenu.item!.name))}>
                 <ListItemIcon><Download fontSize="small" /></ListItemIcon>
                 <ListItemText>Download</ListItemText>
+              </MenuItem>
+            ),
+            // Copy internal download link
+            ctxMenu.item.type === 'file' && (
+              <MenuItem key="copylink" onClick={() => ctxAction(() => handleCopyInternalLink(ctxMenu.item!.name))}>
+                <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Copy download link</ListItemText>
+              </MenuItem>
+            ),
+            // Copy preview link (images/videos/audio)
+            ctxMenu.item.type === 'file' && (ctxMenu.item.name.match(/\.(jpg|jpeg|png|gif|svg|webp|mp4|webm|ogg|mp3|wav)$/i)) && (
+              <MenuItem key="copypreview" onClick={() => ctxAction(() => handleCopyPreviewLink(ctxMenu.item!.name))}>
+                <ListItemIcon><Visibility fontSize="small" /></ListItemIcon>
+                <ListItemText>Copy preview link</ListItemText>
+              </MenuItem>
+            ),
+            // Create public share link
+            ctxMenu.item.type === 'file' && (
+              <MenuItem key="share" onClick={() => ctxAction(() => openShareDialog(ctxMenu.item!.name))}>
+                <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Create public share link</ListItemText>
               </MenuItem>
             ),
             ctxMenu.item.type === 'file' && isArchive(ctxMenu.item.name) && (
@@ -1425,6 +1509,34 @@ export default function FileManagerPage() {
         </Dialog>
 
         {/* Image Preview */}
+        {/* Share Link Dialog */}
+        <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Create public share link</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ mb: 1 }}>Path: <strong>{sharePath}</strong></Typography>
+            <FormLabel>Expiry</FormLabel>
+            <Stack direction="row" spacing={1} sx={{ my: 1 }}>
+              <Button variant={shareExpiry === 3600 ? 'contained' : 'outlined'} onClick={() => setShareExpiry(3600)}>1 hour</Button>
+              <Button variant={shareExpiry === 86400 ? 'contained' : 'outlined'} onClick={() => setShareExpiry(86400)}>24 hours</Button>
+              <Button variant={shareExpiry === 604800 ? 'contained' : 'outlined'} onClick={() => setShareExpiry(604800)}>7 days</Button>
+            </Stack>
+            <FormLabel>Behavior</FormLabel>
+            <Stack direction="row" spacing={1} sx={{ my: 1 }}>
+              <Button variant={shareDisposition === 'inline' ? 'contained' : 'outlined'} onClick={() => setShareDisposition('inline')}>Open inline (preview)</Button>
+              <Button variant={shareDisposition === 'attachment' ? 'contained' : 'outlined'} onClick={() => setShareDisposition('attachment')}>Force download</Button>
+            </Stack>
+            {shareUrl ? (
+              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                <TextField fullWidth value={shareUrl} InputProps={{ readOnly: true }} />
+                <Button onClick={() => copyToClipboard(shareUrl)}>Copy</Button>
+              </Box>
+            ) : null}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShareOpen(false)}>Close</Button>
+            <Button variant="contained" onClick={createShare} disabled={shareLoading}>{shareLoading ? <CircularProgress size={16} color="inherit" /> : 'Create'}</Button>
+          </DialogActions>
+        </Dialog>
         <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth>
           <DialogTitle>
             <Stack direction="row" justifyContent="space-between" alignItems="center">

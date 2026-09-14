@@ -2,6 +2,7 @@
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { FilesService } from './files.service';
+import { FileShareService } from './file-share.service';
 import { AuthGuard } from '../auth/auth.guard';
 import multer from 'multer';
 import path from 'path';
@@ -9,7 +10,7 @@ import path from 'path';
 @Controller('files')
 @UseGuards(AuthGuard)
 export class FilesController {
-  constructor(private readonly files: FilesService) { }
+  constructor(private readonly files: FilesService, private readonly shareService: FileShareService) { }
 
   @Get('list')
   async list(@Query('path') path: string, @Req() req: Request, @Res() res: Response) {
@@ -64,10 +65,40 @@ export class FilesController {
     try {
       const username = (req.session as any).username;
       const info = await this.files.getFileInfo(username, p);
+      // If the path is a directory, stream it as a ZIP archive
       if (info.stat.isDirectory()) {
-        return res.status(400).json({ success: false, error: 'Cannot download a directory' });
+        res.setHeader('Content-Type', 'application/zip');
+        const name = path.basename(info.full) || 'archive';
+        res.setHeader('Content-Disposition', `attachment; filename="${name}.zip"`);
+        const zip = this.files.createArchiveStream(username, [p]);
+        zip.on('error', (err: any) => {
+          if (!res.headersSent) res.status(500);
+          res.end(`Archive error: ${err.message}`);
+        });
+        zip.pipe(res);
+        await zip.finalize();
+        return;
       }
+
       return res.download(info.full, path.basename(info.full));
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('share')
+  async share(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    const p: string = body.path;
+    const ttl: number = Number(body.ttl) || 3600;
+    const disposition: 'inline' | 'attachment' = body.disposition === 'inline' ? 'inline' : 'attachment';
+    if (!p) return res.status(400).json({ success: false, error: 'path required' });
+    try {
+      const username = (req.session as any).username;
+      // Validate existence
+      await this.files.getFileInfo(username, p);
+      const token = this.shareService.generateToken(username, p, ttl, disposition);
+      const url = `/api/files/public/${encodeURIComponent(token)}`;
+      return res.json({ success: true, url, token });
     } catch (e: any) {
       return res.status(400).json({ success: false, error: e.message });
     }
