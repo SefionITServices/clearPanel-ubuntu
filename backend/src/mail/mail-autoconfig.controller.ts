@@ -46,6 +46,15 @@ export class MailAutoconfigController {
       <username>%EMAILADDRESS%</username>
     </incomingServer>
 
+    <!-- STARTTLS fallback (some clients prefer STARTTLS on port 143) -->
+    <incomingServer type="imap">
+      <hostname>${this.escapeXml(hostname)}</hostname>
+      <port>143</port>
+      <socketType>STARTTLS</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>
+
     <incomingServer type="pop3">
       <hostname>${this.escapeXml(hostname)}</hostname>
       <port>995</port>
@@ -103,6 +112,17 @@ export class MailAutoconfigController {
         <SSL>on</SSL>
         <AuthRequired>on</AuthRequired>
       </Protocol>
+      <!-- STARTTLS fallback for IMAP -->
+      <Protocol>
+        <Type>IMAP</Type>
+        <Server>${this.escapeXml(hostname)}</Server>
+        <Port>143</Port>
+        <DomainRequired>off</DomainRequired>
+        <LoginName>${this.escapeXml(email)}</LoginName>
+        <SPA>off</SPA>
+        <SSL>off</SSL>
+        <AuthRequired>on</AuthRequired>
+      </Protocol>
       <Protocol>
         <Type>SMTP</Type>
         <Server>${this.escapeXml(hostname)}</Server>
@@ -128,9 +148,13 @@ export class MailAutoconfigController {
   }
 
   private async getMailHostname(domain: string): Promise<string> {
-    // Try to get hostname from server settings, fall back to mail.<domain>
+    // Prefer an explicit server hostname when configured, then primaryDomain-based mail.<domain>,
+    // and finally fall back to mail.<domain> for autoconfig responses.
     try {
       const settings = await this.serverSettings.getSettings();
+      if (settings.hostname) {
+        return settings.hostname;
+      }
       if (settings.primaryDomain) {
         return `mail.${settings.primaryDomain}`;
       }

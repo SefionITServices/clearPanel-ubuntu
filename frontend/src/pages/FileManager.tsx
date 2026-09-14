@@ -64,6 +64,7 @@ import {
   Visibility,
   Close,
   Save,
+  Refresh,
   ArrowUpward,
   Image as ImageIcon,
   Code as CodeIcon,
@@ -179,7 +180,7 @@ const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
 // ==========================================================
 
 export default function FileManagerPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Core state
   const [currentPath, setCurrentPath] = useState('');
@@ -325,13 +326,22 @@ export default function FileManagerPage() {
       const data = await filesAPI.list(p);
       setItems(data.items || []);
       setCurrentPath(p);
+      // persist current folder in the URL so a browser refresh keeps the view
+      try {
+        if (setSearchParams) {
+          if (p) setSearchParams({ path: p });
+          else setSearchParams({});
+        }
+      } catch (e) {
+        // ignore URL update failures
+      }
       setSelected(new Set());
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setSearchParams]);
 
   const loadDiskUsage = useCallback(async () => {
     try {
@@ -837,6 +847,13 @@ export default function FileManagerPage() {
               <IconButton size="small" onClick={() => { setGoToPathValue(currentPath); setGoToPathOpen(true); }}>
                 <FolderOpen fontSize="small" />
               </IconButton>
+            </Tooltip>
+            <Tooltip title="Reload">
+              <span>
+                <IconButton size="small" onClick={() => refresh()} disabled={loading}>
+                  <Refresh fontSize="small" />
+                </IconButton>
+              </span>
             </Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             <Tooltip title="Paste (Ctrl+V)"><span>
