@@ -4,20 +4,23 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Collapse,
   Divider,
   IconButton,
   Stack,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DnsIcon from '@mui/icons-material/Dns';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 
-import { MailDomain } from '../../api/mail';
+import { mailAPI, MailDomain } from '../../api/mail';
 import { MailboxManager } from './MailboxManager';
 import { AliasManager } from './AliasManager';
 import { SecuritySettings } from './SecuritySettings';
@@ -34,9 +37,25 @@ interface MailDomainCardProps {
 export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }: MailDomainCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState(0);
+  const [dnsLoading, setDnsLoading] = useState(false);
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTab(newValue);
+  };
+
+  const handleSetupDns = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDnsLoading(true);
+    try {
+      const result = await mailAPI.publishDns(domain.id);
+      const created = result.published.filter((r: any) => r.status === 'created').length;
+      const unchanged = result.published.filter((r: any) => r.status === 'exists').length;
+      onFeedback('success', `DNS setup: ${created} record(s) created, ${unchanged} unchanged`);
+    } catch (e) {
+      onFeedback('error', e instanceof Error ? e.message : 'DNS setup failed');
+    } finally {
+      setDnsLoading(false);
+    }
   };
 
   return (
@@ -66,6 +85,13 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center">
+          <Tooltip title="Setup all mail DNS records">
+            <span>
+              <IconButton size="small" color="primary" onClick={handleSetupDns} disabled={dnsLoading}>
+                {dnsLoading ? <CircularProgress size={16} /> : <DnsIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
           <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); onRemove(domain); }}>
             <DeleteIcon />
           </IconButton>

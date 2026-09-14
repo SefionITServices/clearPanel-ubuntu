@@ -10,7 +10,6 @@ import { ServerSettingsService } from '../server/server-settings.service';
 import { DnsService } from '../dns/dns.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
 import { getDataFilePath, getMailStateDir } from '../common/paths';
-import * as os from 'os';
 
 const DEFAULT_SPAM_THRESHOLD = 6.0;
 const DEFAULT_GREYLISTING_DELAY_SECONDS = 300;
@@ -123,71 +122,7 @@ export class MailService {
       message: `Domain ${normalized} stored in mail-domains.json`,
     });
 
-    // --- Auto-create DNS records to simplify mail setup ---
-    if (autoCreateDns) {
-    try {
-      const settings = await this.serverSettings.getSettings();
-      // Prefer explicit server IP from settings or environment
-      const primaryIp = await this.serverSettings.getServerIp();
-
-      // Try to detect an IPv6 address on the host (non-link-local)
-      const netifs = os.networkInterfaces();
-      let detectedIpv6: string | undefined;
-      for (const addrs of Object.values(netifs)) {
-        if (!addrs) continue;
-        for (const a of addrs) {
-          // Node types: family can be 'IPv4' | 'IPv6' or numbers on some Node versions
-          const fam = String(a.family).toLowerCase();
-          if ((fam === 'ipv6' || fam === '6') && !a.internal && a.address && !a.address.startsWith('fe80')) {
-            detectedIpv6 = a.address;
-            break;
-          }
-        }
-        if (detectedIpv6) break;
-      }
-
-      // Ensure a base zone exists in clearPanel's DNS JSON store
-      const zone = await this.dnsService.ensureDefaultZone(normalized, {
-        serverIp: primaryIp,
-        nameservers: settings.nameservers ?? [],
-      });
-
-      // If BIND9 is installed on the server, attempt to create a live zone file so syncs will apply
-      try {
-        const createResult = await this.dnsServerService.createZone(normalized, primaryIp, settings.nameservers ?? []);
-        if (createResult && createResult.success) {
-          logs.push({ task: 'DNS', success: true, message: `Created BIND9 zone for ${normalized}` });
-        } else {
-          logs.push({ task: 'DNS', success: false, message: `BIND9 zone not created: ${createResult?.message || 'unknown'}` });
-        }
-      } catch (e: any) {
-        logs.push({ task: 'DNS', success: false, message: `BIND9 zone creation failed: ${e?.message || String(e)}` });
-      }
-
-      // Add mail.<domain> A/AAAA records if missing
-      const hasMailA = zone.records.some(r => r.type === 'A' && r.name === 'mail');
-      const hasMailAAAA = zone.records.some(r => r.type === 'AAAA' && r.name === 'mail');
-      if (!hasMailA && primaryIp && primaryIp.includes('.')) {
-        await this.dnsService.addRecord(normalized, { type: 'A', name: 'mail', value: primaryIp, ttl: 3600 });
-        logs.push({ task: 'DNS', success: true, message: `Added A record for mail.${normalized} -> ${primaryIp}` });
-      }
-      if (!hasMailAAAA && detectedIpv6) {
-        await this.dnsService.addRecord(normalized, { type: 'AAAA', name: 'mail', value: detectedIpv6, ttl: 3600 });
-        logs.push({ task: 'DNS', success: true, message: `Added AAAA record for mail.${normalized} -> ${detectedIpv6}` });
-      }
-
-      // Ensure an MX record exists pointing to mail.<domain>
-      const hasMx = zone.records.some(r => r.type === 'MX' && (r.name === '@' || r.name === ''));
-      if (!hasMx) {
-        await this.dnsService.addRecord(normalized, { type: 'MX', name: '@', value: `mail.${normalized}`, priority: 10, ttl: 3600 });
-        logs.push({ task: 'DNS', success: true, message: `Added MX record for ${normalized} -> mail.${normalized}` });
-      }
-    } catch (err: any) {
-      logs.push({ task: 'DNS', success: false, message: `DNS automation failed: ${err?.message || String(err)}` });
-    }
-    } else {
-      logs.push({ task: 'DNS', success: true, message: 'Auto DNS creation disabled for this domain' });
-    }
+    // DNS publish is deferred until after DKIM is provisioned so the DKIM TXT record is included
 
     const automationLogs = [
       ...(await this.automation.ensureStack()),
@@ -213,6 +148,23 @@ export class MailService {
         message: `Generated DKIM selector ${dkim.selector}`,
       });
       await this.writeDomains(domains);
+    }
+
+    // Publish all required DNS records (A, AAAA, MX, SPF, DMARC, DKIM TXT) now that DKIM is available
+    if (autoCreateDns) {
+      try {
+        const publishResult = await this.publishDns(payload.id);
+        const created = publishResult.published.filter(r => r.status === 'created').length;
+        const unchanged = publishResult.published.filter(r => r.status === 'exists').length;
+        logs.push({ task: 'Auto-publish DNS', success: true, message: `Published ${created} record(s); ${unchanged} already up-to-date` });
+        if (publishResult.zoneReload) {
+          logs.push({ task: 'BIND9 zone reload', success: publishResult.zoneReload.success, message: publishResult.zoneReload.message });
+        }
+      } catch (err: any) {
+        logs.push({ task: 'Auto-publish DNS', success: false, message: `DNS auto-publish failed: ${err?.message || String(err)}` });
+      }
+    } else {
+      logs.push({ task: 'Auto-publish DNS', success: true, message: 'Auto DNS creation skipped' });
     }
 
     const combinedLogs = [...logs, ...automationLogs, ...policyLogs];
