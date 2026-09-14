@@ -28,6 +28,7 @@ export default function MailDomainsPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
   const [addingBusy, setAddingBusy] = useState(false);
+   const [autoCreateDns, setAutoCreateDns] = useState(true);
 
   const fetchDomains = async () => {
     setLoading(true);
@@ -65,7 +66,7 @@ export default function MailDomainsPage() {
     }
     setAddingBusy(true);
     try {
-       const result = await mailAPI.createDomain({ domain: raw });
+      const result = await mailAPI.createDomain({ domain: raw, autoCreateDns });
        setDomains((prev) => [...prev, result.domain]);
        handleFeedback('success', `Added mail domain ${raw}`);
        setAddDialogOpen(false);
@@ -165,6 +166,12 @@ export default function MailDomainsPage() {
                placeholder="example.com"
                disabled={addingBusy}
             />
+            <Box sx={{ mt: 2 }}>
+               <FormControlLabel
+                 control={<Switch checked={autoCreateDns} onChange={(_, v) => setAutoCreateDns(v)} />}
+                 label="Auto-create mail subdomain and DNS records"
+               />
+            </Box>
          </DialogContent>
          <DialogActions sx={{ p: 2 }}>
             <Button onClick={() => setAddDialogOpen(false)} disabled={addingBusy} sx={{ textTransform: 'none' }}>Cancel</Button>

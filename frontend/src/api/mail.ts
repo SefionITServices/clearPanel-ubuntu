@@ -100,6 +100,7 @@ export interface CreateDomainPayload {
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;
   virusScanEnabled?: boolean;
+  autoCreateDns?: boolean;
 }
 
 export interface DnsRecord {

@@ -70,7 +70,7 @@ export class MailService {
     return domains.find((entry) => entry.id === id);
   }
 
-  async createDomain(domain: string, options?: DomainSettingsUpdate): Promise<MailDomainResult> {
+  async createDomain(domain: string, options?: DomainSettingsUpdate, autoCreateDns: boolean = true): Promise<MailDomainResult> {
     const normalized = this.normalizeDomain(domain);
     const logs: AutomationLog[] = [];
 
@@ -124,6 +124,7 @@ export class MailService {
     });
 
     // --- Auto-create DNS records to simplify mail setup ---
+    if (autoCreateDns) {
     try {
       const settings = await this.serverSettings.getSettings();
       // Prefer explicit server IP from settings or environment
@@ -183,6 +184,9 @@ export class MailService {
       }
     } catch (err: any) {
       logs.push({ task: 'DNS', success: false, message: `DNS automation failed: ${err?.message || String(err)}` });
+    }
+    } else {
+      logs.push({ task: 'DNS', success: true, message: 'Auto DNS creation disabled for this domain' });
     }
 
     const automationLogs = [

@@ -42,6 +42,7 @@ export class MailController {
     @Body()
     body: {
       domain: string;
+      autoCreateDns?: boolean;
       spamThreshold?: number;
       greylistingEnabled?: boolean;
       greylistingDelaySeconds?: number;
@@ -71,7 +72,9 @@ export class MailController {
       hasOptions = true;
     }
 
-    return this.mailService.createDomain(body.domain, hasOptions ? options : undefined);
+    // allow caller to opt out of automatic DNS creation (default true)
+    const autoCreate = body.autoCreateDns === undefined ? true : Boolean(body.autoCreateDns);
+    return this.mailService.createDomain(body.domain, hasOptions ? options : undefined, autoCreate);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
