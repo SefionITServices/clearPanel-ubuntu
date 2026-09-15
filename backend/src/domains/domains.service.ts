@@ -515,7 +515,7 @@ export class DomainsService {
     if (!app) return { success: false, message: 'App not found' };
 
     const resolvedPort = port ?? app.port;
-    if (!Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+    if (resolvedPort === undefined || !Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
       return { success: false, message: 'App port is required and must be an integer between 1 and 65535' };
     }
 
@@ -620,7 +620,7 @@ export class DomainsService {
     }
 
     const resolvedPort = port ?? containerMeta.port;
-    if (!Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+    if (resolvedPort === undefined || !Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
       return { success: false, message: 'Container host port is required. Publish a port and try again.' };
     }
 
