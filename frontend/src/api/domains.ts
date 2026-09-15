@@ -26,13 +26,29 @@ export const domainsApi = {
     body: JSON.stringify({ config }),
   }),
   updateSettings: (id: string, settings: Record<string, any>) => fetchJSON(`${API_BASE}/${id}/settings`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
   }),
   updatePath: (id: string, folderPath: string) => fetchJSON(`${API_BASE}/${id}/path`, {
-    method: 'PATCH',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ folderPath }),
+  }),
+  linkApp: (id: string, appId: string, port?: number, proxyHost?: string) => fetchJSON(`${API_BASE}/${id}/link-app`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ appId, port, proxyHost }),
+  }),
+  unlinkApp: (id: string) => fetchJSON(`${API_BASE}/${id}/link-app`, {
+    method: 'DELETE',
+  }),
+  linkContainer: (id: string, containerId: string, port?: number, proxyHost?: string) => fetchJSON(`${API_BASE}/${id}/link-container`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ containerId, port, proxyHost }),
+  }),
+  unlinkContainer: (id: string) => fetchJSON(`${API_BASE}/${id}/link-container`, {
+    method: 'DELETE',
   }),
 };

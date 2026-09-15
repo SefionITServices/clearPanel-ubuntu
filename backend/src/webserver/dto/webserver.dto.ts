@@ -14,4 +14,8 @@ export class CreateVhostDto {
   @Min(1)
   @Max(65535)
   proxyPort?: number;
+
+  @IsString()
+  @IsOptional()
+  proxyHost?: string;
 }

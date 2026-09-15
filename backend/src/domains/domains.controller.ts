@@ -5,7 +5,7 @@ import { WebServerService } from '../webserver/webserver.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
 import { ServerSettingsService } from '../server/server-settings.service';
 import { AuthGuard } from '../auth/auth.guard';
-import { AddDomainDto, UpdateDomainPathDto, UpdateDomainSettingsDto, SaveVhostDto } from './dto/domain.dto';
+import { AddDomainDto, UpdateDomainPathDto, UpdateDomainSettingsDto, SaveVhostDto, LinkAppDto, LinkContainerDto } from './dto/domain.dto';
 
 @Controller('domains')
 @UseGuards(AuthGuard)
@@ -106,6 +106,26 @@ export class DomainsController {
       return { success: false, message: 'Domain not found' };
     }
     return { success: true, domain: result.domain, automationLogs: result.logs };
+  }
+
+  @Post(':id/link-app')
+  async linkApp(@Param('id') id: string, @Body() body: LinkAppDto) {
+    return this.domainsService.linkApp(id, body.appId, body.port, body.proxyHost);
+  }
+
+  @Delete(':id/link-app')
+  async unlinkApp(@Param('id') id: string) {
+    return this.domainsService.unlinkApp(id);
+  }
+
+  @Post(':id/link-container')
+  async linkContainer(@Param('id') id: string, @Body() body: LinkContainerDto) {
+    return this.domainsService.linkContainer(id, body.containerId, body.port, body.proxyHost);
+  }
+
+  @Delete(':id/link-container')
+  async unlinkContainer(@Param('id') id: string) {
+    return this.domainsService.unlinkContainer(id);
   }
 
   @Delete(':id')

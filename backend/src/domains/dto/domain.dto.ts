@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn, IsInt, Min, Max } from 'class-validator';
 
 export class AddDomainDto {
   @IsString()
@@ -42,6 +42,42 @@ export class UpdateDomainSettingsDto {
   @IsString()
   @IsOptional()
   phpVersion?: string;
+
+  @IsString()
+  @IsOptional()
+  proxyHost?: string;
+}
+
+export class LinkAppDto {
+  @IsString()
+  @IsNotEmpty()
+  appId!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  port?: number;
+
+  @IsString()
+  @IsOptional()
+  proxyHost?: string;
+}
+
+export class LinkContainerDto {
+  @IsString()
+  @IsNotEmpty()
+  containerId!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  port?: number;
+
+  @IsString()
+  @IsOptional()
+  proxyHost?: string;
 }
 
 export class SaveVhostDto {

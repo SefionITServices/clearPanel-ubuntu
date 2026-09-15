@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { exec as execCb } from 'child_process';
 import { DnsService } from '../dns/dns.service';
 import { WebServerService } from '../webserver/webserver.service';
 import { DnsServerService } from '../dns-server/dns-server.service';
@@ -7,11 +8,14 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
+import { promisify } from 'util';
 import { ServerSettingsService } from '../server/server-settings.service';
 import { MailService, MailDomainResult } from '../mail/mail.service';
 import { DirectoryStructureService } from '../files/directory-structure.service';
 import { getDataFilePath } from '../common/paths';
 import { getFileLock } from '../common/mutex';
+
+const exec = promisify(execCb);
 
 export interface AutomationLog {
   task: string;
@@ -66,6 +70,60 @@ export class DomainsService {
     await fs.mkdir(path.dirname(getDataFilePath('domains.json')), { recursive: true });
     await fs.writeFile(getDataFilePath('domains.json'), JSON.stringify(domains, null, 2));
     this.domainsCache = { data: domains, ts: Date.now() }; // Update cache on write
+  }
+
+  private normalizeProxyHost(host?: string): string {
+    const value = (host || '127.0.0.1').trim();
+    const hostRe = /^[a-zA-Z0-9.-]+$/;
+    const ipV4Re = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+    if (!hostRe.test(value) && !ipV4Re.test(value)) {
+      throw new Error('Invalid proxy host. Use a hostname or IP only (no scheme/path).');
+    }
+    return value;
+  }
+
+  private async readNodeApps(): Promise<any[]> {
+    try {
+      const raw = await fs.readFile(getDataFilePath('node-apps.json'), 'utf-8');
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeNodeApps(apps: any[]): Promise<void> {
+    await fs.mkdir(path.dirname(getDataFilePath('node-apps.json')), { recursive: true });
+    await fs.writeFile(getDataFilePath('node-apps.json'), JSON.stringify(apps, null, 2));
+  }
+
+  private detectContainerPortFromInspect(inspect: any): number | undefined {
+    const ports = inspect?.NetworkSettings?.Ports || {};
+    for (const key of Object.keys(ports)) {
+      const mappings = ports[key];
+      if (Array.isArray(mappings) && mappings.length > 0 && mappings[0]?.HostPort) {
+        const num = Number(mappings[0].HostPort);
+        if (Number.isInteger(num) && num >= 1 && num <= 65535) {
+          return num;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private async inspectContainer(containerId: string): Promise<{ id: string; name: string; port?: number }> {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
+      throw new Error('Invalid container id');
+    }
+    const { stdout } = await exec(`docker inspect ${containerId}`);
+    const arr = JSON.parse(stdout || '[]');
+    const data = arr[0] || {};
+    const name = String(data?.Name || '').replace(/^\//, '') || containerId;
+    return {
+      id: String(data?.Id || containerId),
+      name,
+      port: this.detectContainerPortFromInspect(data),
+    };
   }
 
   async addDomain(
@@ -381,7 +439,7 @@ export class DomainsService {
     return domain;
   }
 
-  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[]; phpVersion?: string }): Promise<{ domain: Domain; logs: AutomationLog[] } | null> {
+  async updateDomain(id: string, updates: { folderPath?: string; nameservers?: string[]; phpVersion?: string; proxyHost?: string }): Promise<{ domain: Domain; logs: AutomationLog[] } | null> {
     const domains = await this.readDomains();
     const domain = domains.find((d) => d.id === id);
     if (!domain) return null;
@@ -417,6 +475,9 @@ export class DomainsService {
     if (updates.phpVersion !== undefined) {
       domain.phpVersion = updates.phpVersion.trim() || undefined;
     }
+    if (updates.proxyHost !== undefined) {
+      domain.proxyHost = updates.proxyHost ? this.normalizeProxyHost(updates.proxyHost) : undefined;
+    }
     await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
       const currentDomains = await this.readDomains();
       const domainRef = currentDomains.find((d) => d.id === id);
@@ -430,10 +491,194 @@ export class DomainsService {
         if (updates.phpVersion !== undefined) {
           domainRef.phpVersion = updates.phpVersion.trim() || undefined;
         }
+        if (updates.proxyHost !== undefined) {
+          domainRef.proxyHost = updates.proxyHost ? this.normalizeProxyHost(updates.proxyHost) : undefined;
+        }
         await this.writeDomains(currentDomains);
       }
     });
     return { domain, logs };
+  }
+
+  async linkApp(id: string, appId: string, port?: number, proxyHost?: string): Promise<{ success: boolean; message: string; domain?: Domain }> {
+    const domains = await this.readDomains();
+    const domain = domains.find((d) => d.id === id);
+    if (!domain) return { success: false, message: 'Domain not found' };
+
+    const conflict = domains.find((d) => d.id !== id && d.linkedAppId === appId);
+    if (conflict) {
+      return { success: false, message: `This app is already linked to ${conflict.name}. Unlink it first.` };
+    }
+
+    const apps = await this.readNodeApps();
+    const app = apps.find((a) => a.id === appId);
+    if (!app) return { success: false, message: 'App not found' };
+
+    const resolvedPort = port ?? app.port;
+    if (!Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+      return { success: false, message: 'App port is required and must be an integer between 1 and 65535' };
+    }
+
+    const resolvedProxyHost = this.normalizeProxyHost(proxyHost || domain.proxyHost);
+    const vhostResult = await this.webServerService.createVirtualHost(
+      domain.name,
+      domain.folderPath,
+      domain.phpVersion,
+      resolvedPort,
+      resolvedProxyHost,
+    );
+    if (!vhostResult.success) {
+      return { success: false, message: vhostResult.message };
+    }
+
+    domain.linkedContainerId = undefined;
+    domain.linkedContainerName = undefined;
+    domain.linkedContainerPort = undefined;
+    domain.linkedAppId = appId;
+    domain.linkedAppName = app.name;
+    domain.linkedAppPort = resolvedPort;
+    domain.proxyHost = resolvedProxyHost;
+
+    app.domain = domain.name;
+    app.port = resolvedPort;
+    app.updatedAt = new Date().toISOString();
+
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const idx = currentDomains.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        currentDomains[idx] = { ...currentDomains[idx], ...domain };
+        await this.writeDomains(currentDomains);
+      }
+    });
+
+    await getFileLock(getDataFilePath('node-apps.json')).runExclusive(async () => {
+      const currentApps = await this.readNodeApps();
+      const idx = currentApps.findIndex((a) => a.id === appId);
+      if (idx !== -1) {
+        currentApps[idx] = { ...currentApps[idx], ...app };
+        await this.writeNodeApps(currentApps);
+      }
+    });
+
+    return {
+      success: true,
+      message: `Linked ${domain.name} to app ${app.name} via ${resolvedProxyHost}:${resolvedPort}`,
+      domain,
+    };
+  }
+
+  async unlinkApp(id: string): Promise<{ success: boolean; message: string; domain?: Domain }> {
+    const domains = await this.readDomains();
+    const domain = domains.find((d) => d.id === id);
+    if (!domain) return { success: false, message: 'Domain not found' };
+
+    const linkedAppId = domain.linkedAppId;
+    domain.linkedAppId = undefined;
+    domain.linkedAppName = undefined;
+    domain.linkedAppPort = undefined;
+
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const idx = currentDomains.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        currentDomains[idx] = { ...currentDomains[idx], ...domain };
+        await this.writeDomains(currentDomains);
+      }
+    });
+
+    if (linkedAppId) {
+      await getFileLock(getDataFilePath('node-apps.json')).runExclusive(async () => {
+        const currentApps = await this.readNodeApps();
+        const appIdx = currentApps.findIndex((a) => a.id === linkedAppId);
+        if (appIdx !== -1 && currentApps[appIdx].domain === domain.name) {
+          currentApps[appIdx].domain = undefined;
+          currentApps[appIdx].updatedAt = new Date().toISOString();
+          await this.writeNodeApps(currentApps);
+        }
+      });
+    }
+
+    return { success: true, message: `Unlinked app from ${domain.name}`, domain };
+  }
+
+  async linkContainer(id: string, containerId: string, port?: number, proxyHost?: string): Promise<{ success: boolean; message: string; domain?: Domain }> {
+    const domains = await this.readDomains();
+    const domain = domains.find((d) => d.id === id);
+    if (!domain) return { success: false, message: 'Domain not found' };
+
+    const conflict = domains.find((d) => d.id !== id && d.linkedContainerId === containerId);
+    if (conflict) {
+      return { success: false, message: `This container is already linked to ${conflict.name}. Unlink it first.` };
+    }
+
+    let containerMeta: { id: string; name: string; port?: number };
+    try {
+      containerMeta = await this.inspectContainer(containerId);
+    } catch (e: any) {
+      return { success: false, message: `Container not found: ${e.message}` };
+    }
+
+    const resolvedPort = port ?? containerMeta.port;
+    if (!Number.isInteger(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+      return { success: false, message: 'Container host port is required. Publish a port and try again.' };
+    }
+
+    const resolvedProxyHost = this.normalizeProxyHost(proxyHost || domain.proxyHost);
+    const vhostResult = await this.webServerService.createVirtualHost(
+      domain.name,
+      domain.folderPath,
+      domain.phpVersion,
+      resolvedPort,
+      resolvedProxyHost,
+    );
+    if (!vhostResult.success) {
+      return { success: false, message: vhostResult.message };
+    }
+
+    domain.linkedAppId = undefined;
+    domain.linkedAppName = undefined;
+    domain.linkedAppPort = undefined;
+    domain.linkedContainerId = containerMeta.id;
+    domain.linkedContainerName = containerMeta.name;
+    domain.linkedContainerPort = resolvedPort;
+    domain.proxyHost = resolvedProxyHost;
+
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const idx = currentDomains.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        currentDomains[idx] = { ...currentDomains[idx], ...domain };
+        await this.writeDomains(currentDomains);
+      }
+    });
+
+    return {
+      success: true,
+      message: `Linked ${domain.name} to container ${containerMeta.name} via ${resolvedProxyHost}:${resolvedPort}`,
+      domain,
+    };
+  }
+
+  async unlinkContainer(id: string): Promise<{ success: boolean; message: string; domain?: Domain }> {
+    const domains = await this.readDomains();
+    const domain = domains.find((d) => d.id === id);
+    if (!domain) return { success: false, message: 'Domain not found' };
+
+    domain.linkedContainerId = undefined;
+    domain.linkedContainerName = undefined;
+    domain.linkedContainerPort = undefined;
+
+    await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+      const currentDomains = await this.readDomains();
+      const idx = currentDomains.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        currentDomains[idx] = { ...currentDomains[idx], ...domain };
+        await this.writeDomains(currentDomains);
+      }
+    });
+
+    return { success: true, message: `Unlinked container from ${domain.name}`, domain };
   }
 
   async deleteDomain(id: string): Promise<DomainDeletionResult | null> {

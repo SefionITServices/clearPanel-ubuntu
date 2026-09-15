@@ -55,7 +55,6 @@ import { DashboardLayout } from '../layouts/dashboard/layout';
 import { domainsApi } from '../api/domains';
 import { nodeAppsApi, AppDef } from '../api/node-apps';
 import { dockerApi } from '../api/docker';
-import { webserverApi } from '../api/webserver';
 
 export default function DomainsListView() {
   const navigate = useNavigate();
@@ -88,6 +87,7 @@ export default function DomainsListView() {
   const [appsLoading, setAppsLoading] = React.useState(false);
   const [editAppId, setEditAppId] = React.useState<string | null>(null);
   const [editAppPort, setEditAppPort] = React.useState('');
+  const [editProxyHost, setEditProxyHost] = React.useState('127.0.0.1');
   // Container linking state
   const [containers, setContainers] = React.useState<any[]>([]);
   const [containersLoading, setContainersLoading] = React.useState(false);
@@ -155,8 +155,11 @@ export default function DomainsListView() {
     setVhostConfig('');
     setVhostPath('');
     setVhostEnabled(false);
-    setEditAppId(null);
-    setEditAppPort('');
+    setEditAppId(domain.linkedAppId || null);
+    setEditAppPort(domain.linkedAppPort ? String(domain.linkedAppPort) : '');
+    setEditProxyHost(domain.proxyHost || '127.0.0.1');
+    setEditContainerId(domain.linkedContainerId || null);
+    setEditContainerPort(domain.linkedContainerPort ? String(domain.linkedContainerPort) : '');
     setEditOpen(true);
     handleMenuClose();
 
@@ -167,8 +170,8 @@ export default function DomainsListView() {
       if (res && (res as any).success) {
         const appsRes = (res as any).apps || [];
         setApps(appsRes);
-        const linked = appsRes.find((a: any) => a.domain === domain.name);
-        if (linked) {
+        const linked = appsRes.find((a: any) => a.id === domain.linkedAppId) || appsRes.find((a: any) => a.domain === domain.name);
+        if (linked && !domain.linkedAppId) {
           setEditAppId(linked.id);
           setEditAppPort(linked.port ? String(linked.port) : '');
         }
@@ -188,12 +191,13 @@ export default function DomainsListView() {
       const list = (cRes && (cRes as any).containers) ? (cRes as any).containers : (cRes as any) || [];
       setContainers(list);
       // If any container name matches the domain, preselect it (best-effort)
-      const byName = list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
+      const byName = list.find((c: any) => c.id === domain.linkedContainerId)
+        || list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
       if (byName) {
-        setEditContainerId(byName.id);
+        if (!domain.linkedContainerId) setEditContainerId(byName.id);
         // attempt to parse a host port from its ports string
         const hostPort = parseHostPortFromPortsString(byName.ports || '');
-        if (hostPort) setEditContainerPort(String(hostPort));
+        if (hostPort && !domain.linkedContainerPort) setEditContainerPort(String(hostPort));
       }
     } catch {
       setContainers([]);
@@ -250,6 +254,7 @@ export default function DomainsListView() {
       await domainsApi.updateSettings(editDomain.id, {
         folderPath: editFolderPath,
         nameservers: ns,
+        proxyHost: editProxyHost || undefined,
       });
       // If user selected a container to link, prefer that (container must publish a host port)
       if (editContainerId) {
@@ -284,12 +289,11 @@ export default function DomainsListView() {
             proxyPort = hostPort;
           }
 
-          const docRoot = editFolderPath || editDomain.folderPath || `/home/${editDomain.name}/public_html`;
-          const res = await webserverApi.createVhost(editDomain.name, docRoot, editDomain.phpVersion, proxyPort);
+          const res = await domainsApi.linkContainer(editDomain.id, editContainerId, proxyPort, editProxyHost || undefined);
           if (res.success) {
-            setSnack({ open: true, message: `Container linked: ${editDomain.name} → localhost:${proxyPort}`, severity: 'success' });
+            setSnack({ open: true, message: res.message || `Container linked: ${editDomain.name}`, severity: 'success' });
           } else {
-            setSnack({ open: true, message: res.message || 'Failed to create proxy for container', severity: 'error' });
+            setSnack({ open: true, message: res.message || 'Failed to link container', severity: 'error' });
           }
         } catch (e: any) {
           setSnack({ open: true, message: e.message || 'Failed to link container', severity: 'error' });
@@ -307,7 +311,7 @@ export default function DomainsListView() {
             payload.port = parsed;
           }
           await nodeAppsApi.update(editAppId, payload);
-          const proxyRes = await nodeAppsApi.applyProxy(editAppId);
+          const proxyRes = await domainsApi.linkApp(editDomain.id, editAppId, payload.port, editProxyHost || undefined);
           if (proxyRes && proxyRes.success) {
             setSnack({ open: true, message: `Domain and app linked, proxy configured`, severity: 'success' });
           } else {
@@ -317,6 +321,12 @@ export default function DomainsListView() {
           setSnack({ open: true, message: e.message || 'Failed to link app', severity: 'error' });
         }
       } else {
+        if (editDomain.linkedContainerId) {
+          await domainsApi.unlinkContainer(editDomain.id);
+        }
+        if (editDomain.linkedAppId) {
+          await domainsApi.unlinkApp(editDomain.id);
+        }
         setSnack({ open: true, message: `Domain "${editDomain.name}" updated`, severity: 'success' });
       }
 
@@ -520,6 +530,8 @@ function parseHostPortFromPortsString(ports: string): number | null {
                       <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Document Root</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Linked Target</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Upstream</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>SSL</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Created</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
@@ -528,14 +540,14 @@ function parseHostPortFromPortsString(ports: string): number | null {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                        <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
                           <CircularProgress size={32} />
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Loading domains...</Typography>
                         </TableCell>
                       </TableRow>
                     ) : filtered.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                        <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
                           <LanguageIcon sx={{ fontSize: 48, color: '#bdbdbd', mb: 1 }} />
                           <Typography variant="body1" color="text.secondary">
                             {search ? 'No domains match your search' : 'No domains configured yet'}
@@ -576,6 +588,24 @@ function parseHostPortFromPortsString(ports: string): number | null {
                         <TableCell>
                           <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
                             {domain.folderPath}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          {domain.linkedContainerId ? (
+                            <Chip size="small" color="info" label={`Container: ${domain.linkedContainerName || domain.linkedContainerId}`} />
+                          ) : domain.linkedAppId ? (
+                            <Chip size="small" color="secondary" label={`App: ${domain.linkedAppName || domain.linkedAppId}`} />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                            {domain.linkedContainerPort
+                              ? `${domain.proxyHost || '127.0.0.1'}:${domain.linkedContainerPort}`
+                              : domain.linkedAppPort
+                                ? `${domain.proxyHost || '127.0.0.1'}:${domain.linkedAppPort}`
+                                : '-'}
                           </Typography>
                         </TableCell>
                         <TableCell>
@@ -759,6 +789,26 @@ function parseHostPortFromPortsString(ports: string): number | null {
                   placeholder="3000"
                   helperText="Enter the local port this app listens on (required if app has no port set)."
                 />
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  onClick={async () => {
+                    if (!editDomain) return;
+                    try {
+                      const res = await domainsApi.unlinkApp(editDomain.id);
+                      setSnack({ open: true, message: res.message || 'App unlinked', severity: 'success' });
+                      setEditAppId(null);
+                      setEditAppPort('');
+                      await loadDomains();
+                    } catch (e: any) {
+                      setSnack({ open: true, message: e.message || 'Failed to unlink app', severity: 'error' });
+                    }
+                  }}
+                  disabled={!editDomain?.linkedAppId && !editAppId}
+                  sx={{ textTransform: 'none', width: 'fit-content' }}
+                >
+                  Unlink App
+                </Button>
 
                 {/* Link to container */}
                 <TextField
@@ -796,6 +846,34 @@ function parseHostPortFromPortsString(ports: string): number | null {
                   fullWidth
                   placeholder="3000"
                   helperText="Host port published by the container. If left blank, panel will attempt to detect one." 
+                />
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  onClick={async () => {
+                    if (!editDomain) return;
+                    try {
+                      const res = await domainsApi.unlinkContainer(editDomain.id);
+                      setSnack({ open: true, message: res.message || 'Container unlinked', severity: 'success' });
+                      setEditContainerId(null);
+                      setEditContainerPort('');
+                      await loadDomains();
+                    } catch (e: any) {
+                      setSnack({ open: true, message: e.message || 'Failed to unlink container', severity: 'error' });
+                    }
+                  }}
+                  disabled={!editDomain?.linkedContainerId && !editContainerId}
+                  sx={{ textTransform: 'none', width: 'fit-content' }}
+                >
+                  Unlink Container
+                </Button>
+                <TextField
+                  label="Proxy Host (optional)"
+                  value={editProxyHost}
+                  onChange={(e) => setEditProxyHost(e.target.value)}
+                  fullWidth
+                  placeholder="127.0.0.1"
+                  helperText="Upstream hostname or IP used by nginx. Default is 127.0.0.1"
                 />
                 <TextField
                   label="Nameservers"

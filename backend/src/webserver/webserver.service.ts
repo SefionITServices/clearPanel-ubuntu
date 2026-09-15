@@ -71,6 +71,7 @@ export class WebServerService {
     documentRoot: string,
     phpVersion?: string,
     proxyPort?: number,
+    proxyHost?: string,
   ): Promise<{ success: boolean; message: string; created: boolean; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
@@ -121,7 +122,7 @@ export class WebServerService {
       };
     }
 
-    const created = await this.createVirtualHost(domain, documentRoot, phpVersion, proxyPort);
+    const created = await this.createVirtualHost(domain, documentRoot, phpVersion, proxyPort, proxyHost);
     return {
       success: created.success,
       created: created.success,
@@ -135,6 +136,7 @@ export class WebServerService {
     documentRoot: string,
     phpVersion?: string,
     proxyPort?: number,
+    proxyHost?: string,
   ): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
     const available = await this.ensureNginxAvailable();
     if (!available) {
@@ -144,10 +146,12 @@ export class WebServerService {
     // Detect the PHP-FPM socket (per-domain when specified)
     const phpSocket = await this.resolvePhpSocket(phpVersion);
 
+    const normalizedProxyHost = (proxyHost || '127.0.0.1').trim();
+
     const locationBlock = proxyPort
       ? `    # Reverse proxy to app running on localhost:${proxyPort}
     location / {
-        proxy_pass http://127.0.0.1:${proxyPort};
+        proxy_pass http://${normalizedProxyHost}:${proxyPort};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
