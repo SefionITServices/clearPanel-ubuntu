@@ -72,18 +72,29 @@ export class NodeAppsService {
   }
 
   async installPm2(): Promise<{ success: boolean; output: string }> {
+    // Resolve the npm binary path first so sudo uses the exact path that sudoers allows
+    let npmPath = 'npm';
     try {
-      const { stdout, stderr } = await exec('npm install -g pm2', { timeout: 120000 });
+      const { stdout } = await exec('which npm');
+      npmPath = stdout.trim();
+    } catch { /* fall back to bare 'npm' */ }
+
+    try {
+      const { stdout, stderr } = await exec(`${npmPath} install -g pm2`, { timeout: 120000 });
       return { success: true, output: stdout + stderr };
     } catch (err: any) {
       const msg = err.message?.toLowerCase() || '';
       if (msg.includes('eacces') || msg.includes('eperm') || msg.includes('permission denied')) {
         try {
-          const { stdout, stderr } = await exec('sudo -n npm install -g pm2', { timeout: 120000 });
+          const { stdout, stderr } = await exec(`sudo -n ${npmPath} install -g pm2`, { timeout: 120000 });
           return { success: true, output: stdout + stderr };
         } catch (sudoErr: any) {
-          if (sudoErr.message?.includes('password') || sudoErr.message?.includes('terminal')) {
-            throw new Error('Permission denied: The backend must run as root or have passwordless sudo to install PM2 globally.');
+          if (sudoErr.message?.includes('password') || sudoErr.message?.includes('terminal') || sudoErr.message?.includes('sudo')) {
+            throw new Error(
+              `Permission denied installing PM2. Run this on the server to fix it:\n` +
+              `  sudo bash /opt/clearpanel/scripts/update-sudoers.sh\n` +
+              `Then try again, or install manually: sudo ${npmPath} install -g pm2`
+            );
           }
           throw new Error(`Failed to install PM2 with sudo: ${sudoErr.message}`);
         }

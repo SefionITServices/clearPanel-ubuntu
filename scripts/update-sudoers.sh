@@ -38,6 +38,9 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/bin/update-alternatives, /usr/bin/php*
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/redis-cli, /usr/bin/fail2ban-client, /usr/bin/crontab, /usr/bin/python3
 clearpanel ALL=(ALL) NOPASSWD: /usr/pgadmin4/bin/setup-web.sh
 
+# Node.js / npm global installs (PM2 etc.)
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/npm, /usr/local/bin/npm, /usr/bin/npx, /usr/local/bin/npx
+
 # User management
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/chpasswd
 
