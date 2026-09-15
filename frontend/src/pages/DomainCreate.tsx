@@ -40,6 +40,8 @@ import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useAuth } from '../auth/AuthContext';
 import { domainsApi } from '../api/domains';
 import { serverApi } from '../api/server';
+import { webserverApi } from '../api/webserver';
+import { gitApi } from '../api/git';
 
 // Backend defaults to ~/public_html/{domain} if no path provided.
 // We dynamically discover the primary domain to offer an accurate shared-path option.
@@ -74,6 +76,11 @@ export default function DomainCreatePage() {
   const [serverIp, setServerIp] = useState<string>('');
   const [createdDomain, setCreatedDomain] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [appPort, setAppPort] = useState('');
+  const [enableGitClone, setEnableGitClone] = useState(false);
+  const [gitRepoUrl, setGitRepoUrl] = useState('');
+  const [gitToken, setGitToken] = useState('');
+  const [gitUser, setGitUser] = useState('');
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -212,6 +219,36 @@ export default function DomainCreatePage() {
         return;
       }
 
+      const data = await response.json();
+      const resolvedFolderPath: string = data.domain?.folderPath || '';
+
+      // Apply nginx reverse proxy if an app port was given
+      if (appPort.trim() && resolvedFolderPath) {
+        const port = parseInt(appPort.trim(), 10);
+        if (!isNaN(port)) {
+          try {
+            await webserverApi.createVhost(finalDomainName, resolvedFolderPath, undefined, port);
+          } catch (e) {
+            console.warn('Proxy config failed (non-fatal):', e);
+          }
+        }
+      }
+
+      // Clone git repo directly into the domain folder
+      if (enableGitClone && gitRepoUrl.trim() && resolvedFolderPath) {
+        try {
+          await gitApi.clone(
+            gitRepoUrl.trim(),
+            resolvedFolderPath,
+            '.',
+            gitToken || undefined,
+            gitUser || undefined,
+          );
+        } catch (e) {
+          console.warn('Git clone failed (non-fatal):', e);
+        }
+      }
+
       if (createAnother) {
         setCreatedDomain(finalDomainName);
         setDomain('');
@@ -222,6 +259,11 @@ export default function DomainCreatePage() {
         setPathMode('public_html');
         setSubdomain('');
         setNameservers('');
+        setAppPort('');
+        setEnableGitClone(false);
+        setGitRepoUrl('');
+        setGitToken('');
+        setGitUser('');
       } else {
         setCreatedDomain(finalDomainName);
       }
@@ -666,6 +708,74 @@ export default function DomainCreatePage() {
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                     Override with custom nameservers only if needed. Leave blank to use your VPS nameservers{vpsNameservers.length > 0 ? ` (${vpsNameservers.join(', ')})` : ''}.
                   </Typography>
+                </Box>
+
+                {/* App Port — nginx reverse proxy */}
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 0.5 }}>App Port (optional)</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    If your app runs on a local port (Node.js, Python, Docker…), nginx will proxy {domain || 'yourdomain.com'}:80 → localhost:port. Leave blank for static / PHP sites.
+                  </Typography>
+                  <TextField
+                    placeholder="3000"
+                    type="number"
+                    value={appPort}
+                    onChange={(e) => setAppPort(e.target.value)}
+                    disabled={submitting}
+                    size="small"
+                    sx={{ width: 160 }}
+                    InputProps={{ startAdornment: <InputAdornment position="start">:</InputAdornment> }}
+                  />
+                </Box>
+
+                {/* Git Repository — clone into domain folder on creation */}
+                <Box>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={enableGitClone}
+                        onChange={(e) => setEnableGitClone(e.target.checked)}
+                        disabled={submitting}
+                      />
+                    }
+                    label={<Typography variant="body2" fontWeight={500}>Clone a Git repository into this domain's folder</Typography>}
+                  />
+                  {enableGitClone && (
+                    <Stack spacing={1.5} sx={{ mt: 1, pl: 3.5 }}>
+                      <TextField
+                        label="Repository URL"
+                        placeholder="https://github.com/user/repo.git"
+                        value={gitRepoUrl}
+                        onChange={(e) => setGitRepoUrl(e.target.value)}
+                        disabled={submitting}
+                        size="small"
+                        fullWidth
+                        helperText="Supports HTTPS and SSH URLs. The repo will be cloned directly into the document root."
+                      />
+                      <Alert severity="info" sx={{ py: 0.5 }}>
+                        For private repos, provide a personal access token as the password.
+                      </Alert>
+                      <Stack direction="row" spacing={1.5}>
+                        <TextField
+                          label="Git username (optional)"
+                          value={gitUser}
+                          onChange={(e) => setGitUser(e.target.value)}
+                          disabled={submitting}
+                          size="small"
+                          sx={{ flex: 1 }}
+                        />
+                        <TextField
+                          label="Token / password (optional)"
+                          type="password"
+                          value={gitToken}
+                          onChange={(e) => setGitToken(e.target.value)}
+                          disabled={submitting}
+                          size="small"
+                          sx={{ flex: 1 }}
+                        />
+                      </Stack>
+                    </Stack>
+                  )}
                 </Box>
 
                 <Divider />
