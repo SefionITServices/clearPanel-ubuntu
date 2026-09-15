@@ -54,6 +54,8 @@ import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { domainsApi } from '../api/domains';
 import { nodeAppsApi, AppDef } from '../api/node-apps';
+import { dockerApi } from '../api/docker';
+import { webserverApi } from '../api/webserver';
 
 export default function DomainsListView() {
   const navigate = useNavigate();
@@ -86,6 +88,11 @@ export default function DomainsListView() {
   const [appsLoading, setAppsLoading] = React.useState(false);
   const [editAppId, setEditAppId] = React.useState<string | null>(null);
   const [editAppPort, setEditAppPort] = React.useState('');
+  // Container linking state
+  const [containers, setContainers] = React.useState<any[]>([]);
+  const [containersLoading, setContainersLoading] = React.useState(false);
+  const [editContainerId, setEditContainerId] = React.useState<string | null>(null);
+  const [editContainerPort, setEditContainerPort] = React.useState('');
 
   const loadDomains = async () => {
     setLoading(true);
@@ -173,6 +180,26 @@ export default function DomainsListView() {
     } finally {
       setAppsLoading(false);
     }
+
+    // Load running containers so user can link a container
+    setContainersLoading(true);
+    try {
+      const cRes = await dockerApi.listContainers(false);
+      const list = (cRes && (cRes as any).containers) ? (cRes as any).containers : (cRes as any) || [];
+      setContainers(list);
+      // If any container name matches the domain, preselect it (best-effort)
+      const byName = list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
+      if (byName) {
+        setEditContainerId(byName.id);
+        // attempt to parse a host port from its ports string
+        const hostPort = parseHostPortFromPortsString(byName.ports || '');
+        if (hostPort) setEditContainerPort(String(hostPort));
+      }
+    } catch {
+      setContainers([]);
+    } finally {
+      setContainersLoading(false);
+    }
   };
 
   const loadVhostConfig = async (domain: any) => {
@@ -224,8 +251,51 @@ export default function DomainsListView() {
         folderPath: editFolderPath,
         nameservers: ns,
       });
-      // If user selected an app to link, update the app and apply proxy
-      if (editAppId) {
+      // If user selected a container to link, prefer that (container must publish a host port)
+      if (editContainerId) {
+        try {
+          let proxyPort: number | undefined;
+          const rawPort = (editContainerPort || '').toString().trim();
+          if (rawPort) {
+            const parsed = Number(rawPort);
+            if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+              throw new Error('Container host port must be an integer between 1 and 65535');
+            }
+            proxyPort = parsed;
+          } else {
+            // Try to detect published host port from the container listing
+            const found = containers.find((c: any) => c.id === editContainerId);
+            let hostPort = found ? parseHostPortFromPortsString(found.ports || '') : null;
+            if (!hostPort) {
+              // Fallback to inspect
+              const inspected = await dockerApi.inspectContainer(editContainerId);
+              if (inspected && inspected.success && inspected.data) {
+                const portsObj = inspected.data.NetworkSettings?.Ports || {};
+                for (const k of Object.keys(portsObj)) {
+                  const arr = portsObj[k];
+                  if (Array.isArray(arr) && arr.length > 0 && arr[0].HostPort) {
+                    hostPort = Number(arr[0].HostPort);
+                    break;
+                  }
+                }
+              }
+            }
+            if (!hostPort) throw new Error('No published host port could be detected for the selected container. Publish a port or enter it manually.');
+            proxyPort = hostPort;
+          }
+
+          const docRoot = editFolderPath || editDomain.folderPath || `/home/${editDomain.name}/public_html`;
+          const res = await webserverApi.createVhost(editDomain.name, docRoot, editDomain.phpVersion, proxyPort);
+          if (res.success) {
+            setSnack({ open: true, message: `Container linked: ${editDomain.name} → localhost:${proxyPort}`, severity: 'success' });
+          } else {
+            setSnack({ open: true, message: res.message || 'Failed to create proxy for container', severity: 'error' });
+          }
+        } catch (e: any) {
+          setSnack({ open: true, message: e.message || 'Failed to link container', severity: 'error' });
+        }
+      } else if (editAppId) {
+        // Otherwise if user selected an app to link, update the app and apply proxy
         try {
           const payload: any = { domain: editDomain.name };
           const rawPort = (editAppPort || '').toString().trim();
@@ -273,6 +343,23 @@ export default function DomainsListView() {
     if (domains.some((d: any) => d.isPrimary && domain.name.endsWith(`.${d.name}`))) return 'subdomain';
     return 'addon';
   };
+
+function parseHostPortFromPortsString(ports: string): number | null {
+  if (!ports) return null;
+  // Example formats: "0.0.0.0:8080->80/tcp", ":::8080->80/tcp", "80/tcp"
+  try {
+    const parts = ports.split(',').map(p => p.trim()).filter(Boolean);
+    for (const p of parts) {
+      // Match patterns like "0.0.0.0:8080->80/tcp" or ":::8080->80/tcp" or "0.0.0.0:5000->5000/tcp"
+      const m = p.match(/(\d+)(?=->\d+\/\w+)/);
+      if (m && m[1]) {
+        const num = Number(m[1]);
+        if (Number.isInteger(num)) return num;
+      }
+    }
+  } catch {}
+  return null;
+}
 
   const subdomainCount = domains.filter(d =>
     !d.isPrimary && domains.some((p: any) => p.isPrimary && d.name.endsWith(`.${p.name}`))
@@ -671,6 +758,44 @@ export default function DomainsListView() {
                   fullWidth
                   placeholder="3000"
                   helperText="Enter the local port this app listens on (required if app has no port set)."
+                />
+
+                {/* Link to container */}
+                <TextField
+                  label="Link to Container (optional)"
+                  select
+                  value={editContainerId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    setEditContainerId(id);
+                    // if selecting a container, try to prefill port from its published ports
+                    if (id) {
+                      const found = containers.find((c: any) => c.id === id);
+                      const hostPort = found ? parseHostPortFromPortsString(found.ports || '') : null;
+                      setEditContainerPort(hostPort ? String(hostPort) : '');
+                    } else {
+                      setEditContainerPort('');
+                    }
+                  }}
+                  fullWidth
+                  helperText={containersLoading ? 'Loading containers…' : 'Select a running container to link this domain. Published host port will be used.'}
+                  disabled={containersLoading}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  {containers.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.name} — {c.image} {c.ports ? `(${c.ports})` : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  label="Container Host Port (optional)"
+                  value={editContainerPort}
+                  onChange={(e) => setEditContainerPort(e.target.value)}
+                  fullWidth
+                  placeholder="3000"
+                  helperText="Host port published by the container. If left blank, panel will attempt to detect one." 
                 />
                 <TextField
                   label="Nameservers"
