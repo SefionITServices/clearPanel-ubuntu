@@ -53,6 +53,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { domainsApi } from '../api/domains';
+import { nodeAppsApi, AppDef } from '../api/node-apps';
 
 export default function DomainsListView() {
   const navigate = useNavigate();
@@ -79,6 +80,12 @@ export default function DomainsListView() {
   const [vhostSaving, setVhostSaving] = React.useState(false);
   const [vhostPath, setVhostPath] = React.useState('');
   const [vhostEnabled, setVhostEnabled] = React.useState(false);
+  
+  // App linking state
+  const [apps, setApps] = React.useState<AppDef[]>([]);
+  const [appsLoading, setAppsLoading] = React.useState(false);
+  const [editAppId, setEditAppId] = React.useState<string | null>(null);
+  const [editAppPort, setEditAppPort] = React.useState('');
 
   const loadDomains = async () => {
     setLoading(true);
@@ -131,7 +138,7 @@ export default function DomainsListView() {
     setMenuDomain(null);
   };
 
-  const openEditDialog = (domain: any) => {
+  const openEditDialog = async (domain: any) => {
     setEditDomain(domain);
     setEditFolderPath(domain.folderPath || '');
     setEditNameservers(
@@ -141,8 +148,31 @@ export default function DomainsListView() {
     setVhostConfig('');
     setVhostPath('');
     setVhostEnabled(false);
+    setEditAppId(null);
+    setEditAppPort('');
     setEditOpen(true);
     handleMenuClose();
+
+    // Load available apps and pre-select any app already using this domain
+    setAppsLoading(true);
+    try {
+      const res = await nodeAppsApi.list();
+      if (res && (res as any).success) {
+        const appsRes = (res as any).apps || [];
+        setApps(appsRes);
+        const linked = appsRes.find((a: any) => a.domain === domain.name);
+        if (linked) {
+          setEditAppId(linked.id);
+          setEditAppPort(linked.port ? String(linked.port) : '');
+        }
+      } else {
+        setApps([]);
+      }
+    } catch (e) {
+      setApps([]);
+    } finally {
+      setAppsLoading(false);
+    }
   };
 
   const loadVhostConfig = async (domain: any) => {
@@ -194,7 +224,32 @@ export default function DomainsListView() {
         folderPath: editFolderPath,
         nameservers: ns,
       });
-      setSnack({ open: true, message: `Domain "${editDomain.name}" updated`, severity: 'success' });
+      // If user selected an app to link, update the app and apply proxy
+      if (editAppId) {
+        try {
+          const payload: any = { domain: editDomain.name };
+          const rawPort = (editAppPort || '').toString().trim();
+          if (rawPort) {
+            const parsed = Number(rawPort);
+            if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+              throw new Error('App port must be an integer between 1 and 65535');
+            }
+            payload.port = parsed;
+          }
+          await nodeAppsApi.update(editAppId, payload);
+          const proxyRes = await nodeAppsApi.applyProxy(editAppId);
+          if (proxyRes && proxyRes.success) {
+            setSnack({ open: true, message: `Domain and app linked, proxy configured`, severity: 'success' });
+          } else {
+            setSnack({ open: true, message: proxyRes?.message || 'App updated but proxy failed', severity: 'error' });
+          }
+        } catch (e: any) {
+          setSnack({ open: true, message: e.message || 'Failed to link app', severity: 'error' });
+        }
+      } else {
+        setSnack({ open: true, message: `Domain "${editDomain.name}" updated`, severity: 'success' });
+      }
+
       setEditOpen(false);
       setEditDomain(null);
       await loadDomains();
@@ -590,6 +645,32 @@ export default function DomainsListView() {
                   fullWidth
                   placeholder="/home/user/public_html/example.com"
                   helperText="Full path to the document root directory. Changing this will also update the nginx virtual host."
+                />
+                {/* Link to existing app */}
+                <TextField
+                  label="Link to App (optional)"
+                  select
+                  value={editAppId || ''}
+                  onChange={(e) => setEditAppId(e.target.value || null)}
+                  fullWidth
+                  helperText={appsLoading ? 'Loading apps…' : 'Select an existing app to link this domain. Leave blank to unlink.'}
+                  disabled={appsLoading}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  {apps.map((a) => (
+                    <MenuItem key={a.id} value={a.id}>
+                      {a.name} — {a.runtime}{a.port ? ` (port ${a.port})` : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  label="App Port (optional)"
+                  value={editAppPort}
+                  onChange={(e) => setEditAppPort(e.target.value)}
+                  fullWidth
+                  placeholder="3000"
+                  helperText="Enter the local port this app listens on (required if app has no port set)."
                 />
                 <TextField
                   label="Nameservers"
