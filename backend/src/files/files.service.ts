@@ -7,6 +7,7 @@ import unzipper from 'unzipper';
 import tar from 'tar';
 import { exec as execCb } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 
 const exec = promisify(execCb);
 
@@ -264,9 +265,22 @@ export class FilesService {
       throw new Error('Invalid mode format. Use octal notation (e.g., 644, 755)');
     }
 
-    await fs.chmod(full, modeNum);
-
-    return { success: true, message: `Permissions changed to ${mode}` };
+    try {
+      await fs.chmod(full, modeNum);
+      return { success: true, message: `Permissions changed to ${mode}` };
+    } catch (e: any) {
+      // If regular chmod failed due to permissions, attempt sudo fallback
+      const code = e && (e.code || '').toString().toLowerCase();
+      if (code === 'eacces' || code === 'eperm' || (e && (/permission denied/i).test(e.message || ''))) {
+        try {
+          await exec(`sudo chmod ${mode} ${JSON.stringify(full)}`);
+          return { success: true, message: `Permissions changed to ${mode} (via sudo)` };
+        } catch (sudoErr: any) {
+          throw new Error(`Failed to change permissions: ${sudoErr.stderr || sudoErr.message}`);
+        }
+      }
+      throw e;
+    }
   }
 
   /**
@@ -323,9 +337,27 @@ export class FilesService {
   async writeFileContent(username: string, p: string, content: string) {
     const full = this.validatePath(p, username);
 
-    await fs.writeFile(full, content, 'utf-8');
-
-    return { success: true, message: 'File saved successfully' };
+    try {
+      await fs.writeFile(full, content, 'utf-8');
+      return { success: true, message: 'File saved successfully' };
+    } catch (e: any) {
+      const code = e && (e.code || '').toString().toLowerCase();
+      // On permission errors, attempt to write via sudo (write tmp then move)
+      if (code === 'eacces' || code === 'eperm' || (e && (/permission denied/i).test(e.message || ''))) {
+        const tmpDir = os.tmpdir();
+        const tmpPath = path.join(tmpDir, `clearpanel-tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        try {
+          await fs.writeFile(tmpPath, content, 'utf-8');
+          await exec(`sudo mv ${JSON.stringify(tmpPath)} ${JSON.stringify(full)}`);
+          return { success: true, message: 'File saved successfully (via sudo)' };
+        } catch (sudoErr: any) {
+          // best-effort cleanup
+          try { await fs.unlink(tmpPath).catch(() => {}); } catch {}
+          throw new Error(`Failed to save file: ${sudoErr.stderr || sudoErr.message || e.message}`);
+        }
+      }
+      throw e;
+    }
   }
 
   /**
