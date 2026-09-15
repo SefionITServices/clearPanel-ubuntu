@@ -190,13 +190,22 @@ export default function DomainsListView() {
       const cRes = await dockerApi.listContainers(false);
       const list = (cRes && (cRes as any).containers) ? (cRes as any).containers : (cRes as any) || [];
       setContainers(list);
-      // If any container name matches the domain, preselect it (best-effort)
-      const byName = list.find((c: any) => c.id === domain.linkedContainerId)
-        || list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
-      if (byName) {
-        if (!domain.linkedContainerId) setEditContainerId(byName.id);
-        // attempt to parse a host port from its ports string
-        const hostPort = parseHostPortFromPortsString(byName.ports || '');
+      // Try to match the domain's linked container with the running containers.
+      // Docker inspect stores full container IDs while `docker ps` returns short IDs,
+      // so compare using startsWith to handle both forms. If matched, set the
+      // edit container id to the container list's `id` (short) so it matches the select options.
+      const matchedById = list.find((c: any) =>
+        c.id === domain.linkedContainerId
+        || (domain.linkedContainerId && domain.linkedContainerId.startsWith && domain.linkedContainerId.startsWith(c.id))
+        || (c.id && c.id.startsWith && c.id.startsWith(domain.linkedContainerId))
+      );
+      const matchedByName = list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
+      const byFound = matchedById || matchedByName;
+      if (byFound) {
+        // Always use the container list id (short) for the select value
+        setEditContainerId(byFound.id);
+        // attempt to parse a host port from its ports string (only if domain has no port saved)
+        const hostPort = parseHostPortFromPortsString(byFound.ports || '');
         if (hostPort && !domain.linkedContainerPort) setEditContainerPort(String(hostPort));
       }
     } catch {
