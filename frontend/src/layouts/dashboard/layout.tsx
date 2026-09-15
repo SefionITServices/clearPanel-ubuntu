@@ -52,6 +52,7 @@ import {
   LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import LayersIcon from '@mui/icons-material/Layers';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GlobalSearch } from '../../components/GlobalSearch';
 import { useAuth } from '../../auth/AuthContext';
@@ -88,6 +89,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
       { title: 'Email', path: '/email', icon: <EmailIcon /> },
       { title: 'Databases', path: '/databases', icon: <StorageIcon /> },
       { title: 'Git', path: '/git', icon: <AccountTreeIcon /> },
+      { title: 'Docker', path: '/docker', icon: <LayersIcon /> },
       { title: 'Terminal', path: '/terminal', icon: <TerminalIcon /> },
     ],
   },
@@ -145,6 +147,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         '/hotlink-protection': { title: 'Hotlink Protection', path: '/hotlink-protection', icon: <ShieldIcon /> },
 
         '/node-apps': { title: 'App Manager', path: '/node-apps', icon: <CodeIcon /> },
+        '/docker': { title: 'Docker', path: '/docker', icon: <LayersIcon /> },
         '/error-pages': { title: 'Error Pages', path: '/error-pages', icon: <WarningIcon /> },
         '/auto-responders': { title: 'Auto-Responders', path: '/auto-responders', icon: <EventNoteIcon /> },
         '/mailing-lists': { title: 'Mailing Lists', path: '/mailing-lists', icon: <PeopleIcon /> },
