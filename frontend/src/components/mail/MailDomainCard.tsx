@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Paper,
   Collapse,
   Divider,
   IconButton,
