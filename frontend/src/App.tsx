@@ -33,6 +33,7 @@ const SshKeysPage = lazy(() => import('./pages/SshKeys'));
 const CronJobsPage = lazy(() => import('./pages/CronJobs'));
 const FirewallPage = lazy(() => import('./pages/Firewall'));
 const MonitoringPage = lazy(() => import('./pages/Monitoring'));
+const ServicesPage = lazy(() => import('./pages/Services'));
 const BackupPage = lazy(() => import('./pages/Backup'));
 const TwoFactorPage = lazy(() => import('./pages/TwoFactor'));
 const ProcessesPage = lazy(() => import('./pages/Processes'));
@@ -295,6 +296,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <ProcessesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/services"
+              element={
+                <ProtectedRoute>
+                  <ServicesPage />
                 </ProtectedRoute>
               }
             />

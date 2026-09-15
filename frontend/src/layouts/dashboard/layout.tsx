@@ -97,6 +97,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: 'System',
     items: [
       { title: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+            { title: 'Services', path: '/services', icon: <TerminalIcon /> },
     ],
   },
 ];
