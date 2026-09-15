@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -11,6 +13,7 @@ import {
   Stack,
   Tab,
   Tabs,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -19,6 +22,8 @@ import DnsIcon from '@mui/icons-material/Dns';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import SaveIcon from '@mui/icons-material/Save';
 
 import { mailAPI, MailDomain } from '../../api/mail';
 import { MailboxManager } from './MailboxManager';
@@ -38,6 +43,19 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState(0);
   const [dnsLoading, setDnsLoading] = useState(false);
+  const [globalWebmailUrl, setGlobalWebmailUrl] = useState<string | null>(null);
+  const [webmailInput, setWebmailInput] = useState('');
+  const [webmailSaving, setWebmailSaving] = useState(false);
+  const [openingMailbox, setOpeningMailbox] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setWebmailInput(domain.webmailUrl || '');
+  }, [domain.webmailUrl]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    mailAPI.getWebmailUrl().then((r) => setGlobalWebmailUrl(r.webmailUrl)).catch(() => setGlobalWebmailUrl(null));
+  }, [expanded]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTab(newValue);
@@ -55,6 +73,47 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
       onFeedback('error', e instanceof Error ? e.message : 'DNS setup failed');
     } finally {
       setDnsLoading(false);
+    }
+  };
+
+  const resolveDomainWebmailUrl = () => {
+    if (domain.webmailUrl && domain.webmailUrl.trim()) return domain.webmailUrl.trim();
+    if (globalWebmailUrl && globalWebmailUrl.trim()) return globalWebmailUrl.trim();
+    return `https://webmail.${domain.domain}`;
+  };
+
+  const saveDomainWebmailLink = async () => {
+    setWebmailSaving(true);
+    try {
+      const trimmed = webmailInput.trim();
+      if (trimmed && !trimmed.startsWith('/') && !trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+        onFeedback('error', 'Use absolute URL (https://...) or path (/roundcube)');
+        return;
+      }
+      const result = await mailAPI.updateDomainSettings(domain.id, { webmailUrl: trimmed || null });
+      onDomainUpdate(result.domain);
+      onFeedback('success', trimmed ? `Webmail linked for ${domain.domain}` : `Domain webmail link reset for ${domain.domain}`);
+    } catch (e) {
+      onFeedback('error', e instanceof Error ? e.message : 'Failed to save webmail link');
+    } finally {
+      setWebmailSaving(false);
+    }
+  };
+
+  const openMailboxInWebmail = async (mailboxId: string) => {
+    setOpeningMailbox((p) => ({ ...p, [mailboxId]: true }));
+    try {
+      const { url } = await mailAPI.getSsoUrl(domain.id, mailboxId);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      onFeedback('error', e instanceof Error ? e.message : 'Failed to generate SSO URL, opening fallback webmail');
+      window.open(resolveDomainWebmailUrl(), '_blank', 'noopener,noreferrer');
+    } finally {
+      setOpeningMailbox((p) => {
+        const next = { ...p };
+        delete next[mailboxId];
+        return next;
+      });
     }
   };
 
@@ -111,6 +170,7 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
               <Tab label="Security & Limits" />
               <Tab label="DNS" />
               <Tab label="Audit Logs" />
+              <Tab label="Webmail Access" />
             </Tabs>
           </Box>
           <Box sx={{ p: 3 }}>
@@ -119,6 +179,77 @@ export function MailDomainCard({ domain, onDomainUpdate, onRemove, onFeedback }:
             {tab === 2 && <SecuritySettings domain={domain} onDomainUpdate={onDomainUpdate} onFeedback={onFeedback} />}
             {tab === 3 && <MailDnsPanel domainId={domain.id} />}
             {tab === 4 && <DomainLogs domainId={domain.id} />}
+            {tab === 5 && (
+              <Stack spacing={2}>
+                <Alert severity="info">
+                  Link this domain to Roundcube by setting a domain-specific webmail URL (for example: <strong>https://webmail.{domain.domain}</strong>).
+                </Alert>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Domain Webmail URL (optional override)"
+                    placeholder={`https://webmail.${domain.domain}`}
+                    value={webmailInput}
+                    onChange={(e) => setWebmailInput(e.target.value)}
+                    helperText="Leave empty to use global webmail URL, then fallback to https://webmail.<domain>."
+                  />
+                  <Button
+                    variant="contained"
+                    startIcon={webmailSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                    disabled={webmailSaving}
+                    onClick={saveDomainWebmailLink}
+                    sx={{ textTransform: 'none', minWidth: 140 }}
+                  >
+                    {webmailSaving ? 'Saving...' : 'Save Link'}
+                  </Button>
+                </Stack>
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600 }}>
+                    Effective Webmail URL
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                    {resolveDomainWebmailUrl()}
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<OpenInNewIcon />}
+                      onClick={() => window.open(resolveDomainWebmailUrl(), '_blank', 'noopener,noreferrer')}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Open Domain Webmail
+                    </Button>
+                  </Stack>
+                </Paper>
+
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Mailbox Quick Login (SSO)
+                </Typography>
+                {domain.mailboxes.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">No mailboxes yet for this domain.</Typography>
+                ) : (
+                  <Stack spacing={1}>
+                    {domain.mailboxes.map((m) => (
+                      <Paper key={m.id} variant="outlined" sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="body2">{m.email}</Typography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={openingMailbox[m.id] ? <CircularProgress size={14} color="inherit" /> : <OpenInNewIcon />}
+                          disabled={!!openingMailbox[m.id]}
+                          onClick={() => openMailboxInWebmail(m.id)}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          Open in Webmail
+                        </Button>
+                      </Paper>
+                    ))}
+                  </Stack>
+                )}
+              </Stack>
+            )}
           </Box>
         </CardContent>
       </Collapse>

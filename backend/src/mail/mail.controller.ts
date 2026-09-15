@@ -14,6 +14,7 @@ import { Throttle, ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
 import { MailService, DomainSettingsUpdate } from './mail.service';
 import { MailStatusService } from './mail-status.service';
 import { MailSsoService } from './mail-sso.service';
+import { AppStoreService } from '../app-store/app-store.service';
 
 @UseGuards(ThrottlerGuard)
 @Controller('mail')
@@ -22,6 +23,7 @@ export class MailController {
     private readonly mailService: MailService,
     private readonly mailStatusService: MailStatusService,
     private readonly mailSsoService: MailSsoService,
+    private readonly appStoreService: AppStoreService,
   ) { }
 
   @SkipThrottle()
@@ -93,6 +95,7 @@ export class MailController {
       greylistingEnabled?: boolean | null;
       greylistingDelaySeconds?: number | null;
       virusScanEnabled?: boolean | null;
+      webmailUrl?: string | null;
     },
   ) {
     if (!body || Object.keys(body).length === 0) {
@@ -117,12 +120,30 @@ export class MailController {
       updates.virusScanEnabled = body.virusScanEnabled;
       hasUpdates = true;
     }
+    if (body.webmailUrl !== undefined) {
+      updates.webmailUrl = body.webmailUrl;
+      hasUpdates = true;
+    }
 
     if (!hasUpdates) {
       throw new BadRequestException('Provide at least one setting to update');
     }
 
     return this.mailService.updateDomainSettings(id, updates);
+  }
+
+  // ---- Roundcube diagnose / repair ----
+
+  @SkipThrottle()
+  @Get('roundcube/diagnose')
+  async diagnoseRoundcube() {
+    return this.appStoreService.diagnoseApp('roundcube');
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('roundcube/repair')
+  async repairRoundcube() {
+    return this.appStoreService.repairApp('roundcube');
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })

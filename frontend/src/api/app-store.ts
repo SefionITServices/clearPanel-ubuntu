@@ -22,4 +22,5 @@ export const appStoreApi = {
   uninstallApp: (id: string) => fetchJSON(`${API_BASE}/uninstall/${id}`, { method: 'DELETE' }),
   diagnoseApp: (id: string) => fetchJSON(`${API_BASE}/diagnose/${id}`),
   reconfigure: (id: string) => fetchJSON(`${API_BASE}/reconfigure/${id}`, { method: 'POST' }),
+  repairApp: (id: string) => fetchJSON(`${API_BASE}/repair/${id}`, { method: 'POST' }),
 };

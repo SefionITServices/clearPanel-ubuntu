@@ -28,6 +28,7 @@ export interface MailDomain {
   id: string;
   domain: string;
   enabled: boolean;
+  webmailUrl?: string;
   spamThreshold?: number;
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;
@@ -47,6 +48,13 @@ export interface DomainSettingsUpdate {
   greylistingEnabled?: boolean | null;
   greylistingDelaySeconds?: number | null;
   virusScanEnabled?: boolean | null;
+  webmailUrl?: string | null;
+}
+
+export interface RoundcubeCheck {
+  name: string;
+  status: 'ok' | 'warn' | 'error';
+  detail: string;
 }
 
 export interface MailDomainResult {
@@ -638,6 +646,18 @@ export const mailAPI = {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ webmailUrl }),
+    });
+  },
+
+  // ---- Roundcube Diagnose / Repair ----
+
+  async diagnoseRoundcube(): Promise<{ success: boolean; checks: RoundcubeCheck[] }> {
+    return fetchJSON<{ success: boolean; checks: RoundcubeCheck[] }>(`${API_BASE}/roundcube/diagnose`);
+  },
+
+  async repairRoundcube(): Promise<{ success: boolean; message?: string; output?: string }> {
+    return fetchJSON<{ success: boolean; message?: string; output?: string }>(`${API_BASE}/roundcube/repair`, {
+      method: 'POST',
     });
   },
 };

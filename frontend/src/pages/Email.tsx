@@ -27,10 +27,14 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import TuneIcon from '@mui/icons-material/Tune';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import BuildIcon from '@mui/icons-material/Build';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { useNavigate } from 'react-router-dom';
 import { appStoreApi } from '../api/app-store';
-import { mailAPI } from '../api/mail';
+import { mailAPI, RoundcubeCheck } from '../api/mail';
 
 interface EmailTool {
   id: string;
@@ -51,6 +55,10 @@ export default function EmailPage() {
   const [urlInput, setUrlInput] = useState('');
   const [urlSaving, setUrlSaving] = useState(false);
   const [urlError, setUrlError] = useState('');
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagFixing, setDiagFixing] = useState(false);
+  const [diagChecks, setDiagChecks] = useState<RoundcubeCheck[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -93,6 +101,43 @@ export default function EmailPage() {
 
   /** Resolve the effective URL to open Roundcube */
   const resolvedWebmailUrl = webmailUrl || '/roundcube/';
+
+  const runRoundcubeDiagnose = async () => {
+    setDiagLoading(true);
+    try {
+      const data = await mailAPI.diagnoseRoundcube();
+      if (data.success) {
+        setDiagChecks(data.checks || []);
+      } else {
+        setDiagChecks([{ name: 'Diagnose API', status: 'error', detail: 'Diagnostics failed' }]);
+      }
+    } catch (e: any) {
+      setDiagChecks([{ name: 'Diagnose API', status: 'error', detail: e?.message || 'Could not run diagnostics' }]);
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
+  const handleOpenDiagnose = async () => {
+    setDiagOpen(true);
+    setDiagChecks([]);
+    await runRoundcubeDiagnose();
+  };
+
+  const handleRepairRoundcube = async () => {
+    setDiagFixing(true);
+    try {
+      await mailAPI.repairRoundcube();
+      await runRoundcubeDiagnose();
+      const data = await appStoreApi.listApps();
+      if (Array.isArray(data.apps)) {
+        const rc = data.apps.find((a: any) => a.id === 'roundcube');
+        setRoundcubeInstalled(!!rc?.status?.installed);
+      }
+    } finally {
+      setDiagFixing(false);
+    }
+  };
 
   const managementTools: EmailTool[] = [
     {
@@ -283,17 +328,30 @@ export default function EmailPage() {
                       {client.description}
                     </Typography>
                     {client.installed ? (
-                      <Button
-                        variant="contained"
-                        size="small"
-                        startIcon={<OpenInNewIcon />}
-                        onClick={() =>
-                          window.open(client.url, '_blank', 'noopener,noreferrer')
-                        }
-                        sx={{ textTransform: 'none' }}
-                      >
-                        Open {client.label}
-                      </Button>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<OpenInNewIcon />}
+                          onClick={() =>
+                            window.open(client.url, '_blank', 'noopener,noreferrer')
+                          }
+                          sx={{ textTransform: 'none' }}
+                        >
+                          Open {client.label}
+                        </Button>
+                        {client.id === 'roundcube' && (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<MonitorHeartIcon />}
+                            onClick={handleOpenDiagnose}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Diagnose
+                          </Button>
+                        )}
+                      </Stack>
                     ) : (
                       <Button
                         variant="outlined"
@@ -370,6 +428,117 @@ export default function EmailPage() {
             <Button variant="contained" onClick={saveWebmailUrl} disabled={urlSaving}>
               {urlSaving ? 'Saving…' : 'Save'}
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Roundcube diagnose dialog */}
+        <Dialog open={diagOpen} onClose={() => setDiagOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1 }}>
+            <MonitorHeartIcon sx={{ color: '#FBBC04' }} />
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                Roundcube Diagnostics
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Check webmail dependencies and config
+              </Typography>
+            </Box>
+          </DialogTitle>
+          <DialogContent dividers>
+            {diagLoading ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 2 }}>
+                <CircularProgress size={36} />
+                <Typography variant="body2" color="text.secondary">
+                  Running diagnostics...
+                </Typography>
+              </Box>
+            ) : (
+              <Stack spacing={1}>
+                {diagChecks.map((check, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 1.5,
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      bgcolor:
+                        check.status === 'ok'
+                          ? alpha('#34A853', 0.04)
+                          : check.status === 'warn'
+                            ? alpha('#FBBC04', 0.06)
+                            : alpha('#EA4335', 0.04),
+                      border: '1px solid',
+                      borderColor:
+                        check.status === 'ok'
+                          ? alpha('#34A853', 0.2)
+                          : check.status === 'warn'
+                            ? alpha('#FBBC04', 0.3)
+                            : alpha('#EA4335', 0.2),
+                    }}
+                  >
+                    <Box sx={{ mt: 0.25 }}>
+                      {check.status === 'ok' ? (
+                        <CheckCircleIcon sx={{ fontSize: 20, color: '#34A853' }} />
+                      ) : check.status === 'warn' ? (
+                        <InfoOutlinedIcon sx={{ fontSize: 20, color: '#FBBC04' }} />
+                      ) : (
+                        <Box
+                          sx={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            bgcolor: '#FDDEDE',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: '#EA4335',
+                          }}
+                        >
+                          ✗
+                        </Box>
+                      )}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                        {check.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                        {check.detail}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={runRoundcubeDiagnose} disabled={diagLoading || diagFixing} sx={{ textTransform: 'none' }}>
+              Refresh
+            </Button>
+            <Button onClick={() => setDiagOpen(false)} sx={{ textTransform: 'none' }}>
+              Close
+            </Button>
+            {diagChecks.some((c) => c.status === 'error') && (
+              <Button
+                variant="contained"
+                disabled={diagFixing}
+                onClick={handleRepairRoundcube}
+                startIcon={diagFixing ? <CircularProgress size={14} color="inherit" /> : <BuildIcon />}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  bgcolor: '#FBBC04',
+                  color: '#000',
+                  '&:hover': { bgcolor: '#F9AB00' },
+                }}
+              >
+                {diagFixing ? 'Fixing...' : 'Auto-Fix'}
+              </Button>
+            )}
           </DialogActions>
         </Dialog>
       </Box>

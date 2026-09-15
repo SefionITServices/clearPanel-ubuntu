@@ -33,6 +33,7 @@ export interface DomainSettingsUpdate {
   greylistingEnabled?: boolean | null;
   greylistingDelaySeconds?: number | null;
   virusScanEnabled?: boolean | null;
+  webmailUrl?: string | null;
 }
 
 type SanitizedDomainSettings = {
@@ -40,6 +41,7 @@ type SanitizedDomainSettings = {
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;
   virusScanEnabled?: boolean;
+  webmailUrl?: string | null;
 };
 
 @Injectable()
@@ -207,6 +209,11 @@ export class MailService {
 
     if (sanitized.virusScanEnabled !== undefined && sanitized.virusScanEnabled !== target.virusScanEnabled) {
       target.virusScanEnabled = sanitized.virusScanEnabled;
+      mutated = true;
+    }
+
+    if (sanitized.webmailUrl !== undefined && sanitized.webmailUrl !== (target.webmailUrl ?? null)) {
+      target.webmailUrl = sanitized.webmailUrl ?? undefined;
       mutated = true;
     }
 
@@ -743,6 +750,12 @@ export class MailService {
       mutated = true;
     }
 
+    if (Object.prototype.hasOwnProperty.call(payload, 'webmailUrl')) {
+      const value = payload.webmailUrl;
+      result.webmailUrl = this.sanitizeWebmailUrl(value);
+      mutated = true;
+    }
+
     return mutated ? result : null;
   }
 
@@ -787,6 +800,19 @@ export class MailService {
       }
     }
     throw new BadRequestException(`${field} must be a boolean value`);
+  }
+
+  private sanitizeWebmailUrl(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+
+    const isPath = trimmed.startsWith('/');
+    const isHttp = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+    if (!isPath && !isHttp) {
+      throw new BadRequestException('webmailUrl must be an absolute URL (http/https) or a path starting with /');
+    }
+    return trimmed;
   }
 
   private applyDomainDefaults(domain: MailDomain): void {

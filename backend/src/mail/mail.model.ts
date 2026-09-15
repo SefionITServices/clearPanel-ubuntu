@@ -20,6 +20,7 @@ export interface MailDomain {
   id: string;
   domain: string;
   enabled: boolean;
+  webmailUrl?: string;
   spamThreshold?: number;
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;

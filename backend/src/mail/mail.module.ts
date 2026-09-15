@@ -10,9 +10,10 @@ import { MailSsoService } from './mail-sso.service';
 import { ServerModule } from '../server/server.module';
 import { DnsModule } from '../dns/dns.module';
 import { DnsServerModule } from '../dns-server/dns-server.module';
+import { AppStoreModule } from '../app-store/app-store.module';
 
 @Module({
-  imports: [ConfigModule, ServerModule, DnsModule, DnsServerModule],
+  imports: [ConfigModule, ServerModule, DnsModule, DnsServerModule, AppStoreModule],
   controllers: [MailController, MailAutoconfigController],
   providers: [MailService, MailAutomationService, MailStatusService, MailHistoryService, MailSsoService],
   exports: [MailService, MailStatusService],
