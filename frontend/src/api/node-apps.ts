@@ -54,4 +54,5 @@ export const nodeAppsApi = {
   logs: (id: string, lines = 200) => fetchJSON(`${BASE}/${id}/logs?lines=${lines}`),
   pull: (id: string) => post(`${BASE}/${id}/pull`),
   setEnv: (id: string, env: { key: string; value: string }[]) => post(`${BASE}/${id}/env`, { env }),
+  applyProxy: (id: string) => post(`${BASE}/${id}/proxy`),
 };

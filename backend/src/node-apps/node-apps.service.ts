@@ -6,6 +6,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getDataFilePath } from '../common/paths';
 import { CreateAppDto, UpdateAppDto, CloneAppDto } from './dto/node-apps.dto';
+import { WebServerService } from '../webserver/webserver.service';
 
 const exec = promisify(execCb);
 
@@ -37,6 +38,8 @@ export interface AppStatus extends AppDefinition {
 @Injectable()
 export class NodeAppsService {
   private readonly logger = new Logger(NodeAppsService.name);
+
+  constructor(private readonly webServerService: WebServerService) {}
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -273,6 +276,15 @@ export class NodeAppsService {
 
   async setEnv(id: string, env: { key: string; value: string }[]): Promise<AppDefinition> {
     return this.updateApp(id, { env });
+  }
+
+  async applyProxy(id: string): Promise<{ success: boolean; message: string }> {
+    const apps = await this.readApps();
+    const app = apps.find((a) => a.id === id);
+    if (!app) throw new Error('App not found');
+    if (!app.domain) throw new Error('No domain set on this app. Edit the app and add a domain first.');
+    if (!app.port) throw new Error('No port set on this app. Edit the app and set the port it listens on.');
+    return this.webServerService.ensureVirtualHost(app.domain, app.directory, undefined, app.port);
   }
 
   // ── System info ────────────────────────────────────────────────────────────

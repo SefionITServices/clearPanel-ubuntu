@@ -92,4 +92,10 @@ export class NodeAppsController {
     try { return res.json({ success: true, app: await this.svc.setEnv(id, body.env) }); }
     catch (e: any) { return res.status(400).json({ success: false, error: e.message }); }
   }
+
+  @Post(':id/proxy')
+  async applyProxy(@Param('id') id: string, @Res() res: Response) {
+    try { return res.json(await this.svc.applyProxy(id)); }
+    catch (e: any) { return res.status(400).json({ success: false, error: e.message }); }
+  }
 }

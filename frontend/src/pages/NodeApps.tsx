@@ -41,6 +41,7 @@ import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import EditIcon from '@mui/icons-material/Edit';
 import KeyIcon from '@mui/icons-material/Key';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
+import LinkIcon from '@mui/icons-material/Link';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { nodeAppsApi, type AppDef } from '../api/node-apps';
 
@@ -83,7 +84,7 @@ export default function NodeAppsManager() {
 
   // Forms
   const [createForm, setCreateForm] = useState({
-    name: '', runtime: 'node', directory: '', startCommand: '', port: '', description: '',
+    name: '', runtime: 'node', directory: '', startCommand: '', port: '', description: '', domain: '',
   });
   const [cloneForm, setCloneForm] = useState({
     name: '', runtime: 'node', repoUrl: '', branch: 'main', directory: '', startCommand: '', port: '',
@@ -176,11 +177,12 @@ export default function NodeAppsManager() {
         startCommand: createForm.startCommand,
         port: createForm.port ? parseInt(createForm.port) : undefined,
         description: createForm.description,
+        domain: createForm.domain || undefined,
         env: [],
       });
       notify('App created');
       setCreateDialog(false);
-      setCreateForm({ name: '', runtime: 'node', directory: '', startCommand: '', port: '', description: '' });
+      setCreateForm({ name: '', runtime: 'node', directory: '', startCommand: '', port: '', description: '', domain: '' });
       load();
     } catch (e: any) { notify(e.message, 'error'); }
     setActionLoading(null);
@@ -327,6 +329,7 @@ export default function NodeAppsManager() {
                           <RuntimeChip runtime={app.runtime} />
                           <StatusChip status={app.status} />
                           {app.port && <Chip label={`:${app.port}`} size="small" variant="outlined" />}
+                        {app.domain && <Chip label={app.domain} size="small" color="primary" variant="outlined" icon={<LinkIcon fontSize="small" />} />}
                         </Stack>
                         <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
                           {app.directory}
@@ -400,6 +403,24 @@ export default function NodeAppsManager() {
                             <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
+                        {app.domain && app.port && (
+                          <Tooltip title={`Apply nginx proxy: ${app.domain} → :${app.port}`}>
+                            <span><IconButton size="small" color="primary"
+                              disabled={actionLoading === `proxy-${app.id}`}
+                              onClick={async () => {
+                                setActionLoading(`proxy-${app.id}`);
+                                try {
+                                  const r = await nodeAppsApi.applyProxy(app.id);
+                                  notify(r.message || 'Proxy applied', r.success ? 'success' : 'error');
+                                } catch (e: any) { notify(e.message, 'error'); }
+                                setActionLoading(null);
+                              }}>
+                              {actionLoading === `proxy-${app.id}`
+                                ? <CircularProgress size={14} />
+                                : <LinkIcon fontSize="small" />}
+                            </IconButton></span>
+                          </Tooltip>
+                        )}
                       </Stack>
                     </Stack>
                   </CardContent>
@@ -428,6 +449,9 @@ export default function NodeAppsManager() {
                 value={createForm.startCommand} onChange={(e) => setCreateForm(f => ({ ...f, startCommand: e.target.value }))} fullWidth size="small" />
               <TextField label="Port (optional)" type="number" value={createForm.port}
                 onChange={(e) => setCreateForm(f => ({ ...f, port: e.target.value }))} fullWidth size="small" />
+              <TextField label="Domain (optional, for reverse proxy)" value={createForm.domain}
+                onChange={(e) => setCreateForm(f => ({ ...f, domain: e.target.value }))} fullWidth size="small"
+                placeholder="myapp.example.com" />
               <TextField label="Description (optional)" value={createForm.description}
                 onChange={(e) => setCreateForm(f => ({ ...f, description: e.target.value }))} fullWidth size="small" />
             </Stack>
