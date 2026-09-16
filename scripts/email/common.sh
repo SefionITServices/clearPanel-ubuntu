@@ -60,13 +60,18 @@ generate_dkim_key() {
     grep -qxF "${DOMAIN}" /etc/opendkim/trusted.hosts || echo "${DOMAIN}" >> /etc/opendkim/trusted.hosts
     grep -qxF "*.${DOMAIN}" /etc/opendkim/trusted.hosts || echo "*.${DOMAIN}" >> /etc/opendkim/trusted.hosts
 
-    # Export clean DNS TXT string
-    local DKIM_RECORD
-    DKIM_RECORD="$(grep -o 'p=[^"]*' "${KEY_DIR}/${SELECTOR}.txt" | tr -d ' \n\t"')"
-    echo "v=DKIM1; k=rsa; ${DKIM_RECORD}" > "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+    # Export clean, untruncated DNS TXT string using OpenSSL
+    local DKIM_B64=""
+    if [ -f "${KEY_DIR}/${SELECTOR}.private" ]; then
+        DKIM_B64="$(openssl rsa -in "${KEY_DIR}/${SELECTOR}.private" -pubout -outform DER 2>/dev/null | base64 -w 0 || true)"
+    fi
+    if [ -z "$DKIM_B64" ] && [ -f "${KEY_DIR}/${SELECTOR}.txt" ]; then
+        DKIM_B64="$(grep -v '^;' "${KEY_DIR}/${SELECTOR}.txt" | tr -d ' \t\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
+    fi
+    echo "v=DKIM1; k=rsa; p=${DKIM_B64}" > "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
     chmod 644 "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 
-    systemctl reload opendkim 2>/dev/null || true
+    systemctl reload opendkim 2>/dev/null || systemctl restart opendkim 2>/dev/null || true
     echo "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 }
 
@@ -188,19 +193,46 @@ _dmarc.${DOMAIN}.    IN  TXT     "v=DMARC1; p=none; rua=mailto:admin@${DOMAIN}; 
 RECIEVE
 
     if [ -n "$DKIM_PUB" ]; then
-        echo "${DKIM_SELECTOR}._domainkey.${DOMAIN}. IN TXT \"${DKIM_PUB}\"" >> "$ZONE_FILE"
+        # Format for BIND9: chunk into <=200 character strings inside parentheses to comply with RFC 1035 (255 byte max string)
+        local DKIM_CHUNKS
+        DKIM_CHUNKS="$(echo "$DKIM_PUB" | fold -w 200 | sed 's/.*/"&"/' | tr '\n' ' ')"
+        echo "${DKIM_SELECTOR}._domainkey.${DOMAIN}. IN TXT ( ${DKIM_CHUNKS} )" >> "$ZONE_FILE"
     fi
 
     # Increment SOA serial
-    local CUR_SERIAL
-    CUR_SERIAL="$(grep -oE '[0-9]{10}' "$ZONE_FILE" | head -n 1 || true)"
-    if [ -n "$CUR_SERIAL" ]; then
-        local NEW_SERIAL="$((CUR_SERIAL + 1))"
-        sed -i "s/${CUR_SERIAL}/${NEW_SERIAL}/" "$ZONE_FILE"
-        echo "[DNS] Incremented serial from ${CUR_SERIAL} to ${NEW_SERIAL}"
+    local SERIAL_LINE
+    SERIAL_LINE="$(grep -n -i 'serial' "$ZONE_FILE" | head -n 1 | cut -d: -f1 || true)"
+    if [ -n "$SERIAL_LINE" ]; then
+        local CUR_SERIAL
+        CUR_SERIAL="$(sed -n "${SERIAL_LINE}p" "$ZONE_FILE" | grep -oE '[0-9]+' | head -n 1 || true)"
+        if [ -n "$CUR_SERIAL" ]; then
+            local TODAY_PREFIX="$(date +%Y%m%d)"
+            local NEW_SERIAL
+            if [[ "$CUR_SERIAL" =~ ^${TODAY_PREFIX}[0-9]{2}$ ]]; then
+                NEW_SERIAL="$((CUR_SERIAL + 1))"
+            else
+                NEW_SERIAL="${TODAY_PREFIX}01"
+            fi
+            sed -i "${SERIAL_LINE}s/${CUR_SERIAL}/${NEW_SERIAL}/" "$ZONE_FILE"
+            echo "[DNS] Updated serial to ${NEW_SERIAL} on line ${SERIAL_LINE}"
+        fi
+    else
+        local CUR_SERIAL
+        CUR_SERIAL="$(grep -oE '[0-9]{10}' "$ZONE_FILE" | head -n 1 || true)"
+        if [ -n "$CUR_SERIAL" ]; then
+            local NEW_SERIAL="$((CUR_SERIAL + 1))"
+            sed -i "s/${CUR_SERIAL}/${NEW_SERIAL}/" "$ZONE_FILE"
+            echo "[DNS] Incremented serial from ${CUR_SERIAL} to ${NEW_SERIAL}"
+        fi
+    fi
+
+    # Validate zone with named-checkzone
+    if command -v named-checkzone >/dev/null 2>&1; then
+        named-checkzone "${DOMAIN}" "$ZONE_FILE" || true
     fi
 
     # Reload BIND9
-    rndc reload "${DOMAIN}" 2>/dev/null || systemctl reload named 2>/dev/null || systemctl reload bind9 2>/dev/null || true
+    rndc reload "${DOMAIN}" 2>/dev/null || rndc reload 2>/dev/null || systemctl reload named 2>/dev/null || systemctl reload bind9 2>/dev/null || true
+    rndc flush 2>/dev/null || true
     echo "[DNS] Zone updated & reloaded for ${DOMAIN}"
 }
