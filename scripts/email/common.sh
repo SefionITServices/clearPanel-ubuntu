@@ -178,6 +178,12 @@ CONFEOF
     sed -i "/^mail\s\+/d" "$ZONE_FILE" || true
     sed -i "/^webmail\.${DOMAIN}\./d" "$ZONE_FILE" || true
     sed -i "/^webmail\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^smtp\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^smtp\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^imap\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^imap\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^pop\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^pop\s\+/d" "$ZONE_FILE" || true
     sed -i "/IN\s\+MX/d" "$ZONE_FILE" || true
     sed -i "/v=spf1/d" "$ZONE_FILE" || true
     sed -i "/_dmarc/d" "$ZONE_FILE" || true
@@ -187,6 +193,9 @@ CONFEOF
     cat << RECIEVE >> "$ZONE_FILE"
 mail.${DOMAIN}.      IN  A       ${SERVER_IP}
 webmail.${DOMAIN}.   IN  A       ${SERVER_IP}
+smtp.${DOMAIN}.      IN  CNAME   mail.${DOMAIN}.
+imap.${DOMAIN}.      IN  CNAME   mail.${DOMAIN}.
+pop.${DOMAIN}.       IN  CNAME   mail.${DOMAIN}.
 ${DOMAIN}.           IN  MX  10  mail.${DOMAIN}.
 ${DOMAIN}.           IN  TXT     "v=spf1 mx a ip4:${SERVER_IP} ~all"
 _dmarc.${DOMAIN}.    IN  TXT     "v=DMARC1; p=none; rua=mailto:admin@${DOMAIN}; fo=1"
@@ -347,6 +356,8 @@ DOVEOF
         [[ "$dname" =~ ^mail\. ]] && continue
         add_sni "$dname" "$dname"
         add_sni "mail.${dname}" "$dname"
+        add_sni "smtp.${dname}" "$dname"
+        add_sni "imap.${dname}" "$dname"
     done
 
     # Build Postfix SNI hash map
