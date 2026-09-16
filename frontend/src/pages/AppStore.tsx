@@ -28,6 +28,9 @@ import {
   FormControlLabel,
   FormControl,
   FormLabel,
+  Stepper,
+  Step,
+  StepLabel,
 } from '@mui/material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { appStoreApi } from '../api/app-store';
@@ -123,8 +126,13 @@ export default function AppStorePage() {
 
   // ─── Roundcube install dialog ────────────────────────────────────────
   const [rcDialogOpen, setRcDialogOpen] = useState(false);
+  const [rcStep, setRcStep] = useState(0);
   const [rcAccessMode, setRcAccessMode] = useState<'path' | 'domain'>('path');
   const [rcDomain, setRcDomain] = useState('');
+  const [rcChecks, setRcChecks] = useState<Array<{ name: string; status: string; detail: string }>>([]);
+  const [rcChecking, setRcChecking] = useState(false);
+  const [rcPrepareRunning, setRcPrepareRunning] = useState(false);
+  const [rcQuickCheckDone, setRcQuickCheckDone] = useState(false);
 
   const fetchApps = async () => {
     try {
@@ -141,11 +149,53 @@ export default function AppStorePage() {
     fetchApps();
   }, []);
 
+  const resetRoundcubeWizard = () => {
+    setRcStep(0);
+    setRcAccessMode('path');
+    setRcDomain('');
+    setRcChecks([]);
+    setRcQuickCheckDone(false);
+  };
+
+  const runRoundcubeQuickCheck = async () => {
+    setRcChecking(true);
+    try {
+      const data = await appStoreApi.diagnoseApp('roundcube');
+      if (data.success) {
+        setRcChecks(data.checks || []);
+      } else {
+        setRcChecks([{ name: 'Diagnostics', status: 'error', detail: data.message || 'Quick check failed' }]);
+      }
+      setRcQuickCheckDone(true);
+    } catch (e: any) {
+      setRcChecks([{ name: 'Diagnostics', status: 'error', detail: e?.message || 'Quick check failed' }]);
+      setRcQuickCheckDone(true);
+    } finally {
+      setRcChecking(false);
+    }
+  };
+
+  const runRoundcubePrepare = async () => {
+    setRcPrepareRunning(true);
+    try {
+      const data = await appStoreApi.prepareApp('roundcube');
+      setSnackbar({
+        open: true,
+        message: data.message || 'Prerequisite setup completed',
+        severity: data.success ? 'success' : 'error',
+      });
+      await runRoundcubeQuickCheck();
+    } catch (e: any) {
+      setSnackbar({ open: true, message: e?.message || 'Failed to prepare prerequisites', severity: 'error' });
+    } finally {
+      setRcPrepareRunning(false);
+    }
+  };
+
   const handleInstall = async (id: string) => {
     // Roundcube needs extra config before installing
     if (id === 'roundcube') {
-      setRcAccessMode('path');
-      setRcDomain('');
+      resetRoundcubeWizard();
       setRcDialogOpen(true);
       return;
     }
@@ -215,13 +265,18 @@ export default function AppStorePage() {
   const handleFix = async () => {
     setFixing(true);
     try {
-      const data = await appStoreApi.reconfigure('phpmyadmin');
+      const data = diagnoseAppId === 'roundcube'
+        ? await appStoreApi.repairApp('roundcube')
+        : await appStoreApi.reconfigure('phpmyadmin');
       if (data.success) {
-        setSnackbar({ open: true, message: data.message || 'phpMyAdmin reconfigured', severity: 'success' });
-        await handleDiagnose('phpmyadmin');
+        const successMessage = diagnoseAppId === 'roundcube'
+          ? (data.output || 'Roundcube repaired')
+          : (data.message || 'phpMyAdmin reconfigured');
+        setSnackbar({ open: true, message: successMessage, severity: 'success' });
+        await handleDiagnose(diagnoseAppId || 'phpmyadmin');
         await fetchApps();
       } else {
-        setSnackbar({ open: true, message: data.message || 'Fix failed', severity: 'error' });
+        setSnackbar({ open: true, message: data.message || data.output || 'Fix failed', severity: 'error' });
       }
     } catch {
       setSnackbar({ open: true, message: 'Fix failed', severity: 'error' });
@@ -247,6 +302,18 @@ export default function AppStorePage() {
   const installedApps = apps.filter((a) => a.status.installed);
   const availableApps = filteredApps.filter((a) => !a.status.installed);
   const installedFiltered = filteredApps.filter((a) => a.status.installed);
+
+  const rcInstallDependentErrors = new Set([
+    'Roundcube Package',
+    'HTTP Response (/roundcube/)',
+    'Nginx Alias Config',
+  ]);
+
+  const rcBlockingChecks = rcChecks.filter(
+    (c) => c.status === 'error' && !rcInstallDependentErrors.has(c.name),
+  );
+
+  const rcWizardReady = rcQuickCheckDone && rcBlockingChecks.length === 0;
 
   // ─── stats ──────────────────────────────────────────────────────────
 
@@ -489,74 +556,171 @@ export default function AppStorePage() {
       </Snackbar>
 
       {/* ── Roundcube install config dialog ─────────────────────────── */}
-      <Dialog open={rcDialogOpen} onClose={() => setRcDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={rcDialogOpen} onClose={() => setRcDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700 }}>Install Roundcube Webmail</DialogTitle>
         <DialogContent dividers>
-          <FormControl component="fieldset" fullWidth>
-            <FormLabel component="legend" sx={{ mb: 1, fontSize: '0.875rem' }}>
-              How should Roundcube be accessed?
-            </FormLabel>
-            <RadioGroup
-              value={rcAccessMode}
-              onChange={(e) => setRcAccessMode(e.target.value as 'path' | 'domain')}
-            >
-              <FormControlLabel
-                value="path"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Server path (recommended)
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Access via <code>http://&lt;server-ip&gt;/roundcube/</code> — no DNS needed
-                    </Typography>
-                  </Box>
-                }
-                sx={{ mb: 1 }}
-              />
-              <FormControlLabel
-                value="domain"
-                control={<Radio size="small" />}
-                label={
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Custom domain
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      e.g. <code>webmail.example.com</code> — requires DNS A-record pointing to this server
-                    </Typography>
-                  </Box>
-                }
-              />
-            </RadioGroup>
+          <Stepper activeStep={rcStep} sx={{ mb: 2 }}>
+            <Step>
+              <StepLabel>Access Mode</StepLabel>
+            </Step>
+            <Step>
+              <StepLabel>Quick Check</StepLabel>
+            </Step>
+          </Stepper>
 
-            {rcAccessMode === 'domain' && (
-              <TextField
-                label="Webmail domain"
-                placeholder="webmail.example.com"
-                value={rcDomain}
-                onChange={(e) => setRcDomain(e.target.value)}
-                size="small"
-                fullWidth
-                sx={{ mt: 2 }}
-                autoFocus
-              />
-            )}
-          </FormControl>
+          {rcStep === 0 && (
+            <FormControl component="fieldset" fullWidth>
+              <FormLabel component="legend" sx={{ mb: 1, fontSize: '0.875rem' }}>
+                How should Roundcube be accessed?
+              </FormLabel>
+              <RadioGroup
+                value={rcAccessMode}
+                onChange={(e) => setRcAccessMode(e.target.value as 'path' | 'domain')}
+              >
+                <FormControlLabel
+                  value="path"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Server path (recommended)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Access via <code>http://&lt;server-ip&gt;/roundcube/</code> — no DNS needed
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ mb: 1 }}
+                />
+                <FormControlLabel
+                  value="domain"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Custom domain
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        e.g. <code>webmail.example.com</code> — requires DNS A-record pointing to this server
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </RadioGroup>
+
+              {rcAccessMode === 'domain' && (
+                <TextField
+                  label="Webmail domain"
+                  placeholder="webmail.example.com"
+                  value={rcDomain}
+                  onChange={(e) => setRcDomain(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={{ mt: 2 }}
+                  autoFocus
+                />
+              )}
+            </FormControl>
+          )}
+
+          {rcStep === 1 && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Run prerequisite checks before install. Install is enabled only when blocking requirements pass.
+              </Typography>
+
+              <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+                <Button
+                  variant="outlined"
+                  onClick={runRoundcubeQuickCheck}
+                  disabled={rcChecking || rcPrepareRunning}
+                  startIcon={rcChecking ? <CircularProgress size={14} /> : <MonitorHeartIcon />}
+                  sx={{ textTransform: 'none' }}
+                >
+                  {rcChecking ? 'Checking...' : 'Run Quick Check'}
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={runRoundcubePrepare}
+                  disabled={rcPrepareRunning || rcChecking}
+                  startIcon={rcPrepareRunning ? <CircularProgress size={14} color="inherit" /> : <BuildIcon />}
+                  sx={{ textTransform: 'none', bgcolor: '#FBBC04', color: '#000', '&:hover': { bgcolor: '#F9AB00' } }}
+                >
+                  {rcPrepareRunning ? 'Setting up...' : 'Auto-Setup Prerequisites'}
+                </Button>
+              </Stack>
+
+              {rcQuickCheckDone && (
+                <Alert severity={rcWizardReady ? 'success' : 'warning'} sx={{ mb: 1.5 }}>
+                  {rcWizardReady
+                    ? 'Prerequisites look good. You can install Roundcube now.'
+                    : `Fix ${rcBlockingChecks.length} blocking prerequisite(s) before install.`}
+                </Alert>
+              )}
+
+              <Stack spacing={1}>
+                {rcChecks.map((check, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      p: 1.25,
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor:
+                        check.status === 'ok'
+                          ? alpha('#34A853', 0.25)
+                          : check.status === 'warn'
+                            ? alpha('#FBBC04', 0.35)
+                            : alpha('#EA4335', 0.25),
+                      bgcolor:
+                        check.status === 'ok'
+                          ? alpha('#34A853', 0.05)
+                          : check.status === 'warn'
+                            ? alpha('#FBBC04', 0.06)
+                            : alpha('#EA4335', 0.05),
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      {check.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {check.detail}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setRcDialogOpen(false)} sx={{ textTransform: 'none' }}>
             Cancel
           </Button>
-          <Button
-            variant="contained"
-            onClick={handleRoundcubeInstall}
-            disabled={rcAccessMode === 'domain' && !rcDomain.trim()}
-            sx={{ textTransform: 'none', fontWeight: 600 }}
-          >
-            Install
-          </Button>
+          {rcStep > 0 && (
+            <Button onClick={() => setRcStep((s) => Math.max(0, s - 1))} sx={{ textTransform: 'none' }}>
+              Back
+            </Button>
+          )}
+          {rcStep === 0 ? (
+            <Button
+              variant="contained"
+              onClick={() => setRcStep(1)}
+              disabled={rcAccessMode === 'domain' && !rcDomain.trim()}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={handleRoundcubeInstall}
+              disabled={!rcWizardReady || installing === 'roundcube'}
+              startIcon={installing === 'roundcube' ? <CircularProgress size={14} color="inherit" /> : <DownloadIcon />}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              {installing === 'roundcube' ? 'Installing...' : 'Install Roundcube'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </DashboardLayout>

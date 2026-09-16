@@ -95,4 +95,15 @@ export class AppStoreController {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+
+  /** Prepare app prerequisites before install */
+  @Post('prepare/:id')
+  async prepareApp(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    try {
+      const result = await this.appStore.prepareApp(id);
+      return res.json(result);
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
 }

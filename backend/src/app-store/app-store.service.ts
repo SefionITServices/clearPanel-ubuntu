@@ -996,6 +996,70 @@ location /pgadmin {
     }
   }
 
+  async prepareApp(id: string): Promise<{ success: boolean; message: string; output?: string }> {
+    const map: Record<string, () => Promise<{ success: boolean; message: string; output?: string }>> = {
+      roundcube: () => this.prepareRoundcubePrerequisites(),
+    };
+    const fn = map[id];
+    if (!fn) return { success: false, message: `No prepare step available for: ${id}` };
+    return fn();
+  }
+
+  private async prepareRoundcubePrerequisites(): Promise<{ success: boolean; message: string; output?: string }> {
+    const logs: string[] = [];
+    try {
+      const scriptsDir = path.join(process.cwd(), '..', 'scripts', 'email');
+      const installStackScript = path.join(scriptsDir, 'install-stack.sh');
+
+      // Ensure mail stack services exist and are configured for production paths.
+      try {
+        const { stdout, stderr } = await exec(`sudo env MAIL_MODE=production bash ${installStackScript}`, { timeout: 360_000 });
+        if (stdout?.trim()) logs.push(`--- Mail stack setup ---\n${stdout.trim()}`);
+        if (stderr?.trim()) logs.push(`--- Mail stack setup (stderr) ---\n${stderr.trim()}`);
+      } catch (e: any) {
+        const detail = e?.stderr || e?.stdout || e?.message || 'Unknown error';
+        logs.push(`--- Mail stack setup failed ---\n${detail}`);
+      }
+
+      // Ensure nginx is up (Roundcube is served over web server)
+      try {
+        await this.sudo('systemctl enable nginx');
+      } catch {}
+      try {
+        await this.sudo('systemctl restart nginx');
+      } catch (e: any) {
+        logs.push(`WARN: nginx restart failed: ${e?.message || 'unknown error'}`);
+      }
+
+      // Ensure PHP-FPM + php-intl are available for the active version.
+      const phpVer = await this.detectPhpFpmVersion();
+      try {
+        await this.sudo(`env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq php${phpVer}-fpm php${phpVer}-intl`, 180_000);
+      } catch (e: any) {
+        logs.push(`WARN: php${phpVer}-fpm/php${phpVer}-intl install check failed: ${e?.message || 'unknown error'}`);
+      }
+      try {
+        await this.sudo(`systemctl enable php${phpVer}-fpm`);
+      } catch {}
+      try {
+        await this.sudo(`systemctl restart php${phpVer}-fpm`);
+      } catch (e: any) {
+        logs.push(`WARN: php${phpVer}-fpm restart failed: ${e?.message || 'unknown error'}`);
+      }
+
+      // Re-run diagnostics so the wizard can immediately show the result in UI.
+      const checks = await this.diagnoseRoundcube();
+      const hasBlocking = checks.some((c) => c.status === 'error' && c.name !== 'Roundcube Package');
+      const summary = hasBlocking
+        ? 'Prerequisites setup completed with remaining issues. Review diagnostics before install.'
+        : 'Prerequisites setup completed. Roundcube is ready to install.';
+
+      return { success: !hasBlocking, message: summary, output: logs.join('\n\n') };
+    } catch (e: any) {
+      return { success: false, message: `Failed to prepare prerequisites: ${e.message}`, output: logs.join('\n\n') };
+    }
+  }
+
   private async repairRoundcube(): Promise<string> {
     const scriptPath = path.join(process.cwd(), 'scripts/email/repair-roundcube.sh');
     return this.sudo(`bash ${scriptPath}`);

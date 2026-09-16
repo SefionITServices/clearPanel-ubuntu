@@ -23,4 +23,5 @@ export const appStoreApi = {
   diagnoseApp: (id: string) => fetchJSON(`${API_BASE}/diagnose/${id}`),
   reconfigure: (id: string) => fetchJSON(`${API_BASE}/reconfigure/${id}`, { method: 'POST' }),
   repairApp: (id: string) => fetchJSON(`${API_BASE}/repair/${id}`, { method: 'POST' }),
+  prepareApp: (id: string) => fetchJSON(`${API_BASE}/prepare/${id}`, { method: 'POST' }),
 };
