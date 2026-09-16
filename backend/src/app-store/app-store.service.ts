@@ -163,6 +163,18 @@ export class AppStoreService {
       website: 'https://roundcube.net',
     },
     {
+      id: 'nextcloud',
+      name: 'Nextcloud',
+      description: 'Self-hosted file sync and sharing platform',
+      longDescription:
+        'Nextcloud provides a suite of client-server software for creating and using file hosting services. It includes file sync, sharing, collaborative editing, and web UI.',
+      icon: 'Storage',
+      color: '#2D9CDB',
+      category: 'utility',
+      tags: ['nextcloud', 'files', 'sync', 'storage', 'collaboration'],
+      website: 'https://nextcloud.com',
+    },
+    {
       id: 'mailman',
       name: 'Mailman 3',
       description: 'GNU mailing list manager with web UI',
@@ -340,6 +352,25 @@ export class AppStoreService {
     return { id: 'pgadmin', installed, running, version, url: '/pgadmin' };
   }
 
+  private async nextcloudStatus(): Promise<AppStatus> {
+    try {
+      const base = '/var/www/nextcloud';
+      const exists = await this.fileExists(base);
+      if (!exists) return { id: 'nextcloud', installed: false, running: false, version: '' };
+      // If any subdirectory exists under /var/www/nextcloud we consider Nextcloud installed for at least one domain
+      try {
+        const entries = await fs.readdir(base);
+        const hasSite = entries.filter(Boolean).length > 0;
+        const running = hasSite && (await this.serviceRunning('nginx') || await this.serviceRunning('apache2'));
+        return { id: 'nextcloud', installed: hasSite, running, version: '' };
+      } catch {
+        return { id: 'nextcloud', installed: true, running: await this.serviceRunning('nginx'), version: '' };
+      }
+    } catch {
+      return { id: 'nextcloud', installed: false, running: false, version: '' };
+    }
+  }
+
   // ─── public: get status of one or all apps ──────────────────────────
 
   async getAppStatus(id: string): Promise<AppStatus> {
@@ -373,6 +404,7 @@ export class AppStoreService {
       certbot: () => this.certbotStatus(),
       'wp-cli': () => this.wpCliStatus(),
       pgadmin: () => this.pgAdminStatus(),
+      nextcloud: () => this.nextcloudStatus(),
       roundcube: () => this.roundcubeStatus(),
       mailman: () => this.mailmanStatus(),
     };
