@@ -736,7 +736,7 @@ export default function AppStorePage() {
         onInstalled={(res) => {
           setSnackbar({ open: true, message: res?.message || 'Nextcloud install finished', severity: res?.success ? 'success' : 'error' });
           if (res?.success) fetchApps();
-          setNextcloudOpen(false);
+          // keep modal open so user can inspect logs; user can close manually
         }}
       />
     </DashboardLayout>

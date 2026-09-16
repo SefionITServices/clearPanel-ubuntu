@@ -529,7 +529,7 @@ export default function DatabaseManagerPage() {
         onInstalled={(res) => {
           setSuccess(res?.message || 'Nextcloud install finished');
           if (res?.success) loadData();
-          setNextcloudOpen(false);
+          // keep modal open so user can inspect logs; user can close manually
         }}
       />
   );
