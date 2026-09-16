@@ -53,12 +53,14 @@ import {
 } from '@mui/icons-material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import LayersIcon from '@mui/icons-material/Layers';
+import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GlobalSearch } from '../../components/GlobalSearch';
 import { useAuth } from '../../auth/AuthContext';
 import { useThemeMode } from '../../theme/ThemeContext';
 import { DashboardContent } from './content';
 import { dashboardLayoutVars } from './css-vars';
+import { notificationsApi } from '../../api/notifications';
 
 const DRAWER_WIDTH = 260;
 
@@ -106,6 +108,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [notifAnchorEl, setNotifAnchorEl] = React.useState<null | HTMLElement>(null);
+  type NotificationItem = {
+    id: string;
+    title: string;
+    message: string;
+    isRead: boolean;
+    createdAt: string;
+    actionUrl?: string;
+    type?: string;
+  };
+  const [notifications, setNotifications] = React.useState<NotificationItem[]>([]);
+  const [badgeCount, setBadgeCount] = React.useState<number>(0);
   const { username, logout } = useAuth();
   const { mode, toggleTheme } = useThemeMode();
   const navigate = useNavigate();
@@ -176,6 +189,36 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, [username, loadFavorites]);
 
+  // Load notifications and unread count; poll periodically
+  React.useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const cnt = await notificationsApi.getCount();
+        if (!mounted) return;
+        setBadgeCount((cnt && (cnt.count || 0)) || 0);
+        const list = await notificationsApi.list();
+        if (!mounted) return;
+        setNotifications(list || []);
+      } catch (e) {
+        // ignore
+      }
+    };
+    load();
+    const interval = setInterval(load, 30000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
+  const handleDismiss = async (id: string) => {
+    try {
+      await notificationsApi.dismiss(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setBadgeCount((b) => Math.max(0, b - 1));
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const handleDrawerToggle = () => setMobileOpen((p) => !p);
   const handleLogout = async () => {
     handleMenuClose();
@@ -193,6 +236,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const handleNotifOpen = (event: React.MouseEvent<HTMLElement>) => {
     setNotifAnchorEl(event.currentTarget);
+    // mark as read when opening (clear badge)
+    (async () => {
+      try {
+        if (notifications.length > 0) {
+          const ids = notifications.map((n) => n.id);
+          await notificationsApi.markMultipleAsRead(ids);
+          setBadgeCount(0);
+          setNotifications([]);
+        }
+      } catch (e) {
+        // ignore errors
+      }
+    })();
   };
 
   const handleNotifClose = () => {
@@ -377,7 +433,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   '&:hover': { bgcolor: (theme) => alpha(theme.palette.grey[500], 0.08) },
                 }}
               >
-                <Badge badgeContent={1} color="error">
+                <Badge badgeContent={badgeCount} color="error">
                   <NotificationsIcon sx={{ fontSize: 22 }} />
                 </Badge>
               </IconButton>
@@ -492,12 +548,29 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </Typography>
             </Box>
             <Divider />
-            <MenuItem sx={{ py: 1.5, whiteSpace: 'normal' }}>
-              <Box>
-                <Typography variant="body2" fontWeight={600}>Welcome to clearPanel!</Typography>
-                <Typography variant="caption" color="text.secondary">Your system is running smoothly.</Typography>
-              </Box>
-            </MenuItem>
+            {notifications.length === 0 ? (
+              <MenuItem sx={{ py: 1.5, whiteSpace: 'normal' }}>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">No notifications</Typography>
+                </Box>
+              </MenuItem>
+            ) : (
+              notifications.map((notif) => (
+                <MenuItem key={notif.id} sx={{ py: 1.25, whiteSpace: 'normal' }} onClick={() => {
+                  if (notif.actionUrl) navigate(notif.actionUrl);
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <Box sx={{ mr: 1, minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600} noWrap>{notif.title}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{notif.message}</Typography>
+                    </Box>
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDismiss(notif.id); }}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </MenuItem>
+              ))
+            )}
           </Menu>
         </Toolbar>
       </AppBar>

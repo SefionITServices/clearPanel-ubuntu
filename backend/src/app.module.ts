@@ -38,6 +38,7 @@ import { SubdomainsModule } from './subdomains/subdomains.module';
 import { ErrorPagesModule } from './error-pages/error-pages.module';
 import { MailingListsModule } from './mailing-lists/mailing-lists.module';
 import { SpamFilterModule } from './spam-filter/spam-filter.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { SpamFilterModule } from './spam-filter/spam-filter.module';
     ErrorPagesModule,
     MailingListsModule,
     SpamFilterModule,
+    NotificationsModule,
   ],
 })
 export class AppModule implements NestModule {
