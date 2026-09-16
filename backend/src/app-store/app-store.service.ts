@@ -37,6 +37,8 @@ export type DiagnoseCheck = { name: string; status: 'ok' | 'error' | 'warn'; det
 @Injectable()
 export class AppStoreService {
   private readonly logger = new Logger(AppStoreService.name);
+  // Injected dynamically by AppStoreModule provider registration
+  public nextcloudInstaller?: any;
 
   /** Catalog of all apps available in the store */
   private readonly catalog: AppDefinition[] = [
@@ -382,6 +384,11 @@ export class AppStoreService {
     const fn = this.installMap(options)[id];
     if (!fn) throw new Error(`Unknown app: ${id}`);
     this.logger.log(`Installing app: ${id}`);
+    // Provide the nextcloud installer reference if available
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const container = require('../app-store.module');
+    } catch {}
     return fn();
   }
 
@@ -404,6 +411,17 @@ export class AppStoreService {
       'wp-cli': () => this.installWpCli(),
       pgadmin: () => this.installPgAdmin(),
       roundcube: () => this.installRoundcube(options.webmailDomain || null),
+      nextcloud: () => {
+        // Note: nextcloud expects options passed via installApp() call - AppStoreController forwards body
+        const domain = (options && (options.domain || '')) as string;
+        // For simple one-click, delegate to NextcloudInstallerService (synchronous wrapper)
+        // The actual heavy lifting will be done by NextcloudInstallerService.install
+        return (async () => {
+          const next = (this as any).nextcloudInstaller as any;
+          if (!next) throw new Error('Nextcloud installer not available');
+          return await next.install({ domain, adminUser: options?.adminUser, adminPass: options?.adminPass, adminEmail: options?.adminEmail, ssl: options?.ssl === 'true' });
+        })();
+      },
       mailman: () => this.installMailman(),
     };
   }

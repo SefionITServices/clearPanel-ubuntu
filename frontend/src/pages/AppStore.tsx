@@ -33,6 +33,7 @@ import {
   StepLabel,
 } from '@mui/material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import NextcloudInstallModal from '../components/NextcloudInstallModal';
 import { appStoreApi } from '../api/app-store';
 import SearchIcon from '@mui/icons-material/Search';
 import StorageIcon from '@mui/icons-material/Storage';
@@ -199,8 +200,14 @@ export default function AppStorePage() {
       setRcDialogOpen(true);
       return;
     }
+    if (id === 'nextcloud') {
+      setNextcloudOpen(true);
+      return;
+    }
     await doInstall(id);
   };
+
+  const [nextcloudOpen, setNextcloudOpen] = useState(false);
 
   const doInstall = async (id: string, options?: Record<string, string>) => {
     setInstalling(id);
@@ -723,6 +730,15 @@ export default function AppStorePage() {
           )}
         </DialogActions>
       </Dialog>
+      <NextcloudInstallModal
+        open={nextcloudOpen}
+        onClose={() => setNextcloudOpen(false)}
+        onInstalled={(res) => {
+          setSnackbar({ open: true, message: res?.message || 'Nextcloud install finished', severity: res?.success ? 'success' : 'error' });
+          if (res?.success) fetchApps();
+          setNextcloudOpen(false);
+        }}
+      />
     </DashboardLayout>
   );
 }
