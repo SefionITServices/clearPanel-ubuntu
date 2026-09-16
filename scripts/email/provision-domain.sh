@@ -34,6 +34,9 @@ generate_dkim_key "$DOMAIN" "default"
 # 4. Auto-inject DNS records into BIND
 update_bind_dns "$DOMAIN" "default"
 
+# 4b. Synchronize SSL/TLS certificates for Dovecot & Postfix
+sync_mail_ssl "$DOMAIN"
+
 # 5. Default Spam Policy
 cat << POLICIES > "/var/lib/clearpanel/mail/policies/${DOMAIN}.json"
 {

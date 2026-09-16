@@ -236,3 +236,125 @@ RECIEVE
     rndc flush 2>/dev/null || true
     echo "[DNS] Zone updated & reloaded for ${DOMAIN}"
 }
+
+sync_mail_ssl() {
+    local TARGET_DOMAIN="${1:-}"
+    echo "[SSL] Synchronizing SSL/TLS certificates for Postfix and Dovecot..."
+
+    mkdir -p /var/www/certbot/.well-known/acme-challenge
+    chown -R www-data:www-data /var/www/certbot 2>/dev/null || true
+    chmod -R 755 /var/www/certbot 2>/dev/null || true
+
+    mkdir -p /etc/clearpanel/mail/ssl
+    chmod 755 /etc/clearpanel/mail/ssl
+    usermod -a -G postfix dovecot 2>/dev/null || true
+
+    # Attempt to request Let's Encrypt certificate for mail.$TARGET_DOMAIN if specified and missing
+    if [ -n "$TARGET_DOMAIN" ] && command -v certbot >/dev/null 2>&1; then
+        if [ ! -d "/etc/letsencrypt/live/mail.${TARGET_DOMAIN}" ] && [ -d "/etc/letsencrypt/live/${TARGET_DOMAIN}" ]; then
+            echo "[SSL] Requesting certificate for mail.${TARGET_DOMAIN}..."
+            certbot certonly --webroot -w /var/www/certbot -d "mail.${TARGET_DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null || true
+        fi
+    fi
+
+    # Find primary certificate
+    local PRIMARY_DOMAIN=""
+    for cand in "panel.mainserver.in" "mainserver.in" "safon.app" "sefion.ca"; do
+        if [ -f "/etc/letsencrypt/live/${cand}/fullchain.pem" ]; then
+            PRIMARY_DOMAIN="$cand"
+            break
+        fi
+    done
+    if [ -z "$PRIMARY_DOMAIN" ]; then
+        PRIMARY_DOMAIN="$(ls -1 /etc/letsencrypt/live/ 2>/dev/null | grep -v 'README' | head -n 1 || true)"
+    fi
+
+    local DOVECOT_SSL_CONF="/etc/dovecot/conf.d/99-clearpanel-ssl.conf"
+    local POSTFIX_SNI="/etc/postfix/sni"
+
+    mkdir -p /etc/dovecot/conf.d
+    cat << 'EOF' > "$DOVECOT_SSL_CONF"
+# ClearPanel Automated Dovecot SSL & SNI Configuration
+ssl = yes
+ssl_prefer_server_ciphers = yes
+EOF
+
+    > "$POSTFIX_SNI"
+
+    if [ -n "$PRIMARY_DOMAIN" ] && [ -f "/etc/letsencrypt/live/${PRIMARY_DOMAIN}/fullchain.pem" ]; then
+        echo "[SSL] Primary certificate set to: ${PRIMARY_DOMAIN}"
+        mkdir -p "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}"
+        cp -L "/etc/letsencrypt/live/${PRIMARY_DOMAIN}/fullchain.pem" "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/fullchain.pem"
+        cp -L "/etc/letsencrypt/live/${PRIMARY_DOMAIN}/privkey.pem" "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/privkey.pem"
+        chown -R root:postfix "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}" 2>/dev/null || true
+        chmod 750 "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}" 2>/dev/null || true
+        chmod 640 "/etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}"/* 2>/dev/null || true
+
+        echo "ssl_cert = </etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/fullchain.pem" >> "$DOVECOT_SSL_CONF"
+        echo "ssl_key = </etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/privkey.pem" >> "$DOVECOT_SSL_CONF"
+
+        postconf -e "smtpd_tls_cert_file = /etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/fullchain.pem" 2>/dev/null || true
+        postconf -e "smtpd_tls_key_file = /etc/clearpanel/mail/ssl/${PRIMARY_DOMAIN}/privkey.pem" 2>/dev/null || true
+        postconf -e "smtpd_tls_security_level = may" 2>/dev/null || true
+    fi
+
+    # Helper function to add SNI mapping
+    add_sni() {
+        local name="$1"
+        local cert_domain="$2"
+        if [ -f "/etc/clearpanel/mail/ssl/${cert_domain}/fullchain.pem" ] && [ -f "/etc/clearpanel/mail/ssl/${cert_domain}/privkey.pem" ]; then
+            if ! grep -q "^${name} " "$POSTFIX_SNI"; then
+                echo "${name} /etc/clearpanel/mail/ssl/${cert_domain}/privkey.pem /etc/clearpanel/mail/ssl/${cert_domain}/fullchain.pem" >> "$POSTFIX_SNI"
+            fi
+            if ! grep -q "local_name \"${name}\"" "$DOVECOT_SSL_CONF"; then
+                cat << DOVEOF >> "$DOVECOT_SSL_CONF"
+local_name "${name}" {
+  ssl_cert = </etc/clearpanel/mail/ssl/${cert_domain}/fullchain.pem
+  ssl_key = </etc/clearpanel/mail/ssl/${cert_domain}/privkey.pem
+}
+DOVEOF
+            fi
+        fi
+    }
+
+    # First copy all live certs
+    for live_dir in /etc/letsencrypt/live/*; do
+        [ -d "$live_dir" ] || continue
+        local dname="$(basename "$live_dir")"
+        [ "$dname" = "README" ] && continue
+        if [ -f "${live_dir}/fullchain.pem" ] && [ -f "${live_dir}/privkey.pem" ]; then
+            mkdir -p "/etc/clearpanel/mail/ssl/${dname}"
+            cp -L "${live_dir}/fullchain.pem" "/etc/clearpanel/mail/ssl/${dname}/fullchain.pem"
+            cp -L "${live_dir}/privkey.pem" "/etc/clearpanel/mail/ssl/${dname}/privkey.pem"
+            chown -R root:postfix "/etc/clearpanel/mail/ssl/${dname}" 2>/dev/null || true
+            chmod 750 "/etc/clearpanel/mail/ssl/${dname}" 2>/dev/null || true
+            chmod 640 "/etc/clearpanel/mail/ssl/${dname}"/* 2>/dev/null || true
+        fi
+    done
+
+    # Priority 1: dedicated mail.* certs
+    for live_dir in /etc/letsencrypt/live/mail.*; do
+        [ -d "$live_dir" ] || continue
+        local dname="$(basename "$live_dir")"
+        add_sni "$dname" "$dname"
+    done
+
+    # Priority 2: base domain certs
+    for live_dir in /etc/letsencrypt/live/*; do
+        [ -d "$live_dir" ] || continue
+        local dname="$(basename "$live_dir")"
+        [ "$dname" = "README" ] && continue
+        [[ "$dname" =~ ^mail\. ]] && continue
+        add_sni "$dname" "$dname"
+        add_sni "mail.${dname}" "$dname"
+    done
+
+    # Build Postfix SNI hash map
+    postconf -e "tls_server_sni_maps = hash:/etc/postfix/sni" 2>/dev/null || true
+    postmap -F "$POSTFIX_SNI" 2>/dev/null || postmap "$POSTFIX_SNI" 2>/dev/null || true
+
+    systemctl reload dovecot 2>/dev/null || true
+    systemctl reload postfix 2>/dev/null || true
+    echo "[SSL] Dovecot and Postfix SSL/SNI synchronization complete."
+}
+
