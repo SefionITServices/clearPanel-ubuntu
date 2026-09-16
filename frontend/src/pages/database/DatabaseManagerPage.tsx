@@ -37,6 +37,7 @@ import {
 
 import { DashboardLayout } from '../../layouts/dashboard/layout';
 import { databaseApi as dbAPI } from '../../api/databases';
+import { appStoreApi } from '../../api/app-store';
 import { EngineInfo, DbInfo, DbUser, TableInfo, generatePassword } from '../../components/database/utils';
 import { EngineCard } from '../../components/database/EngineCard';
 import { DatabaseList } from '../../components/database/DatabaseList';
@@ -45,6 +46,7 @@ import { PrivilegeManager } from '../../components/database/PrivilegeManager';
 import { SqlConsole } from '../../components/database/SqlConsole';
 import { MaintenancePanel } from '../../components/database/MaintenancePanel';
 import { ConnectionInfo } from '../../components/database/ConnectionInfo';
+import NextcloudInstallModal from '../../components/NextcloudInstallModal';
 
 export default function DatabaseManagerPage() {
   const [tab, setTab] = useState(0);
@@ -86,6 +88,7 @@ export default function DatabaseManagerPage() {
   const [importing, setImporting] = useState(false);
 
   const [diagnoseOpen, setDiagnoseOpen] = useState({ open: false, data: null as any });
+  const [nextcloudOpen, setNextcloudOpen] = useState(false);
 
   const engineParam = activeEngine === 'postgresql' ? 'postgresql' : undefined;
 
@@ -340,6 +343,7 @@ export default function DatabaseManagerPage() {
                   </Tooltip>
                 )}
                 <Button size="small" startIcon={<Refresh />} onClick={loadData}>Reload</Button>
+                <Button size="small" startIcon={<Add />} onClick={() => setNextcloudOpen(true)}>Install Nextcloud</Button>
               </Box>
             </Box>
             <Box sx={{ p: 3 }}>
@@ -518,5 +522,15 @@ export default function DatabaseManagerPage() {
       </Dialog>
 
     </DashboardLayout>
+
+      <NextcloudInstallModal
+        open={nextcloudOpen}
+        onClose={() => setNextcloudOpen(false)}
+        onInstalled={(res) => {
+          setSuccess(res?.message || 'Nextcloud install finished');
+          if (res?.success) loadData();
+          setNextcloudOpen(false);
+        }}
+      />
   );
 }
