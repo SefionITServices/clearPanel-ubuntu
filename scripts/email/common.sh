@@ -1,266 +1,206 @@
 #!/usr/bin/env bash
+# ClearPanel Email Common Utilities
+set -euo pipefail
 
-# shellcheck disable=SC2034
-if [[ -n "${MAIL_AUTOMATION_COMMON_SOURCED:-}" ]]; then
-  return 0
-fi
-MAIL_AUTOMATION_COMMON_SOURCED=1
-
-SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
-REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-
-# --- Mode detection ---
-# Set MAIL_MODE=production to use real paths; defaults to "dev" for local development.
-MAIL_MODE="${MAIL_MODE:-dev}"
-
-if [[ "$MAIL_MODE" == "production" ]]; then
-  # Production paths
-  MAIL_CONFIG_DIR="/etc/clearpanel/mail"
-  VMAIL_HOME="/var/vmail"
-  VMAIL_USER="vmail"
-  VMAIL_GROUP="vmail"
-  VMAIL_UID="${VMAIL_UID:-5000}"
-  VMAIL_GID="${VMAIL_GID:-5000}"
-  STATE_ROOT="${MAIL_STATE_DIR:-/var/lib/clearpanel/mail}"
-  POSTFIX_VDOMAINS="$MAIL_CONFIG_DIR/vdomains"
-  POSTFIX_VMAILBOX="$MAIL_CONFIG_DIR/vmailbox"
-  POSTFIX_VALIAS="$MAIL_CONFIG_DIR/valias"
-  DOVECOT_PASSWD="$MAIL_CONFIG_DIR/passwd"
-  RSPAMD_LOCAL_DIR="/etc/rspamd/local.d"
-  RSPAMD_OVERRIDE_DIR="/etc/rspamd/override.d"
-  OPENDKIM_KEYS_DIR="/etc/opendkim/keys"
-  OPENDKIM_KEY_TABLE="/etc/opendkim/key.table"
-  OPENDKIM_SIGNING_TABLE="/etc/opendkim/signing.table"
-else
-  # Development simulation (original behaviour)
-  STATE_ROOT="${MAIL_STATE_DIR:-$REPO_ROOT/backend/mail-state}"
+# Self-elevate to root via sudo if invoked by non-root user
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
 fi
 
-DOMAINS_DIR="$STATE_ROOT/domains"
-MAILBOX_DIR="$STATE_ROOT/mailboxes"
-ALIASES_DIR="$STATE_ROOT/aliases"
-if [[ "$MAIL_MODE" == "production" ]]; then
-  DKIM_KEYS_DIR="$OPENDKIM_KEYS_DIR"
-  DKIM_PUBLIC_DIR="$MAIL_CONFIG_DIR/dkim/public"
-else
-  DKIM_KEYS_DIR="$STATE_ROOT/dkim/keys"
-  DKIM_PUBLIC_DIR="$STATE_ROOT/dkim/public"
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+if [ -z "$SERVER_IP" ]; then
+    SERVER_IP="72.61.7.15"
 fi
-LOG_DIR="$STATE_ROOT/logs"
-POLICY_DIR="$STATE_ROOT/policies"
 
-ensure_state_root() {
-  mkdir -p "$STATE_ROOT" "$DOMAINS_DIR" "$MAILBOX_DIR" "$ALIASES_DIR" \
-    "$DKIM_KEYS_DIR" "$DKIM_PUBLIC_DIR" "$LOG_DIR" "$POLICY_DIR"
+# Ensure base paths
+mkdir -p /var/lib/clearpanel/mail/domains
+mkdir -p /var/lib/clearpanel/mail/mailboxes
+mkdir -p /var/lib/clearpanel/mail/policies
+mkdir -p /etc/clearpanel/mail
+mkdir -p /etc/opendkim/keys
+mkdir -p /var/mail/vhosts
 
-  if [[ "$MAIL_MODE" == "production" ]]; then
-    mkdir -p "$MAIL_CONFIG_DIR" "$VMAIL_HOME"
-    # Ensure vmail user exists
-    if ! id "$VMAIL_USER" &>/dev/null; then
-      groupadd -g "$VMAIL_GID" "$VMAIL_GROUP" 2>/dev/null || true
-      useradd -u "$VMAIL_UID" -g "$VMAIL_GID" -d "$VMAIL_HOME" -s /usr/sbin/nologin "$VMAIL_USER" 2>/dev/null || true
+# Ensure map files exist with proper permissions
+touch /etc/clearpanel/mail/vdomains
+touch /etc/clearpanel/mail/vmailbox
+touch /etc/clearpanel/mail/valias
+touch /etc/clearpanel/mail/dovecot-users
+touch /etc/opendkim/key.table
+touch /etc/opendkim/signing.table
+touch /etc/opendkim/trusted.hosts
+
+chmod 644 /etc/clearpanel/mail/vdomains /etc/clearpanel/mail/vmailbox /etc/clearpanel/mail/valias /etc/clearpanel/mail/dovecot-users 2>/dev/null || true
+chgrp dovecot /etc/clearpanel/mail/dovecot-users 2>/dev/null || true
+
+generate_dkim_key() {
+    local DOMAIN="$1"
+    local SELECTOR="${2:-default}"
+    local KEY_DIR="/etc/opendkim/keys/${DOMAIN}"
+    local PUB_EXPORT_DIR="/etc/clearpanel/mail/dkim/public/${DOMAIN}"
+
+    mkdir -p "$KEY_DIR" "$PUB_EXPORT_DIR"
+    chmod 750 "$KEY_DIR"
+    chown -R opendkim:opendkim "$KEY_DIR" 2>/dev/null || true
+
+    if [ ! -f "${KEY_DIR}/${SELECTOR}.private" ]; then
+        echo "[DKIM] Generating new 2048-bit key pair for ${DOMAIN} (selector: ${SELECTOR})..."
+        opendkim-genkey -b 2048 -D "$KEY_DIR" -d "$DOMAIN" -s "$SELECTOR"
+        chown opendkim:opendkim "${KEY_DIR}/${SELECTOR}.private" "${KEY_DIR}/${SELECTOR}.txt" 2>/dev/null || true
+        chmod 600 "${KEY_DIR}/${SELECTOR}.private"
+        chmod 644 "${KEY_DIR}/${SELECTOR}.txt"
     fi
-    chown -R "${VMAIL_USER}:${VMAIL_GROUP}" "$VMAIL_HOME" 2>/dev/null || true
-    # Ensure Postfix map files exist
-    touch "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_PASSWD" 2>/dev/null || true
-  fi
-}
 
-# Return success when first column contains the exact key.
-map_has_key() {
-  local key="$1"
-  local mapfile="$2"
-  [[ -f "$mapfile" ]] || return 1
-  awk -v key="$key" '$1 == key { found = 1; exit } END { exit found ? 0 : 1 }' "$mapfile"
-}
+    # Update OpenDKIM tables
+    sed -i "\|^${SELECTOR}._domainkey.${DOMAIN} |d" /etc/opendkim/key.table || true
+    echo "${SELECTOR}._domainkey.${DOMAIN} ${DOMAIN}:${SELECTOR}:${KEY_DIR}/${SELECTOR}.private" >> /etc/opendkim/key.table
 
-# Remove rows where first column matches key exactly.
-remove_map_entry_by_key() {
-  local key="$1"
-  local mapfile="$2"
-  local tmpfile
+    sed -i "\|\*@${DOMAIN} |d" /etc/opendkim/signing.table || true
+    echo "*@${DOMAIN} ${SELECTOR}._domainkey.${DOMAIN}" >> /etc/opendkim/signing.table
 
-  [[ -f "$mapfile" ]] || return 0
-  tmpfile="$(mktemp)"
-  awk -v key="$key" '$1 != key { print }' "$mapfile" >"$tmpfile"
-  cat "$tmpfile" >"$mapfile"
-  rm -f "$tmpfile"
-}
+    grep -qxF "${DOMAIN}" /etc/opendkim/trusted.hosts || echo "${DOMAIN}" >> /etc/opendkim/trusted.hosts
+    grep -qxF "*.${DOMAIN}" /etc/opendkim/trusted.hosts || echo "*.${DOMAIN}" >> /etc/opendkim/trusted.hosts
 
-# Remove rows where first column ends with the provided suffix.
-remove_map_entries_by_key_suffix() {
-  local suffix="$1"
-  local mapfile="$2"
-  local tmpfile
-
-  [[ -f "$mapfile" ]] || return 0
-  tmpfile="$(mktemp)"
-  awk -v suffix="$suffix" '
-    {
-      key = $1
-      if (key != "" && length(key) >= length(suffix) &&
-          substr(key, length(key) - length(suffix) + 1) == suffix) {
-        next
-      }
-      print
-    }
-  ' "$mapfile" >"$tmpfile"
-  cat "$tmpfile" >"$mapfile"
-  rm -f "$tmpfile"
-}
-
-# Remove a single passwd-file user (first colon-separated field).
-remove_passwd_entry_by_user() {
-  local user="$1"
-  local passwd_file="$2"
-  local tmpfile
-
-  [[ -f "$passwd_file" ]] || return 0
-  tmpfile="$(mktemp)"
-  awk -F: -v user="$user" '$1 != user { print }' "$passwd_file" >"$tmpfile"
-  cat "$tmpfile" >"$passwd_file"
-  rm -f "$tmpfile"
-}
-
-# Remove all passwd-file users belonging to a domain.
-remove_passwd_entries_by_domain() {
-  local domain="$1"
-  local passwd_file="$2"
-  local suffix="@${domain}"
-  local tmpfile
-
-  [[ -f "$passwd_file" ]] || return 0
-  tmpfile="$(mktemp)"
-  awk -F: -v suffix="$suffix" '
-    {
-      user = $1
-      if (user != "" && length(user) >= length(suffix) &&
-          substr(user, length(user) - length(suffix) + 1) == suffix) {
-        next
-      }
-      print
-    }
-  ' "$passwd_file" >"$tmpfile"
-  cat "$tmpfile" >"$passwd_file"
-  rm -f "$tmpfile"
-}
-
-# --- Postfix map helpers ---
-postmap_rebuild() {
-  local mapfile="$1"
-  if [[ "$MAIL_MODE" == "production" ]] && command -v postmap >/dev/null 2>&1; then
-    postmap "$mapfile" 2>/dev/null || true
-  fi
-}
-
-postfix_reload() {
-  if [[ "$MAIL_MODE" == "production" ]] && command -v postfix >/dev/null 2>&1; then
-    postfix reload 2>/dev/null || true
-  fi
-}
-
-dovecot_reload() {
-  if [[ "$MAIL_MODE" == "production" ]] && command -v doveadm >/dev/null 2>&1; then
-    doveadm reload 2>/dev/null || true
-  fi
-}
-
-rspamd_reload() {
-  if [[ "$MAIL_MODE" == "production" ]] && command -v rspamadm >/dev/null 2>&1; then
-    systemctl reload rspamd 2>/dev/null || true
-  fi
-}
-
-generate_dkim_key_material() {
-  local domain="${1:-}"
-  local selector="${2:-default}"
-
-  # Production: use opendkim-genkey for a real RSA key pair
-  if [[ "$MAIL_MODE" == "production" ]] && command -v opendkim-genkey >/dev/null 2>&1 && [[ -n "$domain" ]]; then
-    local key_dir="$DKIM_KEYS_DIR/$domain"
-    mkdir -p "$key_dir"
-    opendkim-genkey -b 2048 -d "$domain" -s "$selector" -D "$key_dir"
-    # opendkim-genkey creates ${selector}.private and ${selector}.txt
-    chown opendkim:opendkim "$key_dir/${selector}.private" 2>/dev/null || true
-    chmod 600 "$key_dir/${selector}.private" 2>/dev/null || true
-    # Extract the p= value from the TXT record file
-    grep -oP 'p=\K[^"]+' "$key_dir/${selector}.txt" | tr -d ' \n\t'
-    return 0
-  fi
-
-  # Dev fallback: generate pseudo-random base64 blob
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -base64 64 | tr -d '\n'
-    return 0
-  fi
-
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - <<'PY'
-import base64
-import os
-print(base64.b64encode(os.urandom(64)).decode('ascii').replace('\n', ''))
-PY
-    return 0
-  fi
-
-  if command -v sha256sum >/dev/null 2>&1; then
-    date -u +%s%N | sha256sum | cut -d' ' -f1
-    return 0
-  fi
-
-  date -u +%s%N
-}
-
-write_dkim_record() {
-  local domain="$1"
-  local selector="$2"
-  local public_key="$3"
-  local record="v=DKIM1; k=rsa; p=${public_key}"
-  local key_dir="$DKIM_KEYS_DIR/$domain"
-  local public_dir="$DKIM_PUBLIC_DIR/$domain"
-
-  mkdir -p "$key_dir" "$public_dir"
-
-  printf '%s\n' "$public_key" >"$key_dir/${selector}.pub"
-  printf '%s\n' "$record" >"$public_dir/${selector}.txt"
-
-  # Production: update OpenDKIM tables
-  if [[ "$MAIL_MODE" == "production" ]]; then
-    mkdir -p "$(dirname "$OPENDKIM_KEY_TABLE")"
-    # key.table: selector._domainkey.domain  domain:selector:/path/to/key
-    local key_entry="${selector}._domainkey.${domain}  ${domain}:${selector}:${key_dir}/${selector}.private"
-    # Remove old entry for this domain/selector, then append
-    remove_map_entry_by_key "${selector}._domainkey.${domain}" "$OPENDKIM_KEY_TABLE"
-    printf '%s\n' "$key_entry" >>"$OPENDKIM_KEY_TABLE"
-
-    # signing.table: *@domain  selector._domainkey.domain
-    local sign_entry="*@${domain}  ${selector}._domainkey.${domain}"
-    remove_map_entry_by_key "*@${domain}" "$OPENDKIM_SIGNING_TABLE"
-    printf '%s\n' "$sign_entry" >>"$OPENDKIM_SIGNING_TABLE"
+    # Export clean DNS TXT string
+    local DKIM_RECORD
+    DKIM_RECORD="$(grep -o 'p=[^"]*' "${KEY_DIR}/${SELECTOR}.txt" | tr -d ' \n\t"')"
+    echo "v=DKIM1; k=rsa; ${DKIM_RECORD}" > "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+    chmod 644 "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 
     systemctl reload opendkim 2>/dev/null || true
-  fi
-
-  printf '%s\n' "$record"
+    echo "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 }
 
-read_dkim_record() {
-  local domain="$1"
-  local selector="$2"
-  local record_file="$DKIM_PUBLIC_DIR/$domain/${selector}.txt"
+update_bind_dns() {
+    local DOMAIN="$1"
+    local DKIM_SELECTOR="${2:-default}"
+    local ZONE_FILE=""
 
-  if [[ -f "$record_file" ]]; then
-    cat "$record_file"
-  fi
-}
+    # 1. First, search BIND config files (named.conf.local, named.conf, etc.) for the exact zone file
+    for conf in /etc/bind/named.conf.local /etc/bind/named.conf /etc/named.conf /etc/bind/zones.conf; do
+        if [ -f "$conf" ]; then
+            local matched_file
+            matched_file="$(awk -v dom="${DOMAIN}" '
+                $0 ~ "zone[[:space:]]+\"" dom "\"" { in_zone=1 }
+                in_zone && /file[[:space:]]+/ {
+                    for(i=1;i<=NF;i++) {
+                        if ($i ~ /file/) {
+                            f=$(i+1);
+                            gsub(/[";]/, "", f);
+                            print f;
+                            exit;
+                        }
+                    }
+                }
+                in_zone && /};/ { in_zone=0 }
+            ' "$conf" || true)"
+            if [ -n "$matched_file" ] && [ -f "$matched_file" ]; then
+                ZONE_FILE="$matched_file"
+                echo "[DNS] Found zone file declared in ${conf}: ${ZONE_FILE}"
+                break
+            fi
+        fi
+    done
 
-normalize_mailbox_local_part() {
-  local mailbox="$1"
-  local domain="$2"
-  if [[ "$mailbox" == *"@"* ]]; then
-    printf '%s\n' "${mailbox%@*}"
-  else
-    printf '%s\n' "$mailbox"
-  fi
+    # 2. If not found in config, scan disk for existing zone files mentioning the domain
+    if [ -z "$ZONE_FILE" ]; then
+        for cand in \
+            "/etc/bind/zones/db.${DOMAIN}" \
+            "/etc/bind/zones/${DOMAIN}.db" \
+            "/etc/bind/zones/${DOMAIN}" \
+            "/var/cache/bind/db.${DOMAIN}" \
+            "/var/cache/bind/${DOMAIN}.db" \
+            "/var/lib/bind/db.${DOMAIN}" \
+            "/var/lib/bind/${DOMAIN}.db" \
+            "/etc/bind/db.${DOMAIN}" \
+            "/var/named/${DOMAIN}.db"; do
+            if [ -f "$cand" ]; then
+                ZONE_FILE="$cand"
+                echo "[DNS] Found zone file on disk: ${ZONE_FILE}"
+                break
+            fi
+        done
+    fi
+
+    # 3. If still not found, search files containing SOA for this domain
+    if [ -z "$ZONE_FILE" ]; then
+        local found_soa
+        found_soa="$(grep -rl "SOA.*${DOMAIN}" /etc/bind/ /var/cache/bind/ /var/lib/bind/ 2>/dev/null | head -n 1 || true)"
+        if [ -n "$found_soa" ] && [ -f "$found_soa" ]; then
+            ZONE_FILE="$found_soa"
+            echo "[DNS] Located zone file via SOA match: ${ZONE_FILE}"
+        fi
+    fi
+
+    # 4. If completely missing, create new in /etc/bind/zones/
+    if [ -z "$ZONE_FILE" ]; then
+        ZONE_FILE="/etc/bind/zones/db.${DOMAIN}"
+        mkdir -p /etc/bind/zones
+        echo "[DNS] Initializing new zone file at ${ZONE_FILE}..."
+        local SERIAL="$(date +%Y%m%d01)"
+        cat << ZONEEOF > "$ZONE_FILE"
+\$TTL 3600
+@   IN  SOA ns1.mainserver.in. admin.${DOMAIN}. (
+            ${SERIAL} ; Serial
+            3600       ; Refresh
+            1800       ; Retry
+            604800     ; Expire
+            86400 )    ; Minimum
+
+@       IN  NS      ns1.mainserver.in.
+@       IN  NS      ns2.mainserver.in.
+@       IN  A       ${SERVER_IP}
+ZONEEOF
+        if [ -f /etc/bind/named.conf.local ] && ! grep -q "zone \"${DOMAIN}\"" /etc/bind/named.conf.local; then
+            cat << CONFEOF >> /etc/bind/named.conf.local
+
+zone "${DOMAIN}" {
+    type master;
+    file "${ZONE_FILE}";
+};
+CONFEOF
+        fi
+    fi
+
+    # Read DKIM public key
+    local DKIM_PUB=""
+    if [ -f "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt" ]; then
+        DKIM_PUB="$(cat "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt")"
+    fi
+
+    echo "[DNS] Updating mail records in ${ZONE_FILE}..."
+    # Clean old mail records
+    sed -i "/^mail\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^mail\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^webmail\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^webmail\s\+/d" "$ZONE_FILE" || true
+    sed -i "/IN\s\+MX/d" "$ZONE_FILE" || true
+    sed -i "/v=spf1/d" "$ZONE_FILE" || true
+    sed -i "/_dmarc/d" "$ZONE_FILE" || true
+    sed -i "/_domainkey/d" "$ZONE_FILE" || true
+
+    # Append fresh, complete records
+    cat << RECIEVE >> "$ZONE_FILE"
+mail.${DOMAIN}.      IN  A       ${SERVER_IP}
+webmail.${DOMAIN}.   IN  A       ${SERVER_IP}
+${DOMAIN}.           IN  MX  10  mail.${DOMAIN}.
+${DOMAIN}.           IN  TXT     "v=spf1 mx a ip4:${SERVER_IP} ~all"
+_dmarc.${DOMAIN}.    IN  TXT     "v=DMARC1; p=none; rua=mailto:admin@${DOMAIN}; fo=1"
+RECIEVE
+
+    if [ -n "$DKIM_PUB" ]; then
+        echo "${DKIM_SELECTOR}._domainkey.${DOMAIN}. IN TXT \"${DKIM_PUB}\"" >> "$ZONE_FILE"
+    fi
+
+    # Increment SOA serial
+    local CUR_SERIAL
+    CUR_SERIAL="$(grep -oE '[0-9]{10}' "$ZONE_FILE" | head -n 1 || true)"
+    if [ -n "$CUR_SERIAL" ]; then
+        local NEW_SERIAL="$((CUR_SERIAL + 1))"
+        sed -i "s/${CUR_SERIAL}/${NEW_SERIAL}/" "$ZONE_FILE"
+        echo "[DNS] Incremented serial from ${CUR_SERIAL} to ${NEW_SERIAL}"
+    fi
+
+    # Reload BIND9
+    rndc reload "${DOMAIN}" 2>/dev/null || systemctl reload named 2>/dev/null || systemctl reload bind9 2>/dev/null || true
+    echo "[DNS] Zone updated & reloaded for ${DOMAIN}"
 }

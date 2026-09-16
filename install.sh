@@ -380,3 +380,61 @@ else
     journalctl -u clearpanel -n 50 --no-pager
     exit 1
 fi
+# --- [ClearPanel Email & Webmail Auto-Configuration Block] ---
+# 1. Setup Sudoers for ClearPanel
+cat << 'EOF' > /etc/sudoers.d/clearpanel
+clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/email/*
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/nginx, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload postfix, /usr/bin/systemctl restart postfix
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload dovecot, /usr/bin/systemctl restart dovecot
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload named, /usr/bin/systemctl restart named
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload bind9, /usr/bin/systemctl restart bind9
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload opendkim, /usr/bin/systemctl restart opendkim
+EOF
+chmod 0440 /etc/sudoers.d/clearpanel
+
+# 2. Setup Directories & Permissions
+mkdir -p /var/lib/clearpanel/mail/domains /var/lib/clearpanel/mail/mailboxes /var/lib/clearpanel/mail/policies /etc/clearpanel/mail /var/mail/vhosts
+id -u vmail >/dev/null 2>&1 || useradd -u 5000 -s /usr/sbin/nologin -d /var/mail/vhosts -m vmail 2>/dev/null || true
+chown -R vmail:vmail /var/mail/vhosts 2>/dev/null || true
+chmod 770 /var/mail/vhosts 2>/dev/null || true
+chown -R clearpanel:clearpanel /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
+chmod -R 775 /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
+
+# 3. Enable Port 465 (SMTPS) in Postfix
+if ! grep -q "^submissions inet" /etc/postfix/master.cf 2>/dev/null; then
+    cat << 'EOF' >> /etc/postfix/master.cf
+submissions inet n       -       y       -       -       smtpd
+  -o syslog_name=postfix/submissions
+  -o smtpd_tls_wrappermode=yes
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_reject_unlisted_recipient=no
+  -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+  -o milter_macro_daemon_name=ORIGINATING
+EOF
+fi
+
+# 4. Deploy Roundcube Nginx Virtual Host
+PHP_SOCK="/var/run/php/php8.4-fpm.sock"
+[ -S "$PHP_SOCK" ] || PHP_SOCK="$(ls /var/run/php/php*-fpm.sock 2>/dev/null | sort -V | tail -n 1 || echo "/var/run/php/php8.4-fpm.sock")"
+cat << EOF > /etc/nginx/sites-available/roundcube.conf
+server {
+    listen 80;
+    server_name webmail.* mail.*;
+    root /usr/share/roundcube;
+    index index.php index.html;
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:${PHP_SOCK};
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/roundcube.conf /etc/nginx/sites-enabled/roundcube.conf
+# --- [End ClearPanel Email & Webmail Block] ---

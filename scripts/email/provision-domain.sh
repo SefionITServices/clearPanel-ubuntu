@@ -1,67 +1,53 @@
 #!/usr/bin/env bash
+# ClearPanel: Provision Mail Domain
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <domain>" >&2
-  exit 1
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
 fi
 
-DOMAIN="${1,,}"
-SCRIPT_SOURCE="${BASH_SOURCE[0]}"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/common.sh"
+DOMAIN="${1:-}"
+if [ -z "$DOMAIN" ]; then
+    echo "Usage: $0 <domain>" >&2
+    exit 1
+fi
 
-ensure_state_root
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/common.sh"
 
-# --- State tracking (both modes) ---
-DOMAIN_DIR="$DOMAINS_DIR/$DOMAIN"
-mkdir -p "$DOMAIN_DIR"
+echo "[ClearPanel] Provisioning mail domain: ${DOMAIN}..."
 
-METADATA_FILE="$DOMAIN_DIR/domain.json"
-TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# 1. Create domain storage directory
+mkdir -p "/var/lib/clearpanel/mail/domains/${DOMAIN}"
+mkdir -p "/var/lib/clearpanel/mail/mailboxes/${DOMAIN}"
+mkdir -p "/var/mail/vhosts/${DOMAIN}"
+chown -R vmail:vmail "/var/mail/vhosts/${DOMAIN}" 2>/dev/null || true
 
-cat >"$METADATA_FILE" <<JSON
+# 2. Add to Postfix virtual domains map
+if ! grep -qxF "${DOMAIN}" /etc/clearpanel/mail/vdomains; then
+    echo "${DOMAIN}" >> /etc/clearpanel/mail/vdomains
+fi
+
+# 3. Generate DKIM keys
+generate_dkim_key "$DOMAIN" "default"
+
+# 4. Auto-inject DNS records into BIND
+update_bind_dns "$DOMAIN" "default"
+
+# 5. Default Spam Policy
+cat << POLICIES > "/var/lib/clearpanel/mail/policies/${DOMAIN}.json"
 {
-  "domain": "$DOMAIN",
-  "provisionedAt": "$TIMESTAMP"
+  "domain": "${DOMAIN}",
+  "spamThreshold": 6,
+  "greylistingEnabled": true,
+  "greylistingDelaySeconds": 300,
+  "virusScanEnabled": true
 }
-JSON
+POLICIES
 
-if [[ "$MAIL_MODE" == "production" ]]; then
-  # --- Add to Postfix virtual domains ---
-  if ! map_has_key "$DOMAIN" "$POSTFIX_VDOMAINS"; then
-    printf '%s\tOK\n' "$DOMAIN" >>"$POSTFIX_VDOMAINS"
-    postmap_rebuild "$POSTFIX_VDOMAINS"
-    printf 'Added %s to Postfix virtual domains\n' "$DOMAIN"
-  else
-    printf 'Domain %s already in Postfix virtual domains\n' "$DOMAIN"
-  fi
+# 6. Rebuild maps & reload Postfix
+postmap /etc/clearpanel/mail/vdomains 2>/dev/null || true
+systemctl reload postfix 2>/dev/null || true
+systemctl reload dovecot 2>/dev/null || true
 
-  # --- Create vmail domain directory ---
-  DOMAIN_VMAIL="$VMAIL_HOME/$DOMAIN"
-  mkdir -p "$DOMAIN_VMAIL"
-  chown "${VMAIL_USER}:${VMAIL_GROUP}" "$DOMAIN_VMAIL"
-  printf 'Created vmail directory %s\n' "$DOMAIN_VMAIL"
-
-  # --- Dovecot sieve before directory ---
-  mkdir -p /etc/dovecot/sieve-before.d 2>/dev/null || true
-
-  postfix_reload
-fi
-
-# --- DKIM key generation ---
-SELECTOR="default"
-EXISTING_RECORD="$(read_dkim_record "$DOMAIN" "$SELECTOR" || true)"
-DKIM_PRIVATE_KEY="$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.private"
-if [[ -z "$EXISTING_RECORD" || ! -f "$DKIM_PRIVATE_KEY" ]]; then
-  PUBLIC_KEY="$(generate_dkim_key_material "$DOMAIN" "$SELECTOR")"
-  DKIM_RECORD="$(write_dkim_record "$DOMAIN" "$SELECTOR" "$PUBLIC_KEY")"
-  printf 'Generated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"
-  printf '%s\n' "$DKIM_RECORD"
-else
-  printf 'DKIM selector %s already exists for %s\n' "$SELECTOR" "$DOMAIN"
-  printf '%s\n' "$EXISTING_RECORD"
-fi
-
-printf 'Mail domain %s provisioned\n' "$DOMAIN"
+echo "[ClearPanel] Domain ${DOMAIN} successfully provisioned for email."
