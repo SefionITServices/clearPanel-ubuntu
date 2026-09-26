@@ -23,7 +23,7 @@ export class DnsController {
     @Param('domain') domain: string,
     @Body() body: AddDnsRecordDto,
   ) {
-    return this.dnsService.addRecord(domain, { type: body.type, name: body.name, value: body.value, ttl: body.ttl ?? 3600, priority: body.priority });
+    return this.dnsService.addRecord(domain, { type: body.type, name: body.name || '@', value: body.value, ttl: body.ttl ?? 3600, priority: body.priority });
   }
 
   @Put('zones/:domain/records/:id')

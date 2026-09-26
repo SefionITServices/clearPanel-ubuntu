@@ -19,6 +19,37 @@ export interface DnsZone {
   records: DnsRecord[];
 }
 
+export function normalizeRecordName(name: string | undefined | null, domain: string): string {
+  if (!name) return '@';
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === '@' || trimmed === '.') return '@';
+
+  const cleanDomain = domain.toLowerCase().replace(/\.+$/, '');
+  const cleanName = trimmed.replace(/\.+$/, '');
+
+  if (cleanName.toLowerCase() === cleanDomain) {
+    return '@';
+  }
+
+  const suffix = `.${cleanDomain}`;
+  if (cleanName.toLowerCase().endsWith(suffix)) {
+    const sub = cleanName.slice(0, -suffix.length);
+    return sub || '@';
+  }
+
+  return cleanName;
+}
+
+export function cleanRecordValue(type: string, value: string): string {
+  let val = (value || '').trim();
+  if (type === 'TXT') {
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1).trim();
+    }
+  }
+  return val;
+}
+
 @Injectable()
 export class DnsService {
   private readonly logger = new Logger(DnsService.name);
@@ -199,7 +230,15 @@ export class DnsService {
     const zones = await this.readZones();
     const zone = zones.find(z => z.domain === domain);
     if (!zone) return null;
-    const newRecord: DnsRecord = { id: randomUUID(), ...record };
+    const name = normalizeRecordName(record.name, domain);
+    const value = cleanRecordValue(record.type, record.value);
+    const newRecord: DnsRecord = {
+      ...record,
+      name,
+      value,
+      ttl: record.ttl || 3600,
+      id: randomUUID(),
+    };
     zone.records.push(newRecord);
     await this.writeZones(zones);
     await this.syncToBind9(domain, zone.records);
@@ -212,7 +251,15 @@ export class DnsService {
     if (!zone) return null;
     const rec = zone.records.find(r => r.id === id);
     if (!rec) return null;
-    Object.assign(rec, patch);
+    const updatedPatch = { ...patch };
+    if (updatedPatch.name !== undefined) {
+      updatedPatch.name = normalizeRecordName(updatedPatch.name, domain);
+    }
+    if (updatedPatch.value !== undefined) {
+      const type = updatedPatch.type || rec.type;
+      updatedPatch.value = cleanRecordValue(type, updatedPatch.value);
+    }
+    Object.assign(rec, updatedPatch);
     await this.writeZones(zones);
     await this.syncToBind9(domain, zone.records);
     return rec;

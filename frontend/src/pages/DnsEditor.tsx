@@ -97,7 +97,29 @@ export default function DnsEditorPage() {
 
   const handleSave = async (id: string) => {
     if (!dirty[id]) return;
-    const patch = dirty[id];
+    const patch = { ...dirty[id] };
+    if (patch.name !== undefined) {
+      let name = patch.name.trim();
+      const cleanDomain = selectedDomain.toLowerCase().replace(/\.+$/, '');
+      const cleanName = name.replace(/\.+$/, '');
+      if (!name || name === '@' || cleanName.toLowerCase() === cleanDomain) {
+        name = '@';
+      } else if (cleanName.toLowerCase().endsWith(`.${cleanDomain}`)) {
+        name = cleanName.slice(0, -(`.${cleanDomain}`.length)) || '@';
+      }
+      patch.name = name;
+    }
+    if (patch.value !== undefined && zone) {
+      const rec = zone.records.find(r => r.id === id);
+      const type = patch.type || rec?.type;
+      if (type === 'TXT') {
+        let val = patch.value.trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1).trim();
+        }
+        patch.value = val;
+      }
+    }
     if (patch.ttl && (patch.ttl < 60 || patch.ttl > 86400)) { alert('TTL must be between 60 and 86400'); return; }
     await dnsApi.updateRecord(selectedDomain, id, patch);
     setDirty(d => { const copy = { ...d }; delete copy[id]; return copy; });
@@ -105,7 +127,23 @@ export default function DnsEditorPage() {
   };
 
   const handleAdd = async () => {
-    const payload: any = { type: form.type, name: form.name, value: form.value, ttl: form.ttl };
+    let name = form.name.trim();
+    const cleanDomain = selectedDomain.toLowerCase().replace(/\.+$/, '');
+    const cleanName = name.replace(/\.+$/, '');
+    if (!name || name === '@' || cleanName.toLowerCase() === cleanDomain) {
+      name = '@';
+    } else if (cleanName.toLowerCase().endsWith(`.${cleanDomain}`)) {
+      name = cleanName.slice(0, -(`.${cleanDomain}`.length)) || '@';
+    }
+
+    let value = form.value.trim();
+    if (form.type === 'TXT') {
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1).trim();
+      }
+    }
+
+    const payload: any = { type: form.type, name, value, ttl: form.ttl };
     if (form.type === 'MX' && form.priority) payload.priority = Number(form.priority);
     await dnsApi.addRecord(selectedDomain, payload);
     setOpenAdd(false);
@@ -229,6 +267,14 @@ export default function DnsEditorPage() {
                         value={r.name}
                         onChange={e => markDirty(r.id, { name: e.target.value })}
                         sx={{ minWidth: 120, '& input': { fontFamily: 'monospace', fontSize: '0.85rem' } }}
+                        helperText={
+                          !r.name || r.name === '@'
+                            ? selectedDomain
+                            : r.name.toLowerCase().endsWith(`.${selectedDomain.toLowerCase()}`)
+                              ? r.name
+                              : `${r.name}.${selectedDomain}`
+                        }
+                        FormHelperTextProps={{ sx: { fontFamily: 'monospace', fontSize: '0.72rem', color: 'text.secondary' } }}
                       />
                     </TableCell>
                     <TableCell>
@@ -346,8 +392,19 @@ export default function DnsEditorPage() {
               label="Name"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder={selectedDomain}
-              helperText="Enter the subdomain or @ for root domain"
+              placeholder="@ or subdomain (leave empty for root)"
+              helperText={(() => {
+                const trimmed = form.name.trim();
+                const cleanDomain = selectedDomain.toLowerCase().replace(/\.+$/, '');
+                const cleanName = trimmed.replace(/\.+$/, '');
+                if (!trimmed || trimmed === '@' || cleanName.toLowerCase() === cleanDomain) {
+                  return `Points to root domain: ${selectedDomain}`;
+                }
+                const fqdn = cleanName.toLowerCase().endsWith(`.${cleanDomain}`)
+                  ? cleanName
+                  : `${cleanName}.${selectedDomain}`;
+                return `Points to: ${fqdn}`;
+              })()}
               fullWidth
             />
             <TextField
@@ -384,7 +441,7 @@ export default function DnsEditorPage() {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setOpenAdd(false)}>Cancel</Button>
-          <Button variant="contained" disabled={!form.type || !form.name || !form.value} onClick={handleAdd}>
+          <Button variant="contained" disabled={!form.type || !form.value.trim()} onClick={handleAdd}>
             Add Record
           </Button>
         </DialogActions>

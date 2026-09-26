@@ -405,17 +405,16 @@ ${glue}
     }
   }
 
-  private generateSerial(): string {
+  private generateSerial(existingSerial: number = 0): string {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    // Use HHMMSS to derive a 2-digit sequence so serials always increment
-    const hh = now.getHours();
-    const mm = now.getMinutes();
-    const ss = now.getSeconds();
-    const seq = String(Math.floor((hh * 3600 + mm * 60 + ss) / 864)).padStart(2, '0'); // 0-99 mapped from seconds-of-day
-    return `${year}${month}${day}${seq}`;
+    const baseSerial = parseInt(`${year}${month}${day}01`, 10);
+    if (existingSerial >= baseSerial) {
+      return String(existingSerial + 1);
+    }
+    return String(baseSerial);
   }
 
   /**
@@ -434,16 +433,21 @@ ${glue}
     const zoneFile = path.join(this.zonesPath, `db.${domain}`);
 
     // Check if zone file exists — only sync if BIND9 is managing this domain
+    let existingSerial = 0;
     try {
-      await fs.access(zoneFile);
+      const existingContent = await fs.readFile(zoneFile, 'utf8');
+      const match = existingContent.match(/(\d{10})\s*;\s*Serial/i);
+      if (match) {
+        existingSerial = parseInt(match[1], 10);
+      }
     } catch {
       return { success: false, message: `No BIND9 zone file for ${domain} — skipping sync` };
     }
 
-    const serial = this.generateSerial();
+    const serial = this.generateSerial(existingSerial);
 
     // Extract NS records and determine SOA primary
-    const nsRecords = records.filter(r => r.type === 'NS' && r.name === '@');
+    const nsRecords = records.filter(r => r.type === 'NS' && (r.name === '@' || r.name === domain));
     const soaNs = nsRecords.length > 0
       ? (nsRecords[0].value.endsWith('.') ? nsRecords[0].value : `${nsRecords[0].value}.`)
       : `ns1.${domain}.`;
@@ -462,41 +466,62 @@ $TTL 86400
 `;
 
     for (const rec of records) {
-      const name = rec.name === '@' ? '@' : rec.name;
+      const rawName = (rec.name || '').trim();
+      const cleanDomain = domain.toLowerCase().replace(/\.+$/, '');
+      const cleanName = rawName.replace(/\.+$/, '');
+
+      let name = rawName;
+      if (!rawName || rawName === '@' || rawName === '.' || cleanName.toLowerCase() === cleanDomain) {
+        name = '@';
+      } else if (cleanName.toLowerCase().endsWith(`.${cleanDomain}`)) {
+        name = cleanName.slice(0, -(`.${cleanDomain}`.length)) || '@';
+      }
+
       const padName = name.padEnd(8);
       const ttl = rec.ttl || 3600;
 
       switch (rec.type) {
         case 'A':
         case 'AAAA':
-          zoneContent += `${padName} ${ttl}  IN  ${rec.type.padEnd(6)}  ${rec.value}\n`;
+          zoneContent += `${padName} ${ttl}  IN  ${rec.type.padEnd(6)}  ${rec.value.trim()}\n`;
           break;
         case 'CNAME': {
-          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          const val = rec.value.trim().endsWith('.') ? rec.value.trim() : `${rec.value.trim()}.`;
           zoneContent += `${padName} ${ttl}  IN  CNAME   ${val}\n`;
           break;
         }
         case 'MX': {
           const priority = rec.priority ?? 10;
-          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          const val = rec.value.trim().endsWith('.') ? rec.value.trim() : `${rec.value.trim()}.`;
           zoneContent += `${padName} ${ttl}  IN  MX      ${priority} ${val}\n`;
           break;
         }
-        case 'TXT':
-          zoneContent += `${padName} ${ttl}  IN  TXT     "${rec.value.replace(/"/g, '\\"')}"\n`;
+        case 'TXT': {
+          let val = (rec.value || '').trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1).trim();
+          }
+          if (val.length > 255) {
+            const chunks = val.match(/.{1,255}/g) || [val];
+            const formatted = chunks.map(c => `"${c.replace(/"/g, '\\"')}"`).join(' ');
+            zoneContent += `${padName} ${ttl}  IN  TXT     ( ${formatted} )\n`;
+          } else {
+            zoneContent += `${padName} ${ttl}  IN  TXT     "${val.replace(/"/g, '\\"')}"\n`;
+          }
           break;
+        }
         case 'NS': {
-          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          const val = rec.value.trim().endsWith('.') ? rec.value.trim() : `${rec.value.trim()}.`;
           zoneContent += `${padName} ${ttl}  IN  NS      ${val}\n`;
           break;
         }
         case 'SRV': {
-          const val = rec.value.endsWith('.') ? rec.value : `${rec.value}.`;
+          const val = rec.value.trim().endsWith('.') ? rec.value.trim() : `${rec.value.trim()}.`;
           zoneContent += `${padName} ${ttl}  IN  SRV     ${rec.priority ?? 0} ${val}\n`;
           break;
         }
         case 'CAA':
-          zoneContent += `${padName} ${ttl}  IN  CAA     ${rec.value}\n`;
+          zoneContent += `${padName} ${ttl}  IN  CAA     ${rec.value.trim()}\n`;
           break;
         default:
           zoneContent += `; Unsupported record type: ${rec.type} ${rec.name} ${rec.value}\n`;

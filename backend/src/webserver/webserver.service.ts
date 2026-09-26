@@ -15,6 +15,54 @@ export class WebServerService {
 
   async onModuleInit() {
     await this.checkNginx();
+    await this.ensureMimeTypes();
+  }
+
+  async ensureMimeTypes(): Promise<void> {
+    try {
+      const mimePath = '/etc/nginx/mime.types';
+      const content = await fs.readFile(mimePath, 'utf-8');
+      if (!content.includes('js mjs;') && !content.includes(' mjs;')) {
+        const updated = content.replace(
+          /(application\/javascript\s+js);/,
+          '$1 mjs;'
+        );
+        if (updated !== content) {
+          try {
+            await fs.writeFile(mimePath, updated, 'utf-8');
+          } catch {
+            const tmpFile = `/tmp/mime.types-${Date.now()}`;
+            await fs.writeFile(tmpFile, updated, 'utf-8');
+            await execAsync(`sudo tee ${mimePath} < ${tmpFile} > /dev/null`);
+            await fs.unlink(tmpFile).catch(() => {});
+          }
+          await execAsync('sudo nginx -t && sudo systemctl reload nginx').catch(() => {});
+        }
+      }
+    } catch {}
+  }
+
+  async ensureNextcloudGlobalConfig(): Promise<void> {
+    try {
+      const mapPath = '/etc/nginx/conf.d/nextcloud.conf';
+      const exists = await fs.access(mapPath).then(() => true).catch(() => false);
+      if (!exists) {
+        const content = `# Global map for Nextcloud asset cache-busting
+map $arg_v $asset_immutable {
+    "" "";
+    default ", immutable";
+}
+`;
+        try {
+          await fs.writeFile(mapPath, content, { encoding: 'utf8', mode: 0o644 });
+        } catch {
+          const tmpFile = `/tmp/nextcloud-map-${Date.now()}.conf`;
+          await fs.writeFile(tmpFile, content, 'utf-8');
+          await execAsync(`sudo mkdir -p /etc/nginx/conf.d && sudo tee ${mapPath} < ${tmpFile} > /dev/null`);
+          await fs.unlink(tmpFile).catch(() => {});
+        }
+      }
+    } catch {}
   }
 
   private async ensureNginxAvailable(): Promise<boolean> {
@@ -143,6 +191,16 @@ export class WebServerService {
       return { success: false, message: 'Nginx not available. Install nginx first.' };
     }
 
+    // Auto-detect Nextcloud installations and use specialized Nextcloud configuration
+    if (!proxyPort) {
+      const isNextcloud =
+        documentRoot.includes('/nextcloud/') ||
+        (await fs.access(path.join(documentRoot, 'occ')).then(() => true).catch(() => false));
+      if (isNextcloud) {
+        return this.createNextcloudVirtualHost(domain, documentRoot, phpVersion);
+      }
+    }
+
     // Detect the PHP-FPM socket (per-domain when specified)
     const phpSocket = await this.resolvePhpSocket(phpVersion);
 
@@ -244,6 +302,220 @@ export class WebServerService {
         message:
           `Failed to create virtual host: ${msg}. ` +
           `If this mentions sudo, fix systemd unit (NoNewPrivileges) and sudoers for clearpanel.`,
+      };
+    }
+  }
+
+  async createNextcloudVirtualHost(
+    domain: string,
+    documentRoot: string,
+    phpVersion?: string,
+  ): Promise<{ success: boolean; message: string; nginxConfig?: string }> {
+    const available = await this.ensureNginxAvailable();
+    if (!available) {
+      return { success: false, message: 'Nginx not available. Install nginx first.' };
+    }
+
+    await this.ensureMimeTypes();
+    await this.ensureNextcloudGlobalConfig();
+
+    const phpSocket = await this.resolvePhpSocket(phpVersion);
+
+    const certPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
+    const keyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+    const sslExists =
+      (await fs.access(certPath).then(() => true).catch(() => false)) &&
+      (await fs.access(keyPath).then(() => true).catch(() => false));
+
+    const listenBlock = sslExists
+      ? `    listen [::]:443 ssl http2;
+    listen 443 ssl http2;
+    ssl_certificate ${certPath};
+    ssl_certificate_key ${keyPath};
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;`
+      : `    listen 80;
+    listen [::]:80;`;
+
+    const redirectBlock = sslExists
+      ? `\nserver {
+    if ($host = ${domain}) {
+        return 301 https://$host$request_uri;
+    }
+
+    listen 80;
+    listen [::]:80;
+    server_name ${domain} www.${domain};
+    return 404;
+}\n`
+      : '';
+
+    const safeDomain = domain.replace(/[^a-z0-9]/gi, '_');
+
+    const configContent = `upstream php-handler-${safeDomain} {
+    server unix:${phpSocket};
+}
+
+server {
+    server_name ${domain} www.${domain};
+
+    root ${documentRoot};
+    index index.php index.html /index.php$request_uri;
+
+    access_log /var/log/nginx/${domain}-access.log;
+    error_log /var/log/nginx/${domain}-error.log;
+
+    client_max_body_size 512M;
+    client_body_timeout 300s;
+    client_body_buffer_size 512k;
+
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 4;
+    gzip_min_length 256;
+    gzip_proxied expired no-cache no-store private no_last_modified no_etag auth;
+    gzip_types application/atom+xml text/javascript application/javascript application/json application/ld+json application/manifest+json application/rss+xml application/vnd.geo+json application/vnd.ms-fontobject application/wasm application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/bmp image/svg+xml image/x-icon text/cache-manifest text/css text/plain text/vcard text/vnd.rim.location.xloc text/vtt text/x-component text/x-cross-domain-policy;
+
+    add_header Strict-Transport-Security "max-age=15552000; includeSubDomains" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Permitted-Cross-Domain-Policies "none" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    fastcgi_hide_header X-Powered-By;
+
+    location = / {
+        if ( $http_user_agent ~ ^DavClnt ) {
+            return 302 /remote.php/webdav/$is_args$args;
+        }
+    }
+
+    location = /robots.txt {
+        allow all;
+        log_not_found off;
+        access_log off;
+    }
+
+    location ^~ /.well-known {
+        location = /.well-known/carddav { return 301 /remote.php/dav/; }
+        location = /.well-known/caldav  { return 301 /remote.php/dav/; }
+
+        location /.well-known/acme-challenge { try_files $uri $uri/ =404; }
+        location /.well-known/pki-validation { try_files $uri $uri/ =404; }
+
+        return 301 /index.php$request_uri;
+    }
+
+    location ~ ^/(?:build|tests|config|lib|3rdparty|templates|data)(?:$|/) {
+        return 404;
+    }
+    location ~ ^/(?:\\.|autotest|occ|issue|indie|db_|console) {
+        return 404;
+    }
+    location ~ ^/(?:composer\\.(?:json|lock)|package(?:-lock)?\\.json|core/shipped\\.json)$ {
+        return 404;
+    }
+
+    location ~ \\.php(?:$|/) {
+        rewrite ^/(?!index|remote|public|cron|status|ocs\\/v[12]|ocs-provider\\/.+|core\\/ajax\\/update|updater\\/.+|.+\\/richdocumentscode(_arm64)?\\/proxy) /index.php$request_uri;
+
+        fastcgi_split_path_info ^(.+?\\.php)(/.*)$;
+        set $path_info $fastcgi_path_info;
+
+        try_files $fastcgi_script_name =404;
+
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $path_info;
+        fastcgi_param HTTPS on;
+
+        fastcgi_param modHeadersAvailable true;
+        fastcgi_param front_controller_active true;
+        fastcgi_pass php-handler-${safeDomain};
+
+        fastcgi_intercept_errors on;
+        fastcgi_request_buffering on;
+
+        fastcgi_buffers 64 4K;
+        fastcgi_buffer_size 64k;
+        fastcgi_busy_buffers_size 64k;
+        fastcgi_temp_file_write_size 64k;
+        fastcgi_read_timeout 300s;
+        fastcgi_max_temp_file_size 0;
+    }
+
+    location ~ \\.(?:css|js|mjs|svg|gif|ico|jpg|png|webp|wasm|tflite|map|ogg|flac|mp4|webm)$ {
+        try_files $uri /index.php$request_uri;
+
+        add_header Cache-Control "public, max-age=15778463$asset_immutable";
+        add_header Referrer-Policy "no-referrer" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Permitted-Cross-Domain-Policies "none" always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        access_log off;
+    }
+
+    location ~ \\.(otf|woff2?)$ {
+        try_files $uri /index.php$request_uri;
+        expires 7d;
+        access_log off;
+    }
+
+    location /remote {
+        return 301 /remote.php$request_uri;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php$request_uri;
+    }
+
+${listenBlock}
+}${redirectBlock}`;
+
+    const configPath = `/etc/nginx/sites-available/${domain}`;
+    const symlinkPath = `/etc/nginx/sites-enabled/${domain}`;
+
+    try {
+      try {
+        await fs.writeFile(configPath, configContent, { encoding: 'utf8', mode: 0o644 });
+      } catch {
+        const tmpFile = `/tmp/nginx-${domain}-${Date.now()}.conf`;
+        await fs.writeFile(tmpFile, configContent, { encoding: 'utf8' });
+        await execAsync(`sudo tee ${configPath} < ${tmpFile} > /dev/null`, { timeout: 10_000 });
+        await fs.unlink(tmpFile).catch(() => {});
+      }
+
+      try {
+        try { await fs.unlink(symlinkPath); } catch {}
+        await fs.symlink(configPath, symlinkPath);
+      } catch {
+        await execAsync(`sudo ln -sf ${configPath} ${symlinkPath}`, { timeout: 10_000 });
+      }
+
+      try {
+        await execAsync('sudo nginx -t', { timeout: 15_000 });
+      } catch {
+        try { await fs.unlink(symlinkPath); } catch {}
+        try { await fs.unlink(configPath); } catch {}
+        return {
+          success: false,
+          message: `Nginx config test failed for ${domain}. Config was removed.`,
+        };
+      }
+
+      await execAsync('sudo systemctl reload nginx', { timeout: 30_000 });
+
+      return {
+        success: true,
+        message: `Nextcloud virtual host created for ${domain}`,
+        nginxConfig: configContent
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        message: `Failed to create Nextcloud virtual host: ${msg}.`,
       };
     }
   }

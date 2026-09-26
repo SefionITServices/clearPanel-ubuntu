@@ -6,8 +6,8 @@ export class AddDnsRecordDto {
   type!: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'NS' | 'SRV' | 'CAA';
 
   @IsString()
-  @IsNotEmpty()
-  name!: string;
+  @IsOptional()
+  name?: string;
 
   @IsString()
   @IsNotEmpty()

@@ -1077,9 +1077,9 @@ export class MailService {
         // Regenerate the zone file from the updated JSON records
         const updatedZone = await this.dnsService.getZone(domainName);
         if (updatedZone) {
-          zoneReload = await this.dnsServerService.createZone(
+          zoneReload = await this.dnsServerService.syncZoneFromRecords(
             domainName,
-            suggestions.serverIp,
+            updatedZone.records,
           );
         }
       }

@@ -451,7 +451,13 @@ export class AppStoreService {
         return (async () => {
           const next = (this as any).nextcloudInstaller as any;
           if (!next) throw new Error('Nextcloud installer not available');
-          return await next.install({ domain, adminUser: options?.adminUser, adminPass: options?.adminPass, adminEmail: options?.adminEmail, ssl: options?.ssl === 'true' });
+          return await next.install({
+            domain,
+            adminUser: options?.adminUser,
+            adminPass: options?.adminPass,
+            adminEmail: options?.adminEmail,
+            ssl: String(options?.ssl) === 'true',
+          });
         })();
       },
       mailman: () => this.installMailman(),
