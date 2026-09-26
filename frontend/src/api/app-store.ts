@@ -24,4 +24,19 @@ export const appStoreApi = {
   reconfigure: (id: string) => fetchJSON(`${API_BASE}/reconfigure/${id}`, { method: 'POST' }),
   repairApp: (id: string) => fetchJSON(`${API_BASE}/repair/${id}`, { method: 'POST' }),
   prepareApp: (id: string) => fetchJSON(`${API_BASE}/prepare/${id}`, { method: 'POST' }),
+  getRedisInfo: () => fetchJSON<{ success: boolean; info: {
+    installed: boolean;
+    running: boolean;
+    configPath: string;
+    host: string;
+    externalHost: string;
+    port: number;
+    bind: string[];
+    protectedMode: boolean | null;
+    requirePassEnabled: boolean;
+    password: string;
+    redisUrl: string;
+    cliPingCommand: string;
+    notes: string[];
+  } }>(`${API_BASE}/redis/info`),
 };

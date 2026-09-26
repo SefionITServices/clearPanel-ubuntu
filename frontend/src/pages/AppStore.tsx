@@ -79,6 +79,22 @@ interface AppInfo {
   status: AppStatus;
 }
 
+interface RedisInfo {
+  installed: boolean;
+  running: boolean;
+  configPath: string;
+  host: string;
+  externalHost: string;
+  port: number;
+  bind: string[];
+  protectedMode: boolean | null;
+  requirePassEnabled: boolean;
+  password: string;
+  redisUrl: string;
+  cliPingCommand: string;
+  notes: string[];
+}
+
 // ─── icon map ─────────────────────────────────────────────────────────
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -951,6 +967,35 @@ function AppDetailDialog({
 }) {
   if (!app) return null;
 
+  const [redisInfo, setRedisInfo] = React.useState<RedisInfo | null>(null);
+  const [redisLoading, setRedisLoading] = React.useState(false);
+  const [redisError, setRedisError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    const loadRedisInfo = async () => {
+      if (!app || app.id !== 'redis') {
+        setRedisInfo(null);
+        setRedisError(null);
+        return;
+      }
+      setRedisLoading(true);
+      setRedisError(null);
+      try {
+        const data = await appStoreApi.getRedisInfo();
+        if (alive && data?.success) setRedisInfo(data.info);
+      } catch (e: any) {
+        if (alive) setRedisError(e?.message || 'Failed to load Redis details');
+      } finally {
+        if (alive) setRedisLoading(false);
+      }
+    };
+    loadRedisInfo();
+    return () => {
+      alive = false;
+    };
+  }, [app?.id]);
+
   const icon = ICON_MAP[app.icon] || <StorageIcon sx={{ fontSize: 40 }} />;
 
   return (
@@ -1017,6 +1062,57 @@ function AppDetailDialog({
         <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
           {app.longDescription}
         </Typography>
+
+        {app.id === 'redis' && (
+          <Box sx={{ mb: 2.5, p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+              Redis Connection Info
+            </Typography>
+            {redisLoading && (
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.5 }}>
+                <CircularProgress size={16} />
+                <Typography variant="body2" color="text.secondary">Loading Redis details...</Typography>
+              </Stack>
+            )}
+            {redisError && (
+              <Alert severity="error" sx={{ mb: 1 }}>{redisError}</Alert>
+            )}
+            {redisInfo && (
+              <Stack spacing={1}>
+                <Typography variant="body2"><strong>Host:</strong> {redisInfo.host}</Typography>
+                <Typography variant="body2"><strong>Port:</strong> {redisInfo.port}</Typography>
+                <Typography variant="body2"><strong>External Host:</strong> {redisInfo.externalHost || 'N/A'}</Typography>
+                <Typography variant="body2"><strong>Bind:</strong> {redisInfo.bind?.join(', ') || 'N/A'}</Typography>
+                <Typography variant="body2"><strong>Protected Mode:</strong> {redisInfo.protectedMode === null ? 'Unknown' : (redisInfo.protectedMode ? 'ON' : 'OFF')}</Typography>
+                <Typography variant="body2"><strong>Password Enabled:</strong> {redisInfo.requirePassEnabled ? 'Yes' : 'No'}</Typography>
+                {redisInfo.requirePassEnabled && (
+                  <Typography variant="body2"><strong>Password:</strong> {redisInfo.password}</Typography>
+                )}
+                <Box sx={{ mt: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                    Redis URL
+                  </Typography>
+                  <Box sx={{ p: 1, borderRadius: 1, bgcolor: 'action.hover', fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                    {redisInfo.redisUrl}
+                  </Box>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                    CLI Ping Command
+                  </Typography>
+                  <Box sx={{ p: 1, borderRadius: 1, bgcolor: 'action.hover', fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                    {redisInfo.cliPingCommand}
+                  </Box>
+                </Box>
+                {!!redisInfo.notes?.length && (
+                  <Alert severity="warning">
+                    {redisInfo.notes.join(' ')}
+                  </Alert>
+                )}
+              </Stack>
+            )}
+          </Box>
+        )}
 
         {/* Tags */}
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>

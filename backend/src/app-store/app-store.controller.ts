@@ -41,6 +41,17 @@ export class AppStoreController {
     }
   }
 
+  /** Get Redis connection/config info for easier client setup */
+  @Get('redis/info')
+  async getRedisInfo(@Req() req: Request, @Res() res: Response) {
+    try {
+      const info = await this.appStore.getRedisInfo();
+      return res.json({ success: true, info });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
   /** Install an app */
   @Post('install/:id')
   async installApp(@Param('id') id: string, @Body() body: Record<string, string>, @Req() req: Request, @Res() res: Response) {

@@ -32,6 +32,22 @@ export interface AppInfo extends AppDefinition {
   status: AppStatus;
 }
 
+export interface RedisInfo {
+  installed: boolean;
+  running: boolean;
+  configPath: string;
+  host: string;
+  externalHost: string;
+  port: number;
+  bind: string[];
+  protectedMode: boolean | null;
+  requirePassEnabled: boolean;
+  password: string;
+  redisUrl: string;
+  cliPingCommand: string;
+  notes: string[];
+}
+
 export type DiagnoseCheck = { name: string; status: 'ok' | 'error' | 'warn'; detail: string };
 
 @Injectable()
@@ -253,6 +269,89 @@ export class AppStoreService {
     const running = await this.serviceRunning('redis-server');
     const version = installed ? (await this.pkgVersion('redis-server')) : '';
     return { id: 'redis', installed, running, version, port: 6379 };
+  }
+
+  async getRedisInfo(): Promise<RedisInfo> {
+    const installed = await this.which('redis-server');
+    const running = await this.serviceRunning('redis-server');
+    const configPath = '/etc/redis/redis.conf';
+
+    const defaults: RedisInfo = {
+      installed,
+      running,
+      configPath,
+      host: '127.0.0.1',
+      externalHost: '',
+      port: 6379,
+      bind: ['127.0.0.1'],
+      protectedMode: null,
+      requirePassEnabled: false,
+      password: '',
+      redisUrl: 'redis://127.0.0.1:6379',
+      cliPingCommand: 'redis-cli -h 127.0.0.1 -p 6379 ping',
+      notes: [],
+    };
+
+    if (!installed) {
+      defaults.notes.push('Redis is not installed. Install Redis from App Store first.');
+      return defaults;
+    }
+
+    let cfg = '';
+    try {
+      cfg = await this.sudo(`cat ${configPath} 2>/dev/null`);
+    } catch {
+      defaults.notes.push(`Could not read ${configPath}. Showing defaults.`);
+    }
+
+    const readDirective = (name: string): string => {
+      const re = new RegExp(`^\\s*(?!#)${name}\\s+(.+)$`, 'm');
+      const m = cfg.match(re);
+      return m ? m[1].trim() : '';
+    };
+
+    const bindRaw = readDirective('bind');
+    const portRaw = readDirective('port');
+    const protectedRaw = readDirective('protected-mode').toLowerCase();
+    const requirePassRaw = readDirective('requirepass');
+
+    if (bindRaw) defaults.bind = bindRaw.split(/\s+/).filter(Boolean);
+    const parsedPort = parseInt(portRaw, 10);
+    if (!Number.isNaN(parsedPort) && parsedPort > 0) defaults.port = parsedPort;
+    if (protectedRaw === 'yes') defaults.protectedMode = true;
+    if (protectedRaw === 'no') defaults.protectedMode = false;
+
+    const hasPass = !!requirePassRaw && requirePassRaw.toLowerCase() !== '""';
+    defaults.requirePassEnabled = hasPass;
+    defaults.password = hasPass ? requirePassRaw : '';
+
+    try {
+      const ip = await this.sudo(`hostname -I 2>/dev/null | awk '{print $1}'`);
+      defaults.externalHost = ip || '';
+    } catch {
+      defaults.externalHost = '';
+    }
+
+    const prefersLocal = defaults.bind.includes('127.0.0.1') || defaults.bind.includes('::1');
+    defaults.host = prefersLocal ? '127.0.0.1' : (defaults.externalHost || (defaults.bind[0] || '127.0.0.1'));
+
+    const authPart = defaults.requirePassEnabled ? `:${defaults.password}@` : '';
+    defaults.redisUrl = `redis://${authPart}${defaults.host}:${defaults.port}`;
+    defaults.cliPingCommand = defaults.requirePassEnabled
+      ? `redis-cli -h ${defaults.host} -p ${defaults.port} -a '${defaults.password}' ping`
+      : `redis-cli -h ${defaults.host} -p ${defaults.port} ping`;
+
+    if (!defaults.requirePassEnabled) {
+      defaults.notes.push('No Redis password set (requirepass is disabled).');
+    }
+    if (defaults.bind.includes('0.0.0.0') || defaults.bind.includes('::')) {
+      defaults.notes.push('Redis listens on all interfaces. Restrict firewall to trusted IPs.');
+    }
+    if (defaults.protectedMode === false) {
+      defaults.notes.push('Redis protected-mode is OFF. Enable auth/firewall hardening.');
+    }
+
+    return defaults;
   }
 
   private async nodejsStatus(): Promise<AppStatus> {
