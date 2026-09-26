@@ -98,6 +98,11 @@ export interface WebhookLog {
   branch?: string;
 }
 
+export interface RemoveRepoResult {
+  success: boolean;
+  warning?: string;
+}
+
 // ─── API Object ───────────────────────────────────────────────────────────────
 
 export const gitApi = {
@@ -247,7 +252,7 @@ export const gitApi = {
     post(`${API_BASE}/repos`, { name, path, cloneUrl }),
 
   removeRepo: (path: string) =>
-    post(`${API_BASE}/repos/remove`, { path }),
+    post<RemoveRepoResult>(`${API_BASE}/repos/remove`, { path }),
 
   // ── Head Commit ────────────────────────────────────────────────────────────
 

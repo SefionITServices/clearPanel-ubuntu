@@ -1171,8 +1171,11 @@ function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) =>
     // Optimistically remove from list immediately so UI updates without waiting for reload
     setRepos(prev => prev.filter(r => r.path !== repo.path));
     try {
-      await gitApi.removeRepo(repo.path);
-      setToast({ msg: 'Repository deleted', sev: 'success' });
+      const result = await gitApi.removeRepo(repo.path);
+      setToast({
+        msg: result.warning || 'Repository deleted',
+        sev: result.warning ? 'error' : 'success',
+      });
       await loadRepos(); // re-sync from server to confirm
     } catch (e: any) {
       setToast({ msg: e.message, sev: 'error' });

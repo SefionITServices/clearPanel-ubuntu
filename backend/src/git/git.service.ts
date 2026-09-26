@@ -684,7 +684,34 @@ export class GitService {
     await this.writeAllManagedRepos(repos.filter((r) => r.path !== abs));
     // Delete the repository directory from disk
     if (deleteFiles && fsSync.existsSync(abs)) {
-      await fs.rm(abs, { recursive: true, force: true });
+      try {
+        await fs.rm(abs, { recursive: true, force: true });
+      } catch (err: any) {
+        const code = err?.code;
+        const isPermissionError = code === 'EACCES' || code === 'EPERM';
+
+        if (!isPermissionError) {
+          throw err;
+        }
+
+        // Retry once after relaxing owner permissions. This can recover from
+        // directories created with restrictive modes.
+        try {
+          await execFile('/bin/chmod', ['-R', 'u+rwX', abs], {
+            timeout: 30000,
+            maxBuffer: 2 * 1024 * 1024,
+          });
+          await fs.rm(abs, { recursive: true, force: true });
+        } catch (retryErr: any) {
+          this.logger.warn(
+            `Managed repo removed from panel, but filesystem cleanup failed for '${abs}': ${retryErr?.message || err?.message}`,
+          );
+          return {
+            success: true,
+            warning: 'Repository was removed from ClearPanel, but some files could not be deleted due to permissions. Fix ownership/permissions and remove manually if needed.',
+          };
+        }
+      }
     }
     return { success: true };
   }
