@@ -521,8 +521,6 @@ export default function DatabaseManagerPage() {
         <DialogActions><Button onClick={() => setDiagnoseOpen({ open: false, data: null })}>Close</Button></DialogActions>
       </Dialog>
 
-    </DashboardLayout>
-
       <NextcloudInstallModal
         open={nextcloudOpen}
         onClose={() => setNextcloudOpen(false)}
@@ -532,5 +530,6 @@ export default function DatabaseManagerPage() {
           // keep modal open so user can inspect logs; user can close manually
         }}
       />
+    </DashboardLayout>
   );
 }
