@@ -35,8 +35,12 @@ configure_master_cf() {
   # Back up original
   cp "$MASTER_CF" "${MASTER_CF}.bak.$(date +%s)"
 
-  # Comment out the default "smtp inet" line
-  sed -i 's/^smtp\([[:space:]]\+inet\)/# smtp\1/' "$MASTER_CF"
+  # Swap default smtp smtpd to postscreen on port 25
+  if grep -q "^smtp[[:space:]]\+inet.*smtpd" "$MASTER_CF"; then
+    sed -i 's/^smtp\([[:space:]]\+inet.*smtpd\)/# \1\nsmtp      inet  n       -       y       -       1       postscreen/' "$MASTER_CF"
+  elif ! grep -q "^smtp[[:space:]]\+inet.*postscreen" "$MASTER_CF"; then
+    sed -i '1s/^/smtp      inet  n       -       y       -       1       postscreen\n/' "$MASTER_CF"
+  fi
 
   # Append postscreen services
   cat >>"$MASTER_CF" <<'MASTER'

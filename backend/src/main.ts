@@ -66,7 +66,20 @@ async function bootstrap() {
   // Compress all responses (gzip/brotli) — major speed improvement
   app.use(compression());
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [
+      'mail/autoconfig/(.*)',
+      '.well-known/autoconfig/(.*)',
+      'autoconfig/(.*)',
+      'autodiscover/(.*)',
+      'Autodiscover/(.*)',
+      'mail/autodiscover/(.*)',
+      'mail/Autodiscover/(.*)',
+      'mail/config-v1.1.xml',
+      'config-v1.1.xml',
+      'autodiscover.xml',
+    ],
+  });
 
   // Serve static frontend files in production with cache headers
   if (config.get<string>('NODE_ENV') === 'production') {

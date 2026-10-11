@@ -248,12 +248,18 @@ export default function EmailAccountsPage() {
     });
   }, [allMailboxes, domainFilter, searchQuery]);
 
+  const [selectedConfigDomain, setSelectedConfigDomain] = useState<string>('');
+
   const totalAccounts = allMailboxes.length;
   const totalUsedBytes = allMailboxes.reduce((s, m) => s + m.usedBytes, 0);
   const totalQuotaMb = allMailboxes.reduce((s, m) => s + m.quotaMb, 0);
 
   // -- hostname for config section -----------------------------------------
-  const primaryDomain = domains.length > 0 ? domains[0].domain : 'yourdomain.com';
+  const effectiveConfigDomain = selectedConfigDomain || (
+    domainFilter !== 'all'
+      ? domainFilter
+      : (domains.length > 0 ? domains[0].domain : 'yourdomain.com')
+  );
 
   // -- handlers: context menu ----------------------------------------------
   const openMenu = (e: React.MouseEvent<HTMLElement>, mb: FlatMailbox) => {
@@ -276,11 +282,11 @@ export default function EmailAccountsPage() {
     const email = settingsMailbox.email;
     let text = '';
     if (protocol === 'imap') {
-      text = `IMAP (SSL/TLS)\nServer: ${host}\nPort: 993\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\n\nIMAP (STARTTLS)\nServer: ${host}\nPort: 143\nSecurity: STARTTLS\nUsername: ${email}`;
+      text = `IMAP (SSL/TLS - Recommended)\nServer: ${host}\nPort: 993\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\nAuthentication: Required\n\nIMAP (STARTTLS)\nServer: ${host}\nPort: 143\nSecurity: STARTTLS\nUsername: ${email}\nPassword: (your mailbox password)\nAuthentication: Required`;
     } else if (protocol === 'pop3') {
-      text = `POP3 (SSL/TLS)\nServer: ${host}\nPort: 995\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\n\nPOP3 (STARTTLS)\nServer: ${host}\nPort: 110\nSecurity: STARTTLS\nUsername: ${email}`;
+      text = `POP3 (SSL/TLS - Recommended)\nServer: ${host}\nPort: 995\nSecurity: SSL/TLS (implicit)\nUsername: ${email}\nPassword: (your mailbox password)\nAuthentication: Required\n\nPOP3 (STARTTLS)\nServer: ${host}\nPort: 110\nSecurity: STARTTLS\nUsername: ${email}\nPassword: (your mailbox password)\nAuthentication: Required`;
     } else {
-      text = `SMTP (Submission / STARTTLS)\nServer: ${host}\nPort: 587\nSecurity: STARTTLS\nAuthentication: Yes (username = full email)\nUsername: ${email}\nPassword: (your mailbox password)\n\nSMTP (SMTPS / Implicit TLS)\nServer: ${host}\nPort: 465\nSecurity: SSL/TLS (implicit)`;
+      text = `SMTP (SMTPS / SSL/TLS - Recommended)\nServer: ${host}\nPort: 465\nSecurity: SSL/TLS\nAuthentication: Required (use full email address)\nUsername: ${email}\nPassword: (your mailbox password)\n\nSMTP (Submission / STARTTLS)\nServer: ${host}\nPort: 587\nSecurity: STARTTLS\nAuthentication: Required (use full email address)\nUsername: ${email}\nPassword: (your mailbox password)`;
     }
 
     try {
@@ -640,13 +646,35 @@ export default function EmailAccountsPage() {
 
         {/* Email Configuration Info */}
         <Paper sx={{ mt: 3, p: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-            Email Configuration
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                Email Configuration
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Use these settings to connect external email clients (Outlook, Thunderbird, Apple Mail, Gmail on Android/iOS).
+              </Typography>
+            </Box>
+            {domains.length > 1 && (
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel id="config-domain-label">Config for Domain</InputLabel>
+                <Select
+                  labelId="config-domain-label"
+                  label="Config for Domain"
+                  value={effectiveConfigDomain}
+                  onChange={(e) => setSelectedConfigDomain(e.target.value)}
+                >
+                  {domains.map((d) => (
+                    <MenuItem key={d.id} value={d.domain}>{d.domain}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
           <Grid container spacing={3}>
             <Grid size={{ xs: 12, md: 6 }}>
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
                   Incoming Mail Server (IMAP)
                 </Typography>
                 <Box
@@ -659,18 +687,26 @@ export default function EmailAccountsPage() {
                   }}
                 >
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    Server: mail.{primaryDomain}
+                    <strong>Server:</strong> mail.{effectiveConfigDomain}
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    Port: 993 (SSL/TLS)
+                    <strong>Port:</strong> 993 (SSL/TLS — Recommended) or 143 (STARTTLS)
                   </Typography>
-                  <Typography variant="body2">Port: 143 (STARTTLS)</Typography>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Username:</strong> your-email@{effectiveConfigDomain}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Password:</strong> your mailbox password
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Authentication:</strong> Required (Normal Password / PLAIN)
+                  </Typography>
                 </Box>
               </Box>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
                   Outgoing Mail Server (SMTP)
                 </Typography>
                 <Box
@@ -683,20 +719,27 @@ export default function EmailAccountsPage() {
                   }}
                 >
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    Server: mail.{primaryDomain}
+                    <strong>Server:</strong> mail.{effectiveConfigDomain}
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    Port: 465 (SSL/TLS)
+                    <strong>Port:</strong> 465 (SSL/TLS — Recommended) or 587 (STARTTLS)
                   </Typography>
-                  <Typography variant="body2">Port: 587 (STARTTLS)</Typography>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Username:</strong> your-email@{effectiveConfigDomain}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    <strong>Password:</strong> your mailbox password
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Authentication:</strong> Required (Check "My outgoing server requires authentication")
+                  </Typography>
                 </Box>
               </Box>
             </Grid>
           </Grid>
-          <Alert severity="warning" icon={<WarningIcon />} sx={{ mt: 2 }}>
+          <Alert severity="info" icon={<CheckCircleIcon />} sx={{ mt: 2 }}>
             <Typography variant="body2">
-              Use your full email address as the username and enable SSL/TLS encryption for secure
-              connections.
+              <strong>Crucial for Sending Email:</strong> In your email client, ensure <strong>"Require sign-in"</strong> or <strong>"My outgoing server (SMTP) requires authentication"</strong> is enabled using your full email address and password. For port 465 select SSL/TLS encryption; for port 587 select STARTTLS.
             </Typography>
           </Alert>
         </Paper>
@@ -710,29 +753,31 @@ export default function EmailAccountsPage() {
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   Account: <strong>{settingsMailbox.email}</strong>
                 </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 1 }}>IMAP</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 1 }}>IMAP (Incoming)</Typography>
                 <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
                   <Typography>Server: mail.{settingsMailbox.domain}</Typography>
-                  <Typography>Port: 993 (SSL/TLS) or 143 (STARTTLS)</Typography>
+                  <Typography>Port: 993 (SSL/TLS - recommended) or 143 (STARTTLS)</Typography>
                   <Typography>Username: {settingsMailbox.email}</Typography>
                   <Typography>Password: your mailbox password</Typography>
+                  <Typography>Authentication: Required</Typography>
                   <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('imap')}>Copy IMAP Settings</Button>
                 </Box>
 
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 2 }}>POP3</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 2 }}>POP3 (Incoming)</Typography>
                 <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
                   <Typography>Server: mail.{settingsMailbox.domain}</Typography>
-                  <Typography>Port: 995 (SSL/TLS) or 110 (STARTTLS)</Typography>
+                  <Typography>Port: 995 (SSL/TLS - recommended) or 110 (STARTTLS)</Typography>
                   <Typography>Username: {settingsMailbox.email}</Typography>
                   <Typography>Password: your mailbox password</Typography>
+                  <Typography>Authentication: Required</Typography>
                   <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('pop3')}>Copy POP3 Settings</Button>
                 </Box>
 
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mt: 2 }}>SMTP (Outgoing)</Typography>
                 <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
                   <Typography>Server: mail.{settingsMailbox.domain}</Typography>
-                  <Typography>Port: 587 (STARTTLS) or 465 (SSL/TLS)</Typography>
-                  <Typography>Authentication: Yes — use full email address as username</Typography>
+                  <Typography>Port: 465 (SSL/TLS - recommended) or 587 (STARTTLS)</Typography>
+                  <Typography>Authentication: Required (check "Require sign-in" in your app)</Typography>
                   <Typography>Username: {settingsMailbox.email}</Typography>
                   <Typography>Password: your mailbox password</Typography>
                   <Button sx={{ mt: 1 }} variant="outlined" startIcon={<CopyIcon />} onClick={() => copyClientConfig('smtp')}>Copy SMTP Settings</Button>

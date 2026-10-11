@@ -20,7 +20,7 @@ export interface MailDomainResult {
 }
 
 interface DnsRecordSuggestion {
-  type: 'MX' | 'A' | 'TXT';
+  type: 'MX' | 'A' | 'TXT' | 'CNAME' | 'SRV' | 'AAAA';
   name: string;
   value: string;
   ttl: number;
@@ -599,6 +599,41 @@ export class MailService {
         value: serverIp,
         ttl: 3600,
         description: 'Mail host A record',
+      },
+      {
+        type: 'CNAME',
+        name: 'smtp',
+        value: mailHost,
+        ttl: 3600,
+        description: 'SMTP outgoing mail server alias',
+      },
+      {
+        type: 'CNAME',
+        name: 'imap',
+        value: mailHost,
+        ttl: 3600,
+        description: 'IMAP incoming mail server alias',
+      },
+      {
+        type: 'CNAME',
+        name: 'pop',
+        value: mailHost,
+        ttl: 3600,
+        description: 'POP3 incoming mail server alias',
+      },
+      {
+        type: 'CNAME',
+        name: 'autoconfig',
+        value: mailHost,
+        ttl: 3600,
+        description: 'Email autoconfig alias for Thunderbird/email clients',
+      },
+      {
+        type: 'CNAME',
+        name: 'autodiscover',
+        value: mailHost,
+        ttl: 3600,
+        description: 'Email autodiscover alias for Outlook/email clients',
       },
       {
         type: 'TXT',

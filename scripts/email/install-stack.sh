@@ -102,18 +102,19 @@ EOF
   postconf -e "virtual_transport = lmtp:unix:private/dovecot-lmtp"
   postconf -e "smtpd_tls_security_level = may"
   postconf -e "smtp_tls_security_level = may"
+  postconf -e "smtp_address_preference = ipv4"
   postconf -e "smtpd_sasl_auth_enable = yes"
   postconf -e "smtpd_sasl_type = dovecot"
   postconf -e "smtpd_sasl_path = private/auth"
   postconf -e "smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination"
-  postconf -e "smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,defer_unauth_destination"
+  postconf -e "smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,reject_unauth_destination"
   postconf -e "smtpd_milters = inet:localhost:11332"
   postconf -e "non_smtpd_milters = inet:localhost:11332"
   postconf -e "milter_protocol = 6"
   postconf -e "milter_default_action = accept"
   postconf -e "message_size_limit = 52428800"
 
-  # Enable submission port (587)
+  # Enable submission port (587 STARTTLS)
   if ! grep -q "^submission " /etc/postfix/master.cf 2>/dev/null; then
     cat >>/etc/postfix/master.cf <<'MASTER'
 
@@ -123,6 +124,22 @@ submission inet n       -       y       -       -       smtpd
   -o smtpd_sasl_auth_enable=yes
   -o smtpd_tls_auth_only=yes
   -o smtpd_reject_unlisted_recipient=no
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
+  -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
+  -o milter_macro_daemon_name=ORIGINATING
+MASTER
+  fi
+
+  # Enable submissions / smtps port (465 SSL/TLS)
+  if ! grep -q "^smtps\|^submissions" /etc/postfix/master.cf 2>/dev/null; then
+    cat >>/etc/postfix/master.cf <<'MASTER'
+
+submissions inet n       -       y       -       -       smtpd
+  -o syslog_name=postfix/submissions
+  -o smtpd_tls_wrappermode=yes
+  -o smtpd_sasl_auth_enable=yes
+  -o smtpd_reject_unlisted_recipient=no
+  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
   -o smtpd_recipient_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 MASTER

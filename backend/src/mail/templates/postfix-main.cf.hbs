@@ -44,6 +44,7 @@ smtp_tls_security_level = may
 smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 smtp_tls_loglevel = 1
+smtp_address_preference = ipv4
 
 # --- SASL authentication (via Dovecot) ---
 smtpd_sasl_auth_enable = yes
@@ -63,7 +64,7 @@ smtpd_recipient_restrictions =
 smtpd_relay_restrictions =
     permit_mynetworks,
     permit_sasl_authenticated,
-    defer_unauth_destination
+    reject_unauth_destination
 
 # --- Milter (Rspamd for spam/DKIM) ---
 smtpd_milters = inet:localhost:11332

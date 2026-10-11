@@ -13,7 +13,7 @@ import { ServerSettingsService } from '../server/server-settings.service';
  *
  * All responses are XML with the appropriate content types.
  */
-@Controller('mail')
+@Controller()
 export class MailAutoconfigController {
   constructor(
     private readonly mailService: MailService,
@@ -22,7 +22,13 @@ export class MailAutoconfigController {
 
   // ---- Thunderbird / GNOME / K-9 autoconfig ----
 
-  @Get('autoconfig/mail/config-v1.1.xml')
+  @Get([
+    'mail/autoconfig/mail/config-v1.1.xml',
+    '.well-known/autoconfig/mail/config-v1.1.xml',
+    'autoconfig/mail/config-v1.1.xml',
+    'mail/config-v1.1.xml',
+    'config-v1.1.xml',
+  ])
   @Header('Content-Type', 'application/xml; charset=utf-8')
   async getAutoconfig(
     @Query('emailaddress') emailAddress: string,
@@ -86,13 +92,35 @@ export class MailAutoconfigController {
 
   // ---- Outlook Autodiscover ----
 
-  @Post('autodiscover/autodiscover.xml')
+  @Post([
+    'autodiscover/autodiscover.xml',
+    'Autodiscover/Autodiscover.xml',
+    'mail/autodiscover/autodiscover.xml',
+    'mail/Autodiscover/Autodiscover.xml',
+    'autodiscover.xml',
+  ])
   @Header('Content-Type', 'application/xml; charset=utf-8')
   async postAutodiscover(@Req() req: Request, @Res() res: Response) {
-    // Parse email from Outlook's XML body
+    return this.handleAutodiscover(req, res);
+  }
+
+  @Get([
+    'autodiscover/autodiscover.xml',
+    'Autodiscover/Autodiscover.xml',
+    'mail/autodiscover/autodiscover.xml',
+    'mail/Autodiscover/Autodiscover.xml',
+    'autodiscover.xml',
+  ])
+  @Header('Content-Type', 'application/xml; charset=utf-8')
+  async getAutodiscover(@Req() req: Request, @Res() res: Response) {
+    return this.handleAutodiscover(req, res);
+  }
+
+  private async handleAutodiscover(req: Request, res: Response) {
+    // Parse email from Outlook's XML body or query parameter
     const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     const emailMatch = body.match(/<EMailAddress>([^<]+)<\/EMailAddress>/i);
-    const email = emailMatch?.[1] || '';
+    const email = emailMatch?.[1] || (req.query?.email as string) || '';
     const domain = this.extractDomain(email);
     const hostname = await this.getMailHostname(domain);
 
@@ -133,6 +161,17 @@ export class MailAutoconfigController {
         <SSL>on</SSL>
         <AuthRequired>on</AuthRequired>
       </Protocol>
+      <!-- STARTTLS for SMTP -->
+      <Protocol>
+        <Type>SMTP</Type>
+        <Server>${this.escapeXml(hostname)}</Server>
+        <Port>587</Port>
+        <DomainRequired>off</DomainRequired>
+        <LoginName>${this.escapeXml(email)}</LoginName>
+        <SPA>off</SPA>
+        <SSL>off</SSL>
+        <AuthRequired>on</AuthRequired>
+      </Protocol>
     </Account>
   </Response>
 </Autodiscover>`;
@@ -148,8 +187,10 @@ export class MailAutoconfigController {
   }
 
   private async getMailHostname(domain: string): Promise<string> {
-    // Prefer an explicit server hostname when configured, then primaryDomain-based mail.<domain>,
-    // and finally fall back to mail.<domain> for autoconfig responses.
+    // If a domain is specified, use mail.<domain> as each domain has its own dedicated SSL cert and MX record
+    if (domain && domain !== 'unknown') {
+      return `mail.${domain}`;
+    }
     try {
       const settings = await this.serverSettings.getSettings();
       if (settings.hostname) {
@@ -159,7 +200,7 @@ export class MailAutoconfigController {
         return `mail.${settings.primaryDomain}`;
       }
     } catch { /* ignore */ }
-    return `mail.${domain}`;
+    return domain ? `mail.${domain}` : 'localhost';
   }
 
   private escapeXml(str: string): string {
