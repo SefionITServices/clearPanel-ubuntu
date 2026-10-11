@@ -402,7 +402,12 @@ chmod 770 /var/mail/vhosts 2>/dev/null || true
 chown -R clearpanel:clearpanel /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
 chmod -R 775 /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
 
-# 3. Enable Port 465 (SMTPS) in Postfix
+# 3. Postfix Relay, IPv4 Delivery & Submission Security
+postconf -e "smtp_address_preference = ipv4" 2>/dev/null || true
+postconf -e "smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,reject_unauth_destination" 2>/dev/null || true
+postconf -e "smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination" 2>/dev/null || true
+
+# Enable Port 465 (SMTPS) in Postfix
 if ! grep -q "^submissions inet" /etc/postfix/master.cf 2>/dev/null; then
     cat << 'EOF' >> /etc/postfix/master.cf
 submissions inet n       -       y       -       -       smtpd
@@ -414,6 +419,11 @@ submissions inet n       -       y       -       -       smtpd
   -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
 EOF
+fi
+
+# Ensure submission (587) has smtpd_relay_restrictions
+if grep -q "^submission inet" /etc/postfix/master.cf 2>/dev/null && ! grep -A 10 "^submission inet" /etc/postfix/master.cf | grep -q "smtpd_relay_restrictions"; then
+    sed -i '/^[[:space:]]*-o smtpd_recipient_restrictions=permit_sasl_authenticated,reject/a \  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject' /etc/postfix/master.cf 2>/dev/null || true
 fi
 
 # 4. Deploy Roundcube Nginx Virtual Host

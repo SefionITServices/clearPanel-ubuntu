@@ -192,3 +192,29 @@ When configuring external email clients, users should use the following paramete
 - **Username:** Full email address (e.g. `support@safon.app`)
 - **Password:** Mailbox password
 - **Authentication:** **Required** (Ensure *"My outgoing server (SMTP) requires authentication"* or *"Require sign-in"* is checked)
+
+---
+
+## 7. Lifecycle Automation: Zero Manual Intervention
+
+All changes have been wired into the core lifecycle of ClearPanel so manual server patches are never required:
+
+### 1. When running `clearpanel install` (`install.sh` / `install-online.sh`):
+- `scripts/email/install-stack.sh` sets `smtp_address_preference = ipv4`, `smtpd_relay_restrictions`, and configures port 587 (`submission`) and port 465 (`submissions`).
+- `install.sh` enforces Postfix relay and submission restrictions and ensures Nginx permissions.
+- `nginx.conf.example` installs with autoconfig and autodiscover proxy pass for the primary host.
+- `scripts/email/setup-postscreen.sh` swaps port 25 cleanly to postscreen without creating duplicate listener definitions.
+
+### 2. When a user runs `Add Domain` (Website creation):
+- `backend/src/webserver/webserver.service.ts` automatically includes `/etc/nginx/snippets/clearpanel-roundcube.conf` (or creates the autoconfig proxy snippet if missing) in the generated virtual host.
+- Any domain added automatically routes `/.well-known/autoconfig/...` and `/autodiscover/...` requests to the ClearPanel backend.
+- When SSL is installed, Certbot retains this include inside the HTTPS server block.
+
+### 3. When a user runs `Add Mail Domain` or `Create Mailbox`:
+- `scripts/email/provision-domain.sh` generates the 2048-bit DKIM key pair via `generate_dkim_key`.
+- `scripts/email/show-dkim.sh` retrieves the public key cleanly without command-not-found errors.
+- `backend/src/mail/mail.service.ts` populates `dkimPublicKey` into `mail-domains.json`.
+- `scripts/email/common.sh` (`update_bind_dns`) and `mail.service.ts` (`publishDns`) inject all required DNS records (`MX`, `mail A`, `smtp CNAME`, `imap CNAME`, `pop CNAME`, `autoconfig CNAME`, `autodiscover CNAME`, `SPF TXT`, `_dmarc TXT`, and `default._domainkey TXT`) into BIND9.
+- `sync_mail_ssl` synchronizes SSL certificates for Postfix SNI and Dovecot.
+- The UI presents dynamic domain-specific connection settings with explicit SMTP authentication requirements.
+

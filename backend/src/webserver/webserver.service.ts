@@ -231,6 +231,8 @@ map $arg_v $asset_immutable {
         fastcgi_index index.php;
     }`;
 
+    await this.ensureEmailAutoconfigSnippet();
+
     const configContent = `server {
     listen 80;
     listen [::]:80;
@@ -243,6 +245,9 @@ map $arg_v $asset_immutable {
     access_log /var/log/nginx/${domain}-access.log;
     error_log /var/log/nginx/${domain}-error.log;
     
+    # Email autoconfig & Roundcube webmail
+    include /etc/nginx/snippets/clearpanel-roundcube.conf;
+
   ${locationBlock}
     
     # Deny access to hidden files
@@ -631,10 +636,42 @@ ${listenBlock}
 After DNS propagates, your site will be accessible at:
 - http://${domain}
 - http://www.${domain}
-
-To verify DNS propagation:
-- Run: dig ${domain} +short
-- Or visit: https://dnschecker.org/#A/${domain}
 `;
+  }
+
+  private async ensureEmailAutoconfigSnippet(): Promise<void> {
+    const snippetPath = '/etc/nginx/snippets/clearpanel-roundcube.conf';
+    try {
+      await fs.access(snippetPath);
+    } catch {
+      const defaultSnippet = `# ClearPanel Email Autoconfig & ACME Challenge
+location ^~ /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+    default_type "text/plain";
+    allow all;
+}
+
+# Email Autoconfig / Autodiscover proxy to ClearPanel backend
+location ~* ^/(\\.well-known/autoconfig|autoconfig|autodiscover|Autodiscover|mail/autoconfig|mail/autodiscover|mail/config-v1\\.1\\.xml|autodiscover\\.xml) {
+    proxy_pass http://127.0.0.1:3334;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+`;
+      try {
+        await fs.mkdir('/etc/nginx/snippets', { recursive: true });
+        await fs.writeFile(snippetPath, defaultSnippet, { encoding: 'utf8', mode: 0o644 });
+      } catch {
+        const tmp = `/tmp/cp-snippet-${Date.now()}.conf`;
+        try {
+          await fs.writeFile(tmp, defaultSnippet, 'utf8');
+          await execAsync(`sudo mkdir -p /etc/nginx/snippets && sudo cp ${tmp} ${snippetPath} && sudo chmod 644 ${snippetPath}`, { timeout: 10_000 });
+          await fs.unlink(tmp);
+        } catch {}
+      }
+    }
   }
 }

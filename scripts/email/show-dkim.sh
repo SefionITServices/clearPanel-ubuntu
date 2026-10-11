@@ -14,13 +14,25 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
-ensure_state_root
-
-RECORD="$(read_dkim_record "$DOMAIN" "$SELECTOR" || true)"
-
-if [[ -z "$RECORD" ]]; then
-  echo "No DKIM record found for ${DOMAIN} selector ${SELECTOR}" >&2
-  exit 1
+RECORD_FILE="/etc/clearpanel/mail/dkim/public/${DOMAIN}/${SELECTOR}.txt"
+if [[ ! -f "$RECORD_FILE" ]]; then
+  generate_dkim_key "$DOMAIN" "$SELECTOR" >/dev/null 2>&1 || true
 fi
 
-printf '%s\n' "$RECORD"
+if [[ -f "$RECORD_FILE" ]]; then
+  cat "$RECORD_FILE"
+  exit 0
+fi
+
+# Fallback: parse /etc/opendkim/keys/${DOMAIN}/${SELECTOR}.txt
+KEY_TXT="/etc/opendkim/keys/${DOMAIN}/${SELECTOR}.txt"
+if [[ -f "$KEY_TXT" ]]; then
+  DKIM_B64="$(grep -v '^;' "$KEY_TXT" | tr -d ' \t\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
+  if [[ -n "$DKIM_B64" ]]; then
+    printf 'v=DKIM1; k=rsa; p=%s\n' "$DKIM_B64"
+    exit 0
+  fi
+fi
+
+echo "No DKIM record found for ${DOMAIN} selector ${SELECTOR}" >&2
+exit 1

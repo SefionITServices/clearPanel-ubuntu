@@ -14,17 +14,20 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
-ensure_state_root
+KEY_DIR="/etc/opendkim/keys/${DOMAIN}"
+PUB_EXPORT_DIR="/etc/clearpanel/mail/dkim/public/${DOMAIN}"
 
-# Remove old key files for this selector
-rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.pub" 2>/dev/null || true
-rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.private" 2>/dev/null || true
-rm -f "$DKIM_KEYS_DIR/$DOMAIN/${SELECTOR}.txt" 2>/dev/null || true
-rm -f "$DKIM_PUBLIC_DIR/$DOMAIN/${SELECTOR}.txt" 2>/dev/null || true
+rm -f "${KEY_DIR}/${SELECTOR}.private" "${KEY_DIR}/${SELECTOR}.txt" "${PUB_EXPORT_DIR}/${SELECTOR}.txt" 2>/dev/null || true
 
-# Generate new key
-PUBLIC_KEY="$(generate_dkim_key_material "$DOMAIN" "$SELECTOR")"
-DKIM_RECORD="$(write_dkim_record "$DOMAIN" "$SELECTOR" "$PUBLIC_KEY")"
+generate_dkim_key "$DOMAIN" "$SELECTOR" >/dev/null
 
-printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"
-printf '%s\n' "$DKIM_RECORD"
+RECORD_FILE="${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+if [[ -f "$RECORD_FILE" ]]; then
+  RECORD="$(cat "$RECORD_FILE")"
+  printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"
+  printf '%s\n' "$RECORD"
+  exit 0
+fi
+
+echo "Failed to rotate DKIM for ${DOMAIN} selector ${SELECTOR}" >&2
+exit 1

@@ -184,6 +184,10 @@ CONFEOF
     sed -i "/^imap\s\+/d" "$ZONE_FILE" || true
     sed -i "/^pop\.${DOMAIN}\./d" "$ZONE_FILE" || true
     sed -i "/^pop\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^autoconfig\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^autoconfig\s\+/d" "$ZONE_FILE" || true
+    sed -i "/^autodiscover\.${DOMAIN}\./d" "$ZONE_FILE" || true
+    sed -i "/^autodiscover\s\+/d" "$ZONE_FILE" || true
     sed -i "/IN\s\+MX/d" "$ZONE_FILE" || true
     sed -i "/v=spf1/d" "$ZONE_FILE" || true
     sed -i "/_dmarc/d" "$ZONE_FILE" || true
@@ -196,6 +200,8 @@ webmail.${DOMAIN}.   IN  A       ${SERVER_IP}
 smtp.${DOMAIN}.      IN  CNAME   mail.${DOMAIN}.
 imap.${DOMAIN}.      IN  CNAME   mail.${DOMAIN}.
 pop.${DOMAIN}.       IN  CNAME   mail.${DOMAIN}.
+autoconfig.${DOMAIN}. IN CNAME   mail.${DOMAIN}.
+autodiscover.${DOMAIN}. IN CNAME mail.${DOMAIN}.
 ${DOMAIN}.           IN  MX  10  mail.${DOMAIN}.
 ${DOMAIN}.           IN  TXT     "v=spf1 mx a ip4:${SERVER_IP} ~all"
 _dmarc.${DOMAIN}.    IN  TXT     "v=DMARC1; p=none; rua=mailto:admin@${DOMAIN}; fo=1"
