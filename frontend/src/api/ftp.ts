@@ -27,4 +27,6 @@ export const ftpApi = {
       body: JSON.stringify({ login, password }),
     }),
   remove: (id: string) => fetchJSON(`${API_BASE}/accounts/${id}`, { method: 'DELETE' }),
+  controlService: (action: 'start' | 'stop' | 'restart') =>
+    fetchJSON(`${API_BASE}/service/${action}`, { method: 'POST' }),
 };

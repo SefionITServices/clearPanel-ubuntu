@@ -32,6 +32,8 @@ header "1. Service Status"
 SERVICES=(
   "clearpanel:ClearPanel Backend"
   "nginx:Nginx Web Server"
+  "proftpd:ProFTPD FTP Server"
+  "vsftpd:vsftpd FTP Server"
   "bind9:BIND9 DNS"
   "named:BIND9 DNS (alt)"
   "postfix:Postfix SMTP"

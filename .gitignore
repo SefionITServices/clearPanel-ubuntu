@@ -26,5 +26,6 @@ release/dist/
 # System and cache directories
 .cache/
 .npm/
+.pm2/
 .ssh/
 .gitconfig

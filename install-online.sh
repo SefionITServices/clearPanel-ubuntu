@@ -169,10 +169,10 @@ if [ "${NODE_VERSION:-0}" -lt 20 ]; then
 fi
 success "Node.js 20"
 
-# Nginx, BIND9, Certbot
-apt-get install -y -qq nginx bind9 bind9utils bind9-doc certbot python3-certbot-nginx > /dev/null 2>&1 || \
-    add_warn "Some packages failed to install (nginx/bind9/certbot) — may need manual install"
-success "Nginx, BIND9, Certbot"
+# Nginx, BIND9, Certbot, ProFTPD
+apt-get install -y -qq nginx bind9 bind9utils bind9-doc certbot python3-certbot-nginx proftpd-core > /dev/null 2>&1 || \
+    add_warn "Some packages failed to install (nginx/bind9/certbot/proftpd) — may need manual install"
+success "Nginx, BIND9, Certbot, ProFTPD"
 
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 3 — Firewall
@@ -180,10 +180,10 @@ success "Nginx, BIND9, Certbot"
 step "Configuring firewall (UFW)..."
 
 ufw --force enable > /dev/null 2>&1 || add_warn "UFW failed to enable"
-for port in OpenSSH 80/tcp 443/tcp 3334/tcp 53/tcp 53/udp 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp; do
+for port in OpenSSH 80/tcp 443/tcp 3334/tcp 53/tcp 53/udp 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp 21/tcp 49152:65534/tcp; do
     ufw allow "$port" > /dev/null 2>&1 || true
 done
-success "Firewall active — SSH, HTTP/S, DNS, mail, panel ports open"
+success "Firewall active — SSH, HTTP/S, DNS, mail, FTP, panel ports open"
 
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 4 — Service user
@@ -397,8 +397,16 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/bin/update-alternatives, /usr/bin/php*
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/redis-cli, /usr/bin/fail2ban-client, /usr/bin/crontab, /usr/bin/python3
 clearpanel ALL=(ALL) NOPASSWD: /usr/pgadmin4/bin/setup-web.sh
 
-# User management
-clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd
+# User management & ACLs
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/chpasswd
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/setfacl, /bin/setfacl
+
+# ClearPanel automation scripts
+clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/*
+
+# Mail & DNS daemon tools
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
+Defaults:clearpanel !requiretty
 SUDOEOF
 chmod 440 /etc/sudoers.d/clearpanel
 
@@ -452,6 +460,27 @@ else
     else
         add_warn "MySQL install failed — you can install it from the panel later"
     fi
+fi
+
+# ══════════════════════════════════════════════════════════════════
+#  PHASE 11c — FTP Server (ProFTPD)
+# ══════════════════════════════════════════════════════════════════
+step "Configuring FTP server (ProFTPD)..."
+
+if [ -f "$INSTALL_DIR/scripts/setup-ftp.sh" ]; then
+    bash "$INSTALL_DIR/scripts/setup-ftp.sh" > /dev/null 2>&1 && success "ProFTPD configured and running" || add_warn "FTP setup had issues — can retry using scripts/setup-ftp.sh"
+else
+    # Fallback inline FTP setup if scripts directory not reached
+    mkdir -p /etc/proftpd/conf.d
+    cat > /etc/proftpd/conf.d/clearpanel.conf << 'EOF'
+RequireValidShell off
+DefaultRoot ~
+PassivePorts 49152 65534
+UseReverseDNS off
+EOF
+    systemctl enable proftpd >/dev/null 2>&1 || true
+    systemctl restart proftpd >/dev/null 2>&1 || true
+    success "ProFTPD configured"
 fi
 
 # ══════════════════════════════════════════════════════════════════

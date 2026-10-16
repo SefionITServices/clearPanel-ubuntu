@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { exec as execCb, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
@@ -26,12 +26,17 @@ interface FtpServiceInfo {
 }
 
 @Injectable()
-export class FtpService {
+export class FtpService implements OnModuleInit {
   private readonly logger = new Logger(FtpService.name);
   private cache: { data: FtpAccount[]; ts: number } | null = null;
   private static readonly CACHE_TTL = 5000;
 
   constructor(private readonly domainsService: DomainsService) {}
+
+  async onModuleInit() {
+    await this.ensureValidShell();
+    await this.ensureProftpdConfig();
+  }
 
   private get accountsPath(): string {
     return getDataFilePath('ftp-accounts.json');
@@ -99,7 +104,7 @@ export class FtpService {
 
   private async userExists(login: string): Promise<boolean> {
     try {
-      await exec(`id -u ${login}`);
+      await exec(`id -u "${login}"`);
       return true;
     } catch {
       return false;
@@ -138,8 +143,8 @@ export class FtpService {
 
   private async applyAcl(rootPath: string, login: string): Promise<void> {
     try {
-      await exec(`setfacl -m u:${login}:rwx "${rootPath}"`);
-      await exec(`setfacl -d -m u:${login}:rwx "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -R -m u:${login}:rwx "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -d -m u:${login}:rwx "${rootPath}"`);
     } catch (e: any) {
       this.logger.warn(`Failed to apply ACL for ${login}: ${e.message || e}`);
     }
@@ -147,10 +152,77 @@ export class FtpService {
 
   private async removeAcl(rootPath: string, login: string): Promise<void> {
     try {
-      await exec(`setfacl -x u:${login} "${rootPath}"`);
-      await exec(`setfacl -d -x u:${login} "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -R -x u:${login} "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -d -x u:${login} "${rootPath}"`);
     } catch (e: any) {
       this.logger.warn(`Failed to remove ACL for ${login}: ${e.message || e}`);
+    }
+  }
+
+  /**
+   * Ensure /usr/sbin/nologin and /bin/false are listed in /etc/shells so FTP daemons
+   * and PAM allow logins for users without interactive shells.
+   */
+  async ensureValidShell(): Promise<void> {
+    try {
+      const shells = await fs.readFile('/etc/shells', 'utf-8').catch(() => '');
+      const missing = ['/usr/sbin/nologin', '/bin/false'].filter(s => !shells.includes(s));
+      for (const sh of missing) {
+        await this.sudo(`sh -c "echo '${sh}' >> /etc/shells"`);
+        this.logger.log(`Added ${sh} to /etc/shells`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Could not ensure /etc/shells configuration: ${e.message || e}`);
+    }
+  }
+
+  /**
+   * Ensure ProFTPD is configured with RequireValidShell off, DefaultRoot ~, and PassivePorts.
+   */
+  async ensureProftpdConfig(): Promise<void> {
+    try {
+      const proftpdBin = '/usr/sbin/proftpd';
+      const isInstalled = await fs.access(proftpdBin).then(() => true).catch(() => false);
+      if (!isInstalled) return;
+
+      const confDir = '/etc/proftpd/conf.d';
+      const confFile = path.join(confDir, 'clearpanel.conf');
+      let needsConfig = false;
+
+      try {
+        const content = await fs.readFile(confFile, 'utf-8');
+        if (!content.includes('RequireValidShell off') || !content.includes('DefaultRoot ~')) {
+          needsConfig = true;
+        }
+      } catch {
+        needsConfig = true;
+      }
+
+      if (needsConfig) {
+        await this.sudo(`mkdir -p "${confDir}"`);
+        const confContent = [
+          '# ClearPanel ProFTPD Configuration',
+          'RequireValidShell off',
+          'DefaultRoot ~',
+          'PassivePorts 49152 65534',
+          'UseReverseDNS off',
+          '',
+        ].join('\n');
+        await this.sudo(`sh -c "cat > '${confFile}' << 'EOF'\n${confContent}EOF"`);
+        this.logger.log('Wrote /etc/proftpd/conf.d/clearpanel.conf');
+        try {
+          await this.sudo('systemctl restart proftpd');
+        } catch {}
+      }
+
+      // Ensure active
+      const runningOut = await this.sudo('systemctl is-active proftpd').catch(() => '');
+      if (runningOut !== 'active') {
+        await this.sudo('systemctl enable proftpd').catch(() => {});
+        await this.sudo('systemctl start proftpd').catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Could not ensure ProFTPD configuration: ${e.message || e}`);
     }
   }
 
@@ -183,6 +255,19 @@ export class FtpService {
     return { vsftpd, proftpd, active };
   }
 
+  async controlService(action: 'start' | 'stop' | 'restart'): Promise<{ success: boolean; message: string }> {
+    if (!['start', 'stop', 'restart'].includes(action)) {
+      throw new Error(`Invalid action: ${action}`);
+    }
+    const status = await this.getStatus();
+    const service = status.proftpd.installed ? 'proftpd' : (status.vsftpd.installed ? 'vsftpd' : null);
+    if (!service) {
+      throw new Error('No FTP service is installed');
+    }
+    await this.sudo(`/usr/bin/systemctl ${action} ${service}`);
+    return { success: true, message: `FTP service ${service} ${action}ed successfully` };
+  }
+
   async listAccounts(owner: string): Promise<Array<FtpAccount & { exists: boolean }>> {
     const accounts = await this.readAccounts();
     const results = await Promise.all(accounts.map(async (acc) => ({
@@ -198,7 +283,11 @@ export class FtpService {
     if (!domain) throw new Error('Domain not found');
 
     const rootPath = this.resolveRootPath(owner, domain.folderPath, input.rootPath);
-    await fs.mkdir(rootPath, { recursive: true });
+    try {
+      await fs.mkdir(rootPath, { recursive: true });
+    } catch {
+      await this.sudo(`/usr/bin/mkdir -p "${rootPath}"`);
+    }
 
     const login = this.buildSystemUsername(owner, input.username);
     if (await this.userExists(login)) {
@@ -209,6 +298,10 @@ export class FtpService {
     if (accounts.some(a => a.login === login)) {
       throw new Error(`FTP login "${login}" already exists`);
     }
+
+    // Ensure system is configured to allow non-interactive shells for FTP
+    await this.ensureValidShell();
+    await this.ensureProftpdConfig();
 
     try {
       await this.sudo(`/usr/sbin/useradd -M -d "${rootPath}" -s /usr/sbin/nologin "${login}"`);
@@ -242,6 +335,10 @@ export class FtpService {
     if (!(await this.userExists(cleanLogin))) {
       throw new Error('FTP account does not exist');
     }
+    const accounts = await this.readAccounts();
+    if (!accounts.some(a => a.login === cleanLogin)) {
+      throw new Error('FTP account not found in panel accounts');
+    }
     await this.setPassword(cleanLogin, password);
     return { success: true, message: 'Password updated' };
   }
@@ -254,9 +351,16 @@ export class FtpService {
 
     try {
       await this.removeAcl(account.rootPath, account.login);
-      await this.sudo(`/usr/sbin/userdel "${account.login}"`);
     } catch (e: any) {
-      throw new Error(e.message || String(e));
+      this.logger.warn(`Failed to remove ACL for ${account.login}: ${e.message || e}`);
+    }
+
+    if (await this.userExists(account.login)) {
+      try {
+        await this.sudo(`/usr/sbin/userdel "${account.login}"`);
+      } catch (e: any) {
+        throw new Error(e.message || String(e));
+      }
     }
 
     accounts.splice(idx, 1);

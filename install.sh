@@ -42,7 +42,7 @@ if command -v apt-get &> /dev/null; then
     apt-get update
     # Install Node.js (NodeSource package includes npm) and other system packages
     # NOTE: Do NOT install the separate 'npm' package — it conflicts with NodeSource's nodejs
-    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev
+    apt-get install -y nodejs nginx git curl ufw bind9 bind9utils bind9-doc certbot python3-certbot-nginx build-essential python3-dev proftpd-core
     # Refresh command hash so newly installed binaries are visible
     hash -r
     # Enable and configure UFW firewall
@@ -53,6 +53,8 @@ if command -v apt-get &> /dev/null; then
     ufw allow 3334/tcp
     ufw allow 53/tcp
     ufw allow 53/udp
+    ufw allow 21/tcp
+    ufw allow 49152:65534/tcp
 else
     echo -e "${RED}This script is designed for Ubuntu/Zorin OS systems only${NC}"
     echo -e "${RED}Please use the AlmaLinux version for RHEL-based systems${NC}"
@@ -291,6 +293,10 @@ else
     echo -e "${YELLOW}⚠ BIND9 service may need manual configuration${NC}"
 fi
 
+# Configure FTP Server (ProFTPD)
+echo -e "${YELLOW}📁 Configuring FTP server (ProFTPD)...${NC}"
+bash "$INSTALL_DIR/scripts/setup-ftp.sh"
+
 # ── Pre-install Mail Stack ─────────────────────────────────────────
 echo -e "${YELLOW}📧 Installing mail stack (Postfix, Dovecot, Rspamd, ClamAV, OpenDKIM)...${NC}"
 MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" && \
@@ -382,17 +388,7 @@ else
 fi
 # --- [ClearPanel Email & Webmail Auto-Configuration Block] ---
 # 1. Setup Sudoers for ClearPanel
-cat << 'EOF' > /etc/sudoers.d/clearpanel
-clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/email/*
-clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/nginx, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload postfix, /usr/bin/systemctl restart postfix
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload dovecot, /usr/bin/systemctl restart dovecot
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload named, /usr/bin/systemctl restart named
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload bind9, /usr/bin/systemctl restart bind9
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload opendkim, /usr/bin/systemctl restart opendkim
-EOF
-chmod 0440 /etc/sudoers.d/clearpanel
+bash "$INSTALL_DIR/scripts/update-sudoers.sh"
 
 # 2. Setup Directories & Permissions
 mkdir -p /var/lib/clearpanel/mail/domains /var/lib/clearpanel/mail/mailboxes /var/lib/clearpanel/mail/policies /etc/clearpanel/mail /var/mail/vhosts

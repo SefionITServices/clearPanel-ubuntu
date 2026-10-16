@@ -175,7 +175,7 @@ log "ClearPanel service stopped and removed"
 # ══════════════════════════════════════════════════════════════════
 step "2/19  Stopping mail and related services"
 
-for svc in postfix dovecot rspamd clamav-daemon clamav-freshclam opendkim postsrsd redis-server; do
+for svc in postfix dovecot rspamd clamav-daemon clamav-freshclam opendkim postsrsd redis-server proftpd; do
   if systemctl is-active --quiet "$svc" 2>/dev/null; then
     systemctl stop "$svc" 2>/dev/null || true
   fi
@@ -183,7 +183,8 @@ for svc in postfix dovecot rspamd clamav-daemon clamav-freshclam opendkim postsr
     systemctl disable "$svc" 2>/dev/null || true
   fi
 done
-log "Mail services stopped"
+safe_rm /etc/proftpd/conf.d/clearpanel.conf
+log "Mail and FTP services stopped"
 
 # ══════════════════════════════════════════════════════════════════
 #  3. Remove ClearPanel application directory
@@ -490,8 +491,8 @@ step "16/19  Removing ClearPanel firewall rules"
 # ClearPanel panel port
 ufw delete allow 3334/tcp 2>/dev/null || true
 
-# Mail ports
-for port in 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp; do
+# Mail and FTP ports
+for port in 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp 21/tcp 49152:65534/tcp; do
   ufw delete allow "$port" 2>/dev/null || true
 done
 

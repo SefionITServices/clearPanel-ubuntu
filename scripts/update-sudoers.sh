@@ -41,11 +41,19 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/pgadmin4/bin/setup-web.sh
 # Node.js / npm global installs (PM2 etc.)
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/npm, /usr/local/bin/npm, /usr/bin/npx, /usr/local/bin/npx
 
-# User management
+# User management & ACLs
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/chpasswd
+clearpanel ALL=(ALL) NOPASSWD: /usr/bin/setfacl, /bin/setfacl
+
+# ClearPanel automation scripts
+clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/*
+
+# Mail & DNS daemon tools
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
 
 # File operations for panel configuration writes (nginx, etc.)
 clearpanel ALL=(ALL) NOPASSWD: /bin/mv, /bin/chmod, /bin/cat, /bin/mkdir, /bin/rm, /bin/ln, /bin/ls
+Defaults:clearpanel !requiretty
 EOF
 
 if [ -f "$TARGET_FILE" ] && cmp -s "$TEMP_FILE" "$TARGET_FILE"; then

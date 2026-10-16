@@ -282,6 +282,7 @@ export class MonitoringService {
   async getServices(): Promise<ServiceStatus[]> {
     const serviceNames = [
       'nginx', 'apache2', 'mysql', 'mariadb', 'postgresql',
+      'proftpd', 'vsftpd',
       'postfix', 'dovecot', 'opendkim', 'named', 'bind9',
       'fail2ban', 'ufw', 'redis-server', 'memcached',
       'php8.3-fpm', 'php8.2-fpm', 'php8.1-fpm', 'php8.0-fpm',

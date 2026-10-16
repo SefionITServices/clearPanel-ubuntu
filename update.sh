@@ -293,17 +293,10 @@ else
 fi
 # --- [ClearPanel Email & Webmail Auto-Configuration Block] ---
 # 1. Setup Sudoers for ClearPanel
-cat << 'EOF' > /etc/sudoers.d/clearpanel
-clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/email/*
-clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/nginx, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload postfix, /usr/bin/systemctl restart postfix
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload dovecot, /usr/bin/systemctl restart dovecot
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload named, /usr/bin/systemctl restart named
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload bind9, /usr/bin/systemctl restart bind9
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx
-clearpanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload opendkim, /usr/bin/systemctl restart opendkim
-EOF
-chmod 0440 /etc/sudoers.d/clearpanel
+bash "$INSTALL_DIR/scripts/update-sudoers.sh"
+
+# 1b. Ensure FTP server is configured
+bash "$INSTALL_DIR/scripts/setup-ftp.sh"
 
 # 2. Setup Directories & Permissions
 mkdir -p /var/lib/clearpanel/mail/domains /var/lib/clearpanel/mail/mailboxes /var/lib/clearpanel/mail/policies /etc/clearpanel/mail /var/mail/vhosts

@@ -157,13 +157,31 @@ export default function FtpManagerPage() {
     }
   };
 
+  const [serviceActionLoading, setServiceActionLoading] = useState(false);
+
+  const handleServiceAction = async (action: 'start' | 'stop' | 'restart') => {
+    setServiceActionLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await ftpApi.controlService(action);
+      if (!data.success) throw new Error(data.error || `Failed to ${action} service`);
+      setSuccess(data.message || `FTP service ${action}ed successfully`);
+      await loadAll();
+    } catch (e: any) {
+      setError(e.message || `Failed to ${action} service`);
+    } finally {
+      setServiceActionLoading(false);
+    }
+  };
+
   const serviceAlert = (() => {
     if (!status) return null;
     if (!status.vsftpd.installed && !status.proftpd.installed) {
       return 'FTP service is not installed. Install vsftpd or proftpd to allow logins.';
     }
     if (!status.vsftpd.running && !status.proftpd.running) {
-      return 'FTP service is installed but not running. Start vsftpd or proftpd.';
+      return 'FTP service is installed but not running.';
     }
     return null;
   })();
@@ -192,11 +210,28 @@ export default function FtpManagerPage() {
         </Box>
 
         {serviceAlert && (
-          <Alert severity="warning" sx={{ mb: 2 }}>{serviceAlert}</Alert>
+          <Alert
+            severity="warning"
+            sx={{ mb: 2 }}
+            action={
+              (status?.vsftpd.installed || status?.proftpd.installed) ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  disabled={serviceActionLoading}
+                  onClick={() => handleServiceAction('start')}
+                >
+                  {serviceActionLoading ? 'Starting...' : 'Start Service'}
+                </Button>
+              ) : undefined
+            }
+          >
+            {serviceAlert}
+          </Alert>
         )}
 
         {status && (
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
             <Chip
               label={`vsftpd: ${status.vsftpd.installed ? (status.vsftpd.running ? 'running' : 'stopped') : 'not installed'}`}
               color={status.vsftpd.running ? 'success' : status.vsftpd.installed ? 'warning' : 'default'}
@@ -209,6 +244,17 @@ export default function FtpManagerPage() {
             />
             {status.active && (
               <Chip label={`active: ${status.active}`} color="primary" variant="outlined" />
+            )}
+            {(status.vsftpd.running || status.proftpd.running) && (
+              <Button
+                size="small"
+                variant="text"
+                disabled={serviceActionLoading}
+                onClick={() => handleServiceAction('restart')}
+                sx={{ textTransform: 'none', ml: 1 }}
+              >
+                {serviceActionLoading ? 'Restarting...' : 'Restart Service'}
+              </Button>
             )}
           </Stack>
         )}

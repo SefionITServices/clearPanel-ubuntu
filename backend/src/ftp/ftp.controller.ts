@@ -10,7 +10,17 @@ export class FtpController {
   constructor(private readonly ftp: FtpService) {}
 
   private user(req: Request): string {
-    return (req.session as any).username;
+    return (req.session as any)?.username || process.env.ADMIN_USERNAME || 'cp';
+  }
+
+  @Post('service/:action')
+  async controlService(@Param('action') action: 'start' | 'stop' | 'restart', @Res() res: Response) {
+    try {
+      const data = await this.ftp.controlService(action);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
   }
 
   @Get('status')
