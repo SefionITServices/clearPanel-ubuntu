@@ -402,11 +402,18 @@ clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/usermod, /usr/sbin/useradd, /usr/sbin/u
 clearpanel ALL=(ALL) NOPASSWD: /usr/bin/setfacl, /bin/setfacl
 
 # ClearPanel automation scripts
-clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/*
+clearpanel ALL=(ALL) NOPASSWD: /opt/clearpanel/scripts/*, /opt/clearpanel/scripts/*/*
+
+# Firewall
+clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/ufw
 
 # Mail & DNS daemon tools
 clearpanel ALL=(ALL) NOPASSWD: /usr/sbin/postfix, /usr/sbin/dovecot, /usr/sbin/rndc, /usr/sbin/opendkim-genkey, /usr/sbin/postmap
+
+# File operations for panel configuration writes (nginx, etc.)
+clearpanel ALL=(ALL) NOPASSWD: /bin/mv, /bin/chmod, /bin/cat, /bin/mkdir, /bin/rm, /bin/ln, /bin/ls
 Defaults:clearpanel !requiretty
+Defaults:clearpanel env_keep += "DEBIAN_FRONTEND MAIL_MODE"
 SUDOEOF
 chmod 440 /etc/sudoers.d/clearpanel
 

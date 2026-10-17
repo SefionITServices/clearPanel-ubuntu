@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { Request, Response, NextFunction } from 'express';
 import session from 'express-session';
 import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
@@ -42,22 +43,35 @@ async function bootstrap() {
     );
   }
 
+  const sessionSecureSetting = (config.get<string>('SESSION_SECURE') || '').toLowerCase();
+  const cookieSecure: boolean | 'auto' = sessionSecureSetting === 'true'
+    ? true
+    : sessionSecureSetting === 'false'
+      ? false
+      : 'auto';
+
   const sessionMiddleware = session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000,
-      // Allow overriding cookie security for HTTP tunnels/port-forwarding
-      // Set SESSION_SECURE=true only when serving via HTTPS end-to-end
-      secure: (config.get<string>('SESSION_SECURE') || '').toLowerCase() === 'true'
-        || config.get<string>('NODE_ENV') === 'production' && (config.get<string>('FORCE_SECURE') || '').toLowerCase() === 'true',
+      secure: cookieSecure,
       httpOnly: true,
       sameSite: 'lax',
     },
   });
 
   app.use(sessionMiddleware);
+
+  // Global HTTP security response headers
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
 
   // Share the session middleware with Socket.IO so TerminalGateway can
   // read socket.request.session and authenticate PTY connections.

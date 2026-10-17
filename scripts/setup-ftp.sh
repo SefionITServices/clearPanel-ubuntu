@@ -47,8 +47,14 @@ RequireValidShell off
 # Jail / chroot users to their domain directory
 DefaultRoot ~
 
+# Allow overwriting existing files upon upload
+AllowOverwrite on
+
 # Passive ports range
 PassivePorts 49152 65534
+
+# Standard umask for uploaded files and directories
+Umask 022 022
 
 # Performance: do not perform reverse DNS lookups on clients
 UseReverseDNS off

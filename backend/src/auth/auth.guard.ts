@@ -11,6 +11,8 @@ export class AuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<Request & { session?: UserSession }>();
     if (!req.session) return false;
     const s: any = req.session;
+    // Reject pending 2FA challenges
+    if (s.twoFactorPending) return false;
     // Allow either a user object or isAuthenticated flag to pass
     return !!s.user || !!s.isAuthenticated;
   }

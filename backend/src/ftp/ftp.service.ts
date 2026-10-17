@@ -36,6 +36,7 @@ export class FtpService implements OnModuleInit {
   async onModuleInit() {
     await this.ensureValidShell();
     await this.ensureProftpdConfig();
+    await this.syncAllAccountAcls();
   }
 
   private get accountsPath(): string {
@@ -143,17 +144,33 @@ export class FtpService implements OnModuleInit {
 
   private async applyAcl(rootPath: string, login: string): Promise<void> {
     try {
-      await this.sudo(`/usr/bin/setfacl -R -m u:${login}:rwx "${rootPath}"`);
-      await this.sudo(`/usr/bin/setfacl -d -m u:${login}:rwx "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -R -m u:${login}:rwX,u:clearpanel:rwX,g:clearpanel:rwX "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -R -d -m u:${login}:rwX,u:clearpanel:rwX,g:clearpanel:rwX "${rootPath}"`);
     } catch (e: any) {
       this.logger.warn(`Failed to apply ACL for ${login}: ${e.message || e}`);
+    }
+  }
+
+  async syncAllAccountAcls(): Promise<void> {
+    try {
+      const accounts = await this.readAccounts();
+      for (const acc of accounts) {
+        if (!acc.login || !acc.rootPath) continue;
+        const exists = await this.userExists(acc.login);
+        if (exists) {
+          await this.applyAcl(acc.rootPath, acc.login);
+          await this.sudo(`/usr/sbin/usermod -a -G clearpanel "${acc.login}"`).catch(() => {});
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to sync FTP account ACLs: ${e.message || e}`);
     }
   }
 
   private async removeAcl(rootPath: string, login: string): Promise<void> {
     try {
       await this.sudo(`/usr/bin/setfacl -R -x u:${login} "${rootPath}"`);
-      await this.sudo(`/usr/bin/setfacl -d -x u:${login} "${rootPath}"`);
+      await this.sudo(`/usr/bin/setfacl -R -d -x u:${login} "${rootPath}"`);
     } catch (e: any) {
       this.logger.warn(`Failed to remove ACL for ${login}: ${e.message || e}`);
     }
@@ -191,7 +208,7 @@ export class FtpService implements OnModuleInit {
 
       try {
         const content = await fs.readFile(confFile, 'utf-8');
-        if (!content.includes('RequireValidShell off') || !content.includes('DefaultRoot ~')) {
+        if (!content.includes('RequireValidShell off') || !content.includes('DefaultRoot ~') || !content.includes('AllowOverwrite on')) {
           needsConfig = true;
         }
       } catch {
@@ -204,7 +221,9 @@ export class FtpService implements OnModuleInit {
           '# ClearPanel ProFTPD Configuration',
           'RequireValidShell off',
           'DefaultRoot ~',
+          'AllowOverwrite on',
           'PassivePorts 49152 65534',
+          'Umask 022 022',
           'UseReverseDNS off',
           '',
         ].join('\n');
@@ -304,7 +323,7 @@ export class FtpService implements OnModuleInit {
     await this.ensureProftpdConfig();
 
     try {
-      await this.sudo(`/usr/sbin/useradd -M -d "${rootPath}" -s /usr/sbin/nologin "${login}"`);
+      await this.sudo(`/usr/sbin/useradd -M -d "${rootPath}" -s /usr/sbin/nologin -G clearpanel "${login}"`);
       await this.setPassword(login, input.password);
       await this.applyAcl(rootPath, login);
     } catch (e: any) {

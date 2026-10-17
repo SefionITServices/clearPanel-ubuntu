@@ -46,7 +46,7 @@ export class TerminalGateway implements OnGatewayConnection, OnGatewayDisconnect
   handleConnection(client: Socket): void {
     // Verify that the connecting socket belongs to an authenticated session.
     const session = (client.request as any).session as Record<string, any> | undefined;
-    if (!session?.username) {
+    if (!session || !session.isAuthenticated || session.twoFactorPending || !session.username) {
       this.logger.warn(`Unauthenticated WS connection rejected: ${client.id}`);
       client.emit('terminal:error', 'Unauthorized — please log in.');
       client.disconnect(true);

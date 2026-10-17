@@ -37,11 +37,13 @@ export class FilesService {
     if (path.isAbsolute(req)) {
       full = path.resolve(req);
     } else {
-      const rel = req.replace(/^\/+/, '');
-      full = path.resolve(rootPath, rel);
+      full = path.resolve(rootResolved, req);
     }
 
-    if (!full.startsWith(rootResolved)) throw new Error('Access denied');
+    // Ensure target path is strictly within the user's root directory boundary
+    if (full !== rootResolved && !full.startsWith(rootResolved + path.sep)) {
+      throw new Error('Access denied');
+    }
     return full;
   }
 

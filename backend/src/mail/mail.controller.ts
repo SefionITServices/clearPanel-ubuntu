@@ -11,12 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
+import { AuthGuard } from '../auth/auth.guard';
 import { MailService, DomainSettingsUpdate } from './mail.service';
 import { MailStatusService } from './mail-status.service';
 import { MailSsoService } from './mail-sso.service';
 import { AppStoreService } from '../app-store/app-store.service';
 
-@UseGuards(ThrottlerGuard)
+@UseGuards(AuthGuard, ThrottlerGuard)
 @Controller('mail')
 export class MailController {
   constructor(

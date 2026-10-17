@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Put, Query, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '../auth/auth.guard';
 import { NotificationsService } from './notifications.service';
 import { MarkMultipleDto } from './dto/mark-multiple.dto';
 
+@UseGuards(AuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
