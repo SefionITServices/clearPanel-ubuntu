@@ -1,7 +1,7 @@
 
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
+import { CssBaseline, CircularProgress, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { theme } from './theme';
 import { AppThemeProvider } from './theme/ThemeContext';
@@ -54,11 +54,111 @@ const SpamFilterPage = lazy(() => import('./pages/SpamFilter'));
 // Eagerly load SetupGuard since it wraps all routes
 import { SetupGuard } from './components/SetupGuard';
 
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+const SESSION_WARNING_MS = 60 * 1000;
+
 function PageLoader() {
   return (
     <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
       <CircularProgress />
     </Box>
+  );
+}
+
+function SessionTimeoutPopup() {
+  const { authenticated, logout, extendSession, refreshStatus } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [timeLeftMs, setTimeLeftMs] = useState(SESSION_TIMEOUT_MS);
+  const expiresAtRef = useRef<number | null>(null);
+
+  const syncSessionState = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/status', { credentials: 'include' });
+      if (!res.ok) {
+        setOpen(false);
+        return;
+      }
+      const data = await res.json();
+      if (!data.authenticated) {
+        setOpen(false);
+        expiresAtRef.current = null;
+        return;
+      }
+
+      const nextExpiry = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + SESSION_TIMEOUT_MS;
+      expiresAtRef.current = nextExpiry;
+      const remaining = Math.max(0, nextExpiry - Date.now());
+      setTimeLeftMs(remaining);
+      setOpen(remaining <= SESSION_WARNING_MS);
+    } catch (e) {
+      setOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setOpen(false);
+      expiresAtRef.current = null;
+      return;
+    }
+
+    void syncSessionState();
+
+    const activityHandler = () => {
+      if (authenticated) {
+        void syncSessionState();
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      const expiry = expiresAtRef.current ?? Date.now() + SESSION_TIMEOUT_MS;
+      const remaining = expiry - Date.now();
+      setTimeLeftMs(Math.max(0, remaining));
+
+      if (remaining <= 0) {
+        setOpen(false);
+        void logout();
+        return;
+      }
+
+      setOpen(remaining <= SESSION_WARNING_MS);
+    }, 1000);
+
+    window.addEventListener('pointerdown', activityHandler);
+    window.addEventListener('keydown', activityHandler);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('pointerdown', activityHandler);
+      window.removeEventListener('keydown', activityHandler);
+    };
+  }, [authenticated, logout, syncSessionState]);
+
+  const handleExtend = async () => {
+    setOpen(false);
+    await extendSession();
+    await refreshStatus();
+  };
+
+  const minutes = Math.floor(timeLeftMs / 60000);
+  const seconds = Math.floor((timeLeftMs % 60000) / 1000);
+
+  return (
+    <Dialog open={open} keepMounted disableEscapeKeyDown>
+      <DialogTitle>Session expiring soon</DialogTitle>
+      <DialogContent>
+        <Typography variant="body1">
+          Your session will expire in {minutes}:{String(seconds).padStart(2, '0')}.
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
+          Choose to extend your session or log out now.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => void logout()} color="inherit">Logout</Button>
+        <Button onClick={() => void handleExtend()} variant="contained">Extend session</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -74,6 +174,7 @@ export function App() {
     <AppThemeProvider>
       <CssBaseline />
       <AuthProvider>
+        <SessionTimeoutPopup />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
           <Routes>

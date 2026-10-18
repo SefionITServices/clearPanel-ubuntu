@@ -7,9 +7,11 @@ type AuthState = {
   twoFactorPending: boolean;
   username: string | null;
   loading: boolean;
+  sessionExpiresAt: number | null;
   login: (username: string, password: string) => Promise<LoginResult>;
   verify2FA: (token: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  extendSession: () => Promise<void>;
   refreshStatus: () => Promise<void>;
 };
 
@@ -20,18 +22,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [twoFactorPending, setTwoFactorPending] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
 
   const refreshStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/status', { credentials: 'include' });
       const data = await res.json();
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : null;
       setAuthenticated(!!data.authenticated);
       setTwoFactorPending(!!data.twoFactorPending);
       setUsername(data.username ?? null);
+      setSessionExpiresAt(expiresAt);
     } catch (e) {
       setAuthenticated(false);
       setTwoFactorPending(false);
       setUsername(null);
+      setSessionExpiresAt(null);
     } finally {
       setLoading(false);
     }
@@ -99,12 +105,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthenticated(false);
       setTwoFactorPending(false);
       setUsername(null);
+      setSessionExpiresAt(null);
     }
   }, []);
 
+  const extendSession = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/extend', { method: 'POST', credentials: 'include' });
+      if (!res.ok) return;
+      await refreshStatus();
+    } catch (e) {
+      console.warn('[AuthContext] Session extension failed:', e);
+    }
+  }, [refreshStatus]);
+
   const value = useMemo(
-    () => ({ authenticated, twoFactorPending, username, loading, login, verify2FA, logout, refreshStatus }),
-    [authenticated, twoFactorPending, username, loading, login, verify2FA, logout, refreshStatus]
+    () => ({ authenticated, twoFactorPending, username, loading, login, verify2FA, logout, extendSession, refreshStatus, sessionExpiresAt }),
+    [authenticated, twoFactorPending, username, loading, login, verify2FA, logout, extendSession, refreshStatus, sessionExpiresAt]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

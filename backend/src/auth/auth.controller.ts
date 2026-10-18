@@ -41,13 +41,33 @@ export class AuthController {
     return res.json({ success: true, message: 'Logged out' });
   }
 
+  @Post('extend')
+  extend(@Req() req: Request, @Res() res: Response) {
+    const s = req.session as any;
+    if (!s?.isAuthenticated) {
+      return res.status(HttpStatus.UNAUTHORIZED).json({ success: false, message: 'Not authenticated' });
+    }
+
+    req.session?.touch?.();
+    const maxAge = typeof s?.cookie?.maxAge === 'number' && s.cookie.maxAge > 0 ? s.cookie.maxAge : 15 * 60 * 1000;
+    return res.json({
+      success: true,
+      expiresAt: new Date(Date.now() + maxAge).toISOString(),
+      message: 'Session extended',
+    });
+  }
+
   @Get('status')
   status(@Req() req: Request) {
     const s = req.session as any;
+    const maxAge = typeof s?.cookie?.maxAge === 'number' && s.cookie.maxAge > 0 ? s.cookie.maxAge : 15 * 60 * 1000;
+    const expiresAt = s?.cookie?.expires ? new Date(s.cookie.expires).toISOString() : new Date(Date.now() + maxAge).toISOString();
+
     return {
       authenticated: !!s?.isAuthenticated,
       twoFactorPending: !!s?.twoFactorPending,
       username: s?.username,
+      expiresAt,
     };
   }
 }
