@@ -80,6 +80,21 @@ map $arg_v $asset_immutable {
       await execAsync('which nginx', { timeout: 10_000 });
       this.nginxAvailable = true;
       console.log('✅ Nginx detected');
+
+      // Ensure conflicting Apache web server cannot hijack ports 80/443
+      try {
+        await execAsync('sudo systemctl stop apache2 2>/dev/null; sudo systemctl disable apache2 2>/dev/null; sudo systemctl mask apache2 2>/dev/null || true', { timeout: 10_000 });
+      } catch {}
+
+      // Ensure Nginx service is running
+      try {
+        const { stdout } = await execAsync('systemctl is-active nginx', { timeout: 5000 });
+        if (stdout.trim() !== 'active') {
+          await execAsync('sudo systemctl enable nginx && sudo systemctl start nginx', { timeout: 15_000 });
+        }
+      } catch {
+        await execAsync('sudo systemctl enable nginx && sudo systemctl start nginx', { timeout: 15_000 }).catch(() => {});
+      }
     } catch {
       this.nginxAvailable = false;
       console.log('⚠️  Nginx not installed - web server automation disabled');
@@ -103,6 +118,8 @@ map $arg_v $asset_immutable {
   async installNginx(): Promise<{ success: boolean; message: string }> {
     try {
       console.log('Installing nginx...');
+      // Disable conflicting web servers like Apache first
+      await execAsync('sudo systemctl stop apache2 2>/dev/null || true; sudo systemctl disable apache2 2>/dev/null || true; sudo systemctl mask apache2 2>/dev/null || true', { timeout: 15_000 }).catch(() => {});
       await execAsync('sudo apt update && sudo apt install -y nginx', { timeout: 120_000 });
       this.nginxAvailable = true;
       await execAsync('sudo systemctl enable nginx', { timeout: 30_000 });

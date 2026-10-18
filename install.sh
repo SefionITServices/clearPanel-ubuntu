@@ -202,6 +202,20 @@ systemctl enable clearpanel
 
 # Configure nginx
 echo -e "${YELLOW}🌐 Configuring nginx...${NC}"
+
+# Disable conflicting web servers (e.g. Apache) so Nginx exclusively binds ports 80/443
+if systemctl list-unit-files apache2.service &>/dev/null || command -v apache2 &>/dev/null; then
+    echo -e "${YELLOW}⚠️  Disabling conflicting Apache web server...${NC}"
+    systemctl stop apache2 >/dev/null 2>&1 || true
+    systemctl disable apache2 >/dev/null 2>&1 || true
+    systemctl mask apache2 >/dev/null 2>&1 || true
+fi
+if systemctl list-unit-files httpd.service &>/dev/null || command -v httpd &>/dev/null; then
+    systemctl stop httpd >/dev/null 2>&1 || true
+    systemctl disable httpd >/dev/null 2>&1 || true
+    systemctl mask httpd >/dev/null 2>&1 || true
+fi
+
 cp "$INSTALL_DIR/nginx.conf.example" "/etc/nginx/sites-available/clearpanel" 2>/dev/null || \
     cp "$INSTALL_DIR/nginx.conf.example" "/etc/nginx/conf.d/clearpanel.conf"
 

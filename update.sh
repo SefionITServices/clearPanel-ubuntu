@@ -191,6 +191,21 @@ EOF
         fi
     fi
 
+    # Ensure conflicting web servers (e.g. Apache) cannot bind ports 80/443
+    if systemctl list-unit-files apache2.service &>/dev/null || command -v apache2 &>/dev/null; then
+        if systemctl is-active --quiet apache2 2>/dev/null || [ "$(systemctl is-enabled apache2 2>/dev/null)" != "masked" ]; then
+            echo -e "${YELLOW}⚠️  Disabling and masking conflicting Apache web server...${NC}"
+            systemctl stop apache2 >/dev/null 2>&1 || true
+            systemctl disable apache2 >/dev/null 2>&1 || true
+            systemctl mask apache2 >/dev/null 2>&1 || true
+        fi
+    fi
+    if systemctl list-unit-files httpd.service &>/dev/null || command -v httpd &>/dev/null; then
+        systemctl stop httpd >/dev/null 2>&1 || true
+        systemctl disable httpd >/dev/null 2>&1 || true
+        systemctl mask httpd >/dev/null 2>&1 || true
+    fi
+
     if [ "$NGINX_CHANGED" -eq 1 ]; then
         if nginx -t > /dev/null 2>&1; then
             systemctl reload nginx
@@ -200,6 +215,12 @@ EOF
         fi
     else
         echo -e "${GREEN}✓ Nginx config already up-to-date${NC}"
+    fi
+
+    # Ensure Nginx is enabled and running
+    systemctl enable nginx >/dev/null 2>&1 || true
+    if ! systemctl is-active --quiet nginx 2>/dev/null; then
+        systemctl start nginx >/dev/null 2>&1 || true
     fi
 fi
 

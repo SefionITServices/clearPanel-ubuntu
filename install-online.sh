@@ -328,6 +328,19 @@ success "Service registered: clearpanel.service"
 # ══════════════════════════════════════════════════════════════════
 step "Configuring Nginx..."
 
+# Ensure conflicting web servers (e.g. Apache) cannot bind ports 80/443
+if systemctl list-unit-files apache2.service &>/dev/null || command -v apache2 &>/dev/null; then
+    info "Disabling conflicting Apache web server..."
+    systemctl stop apache2 >/dev/null 2>&1 || true
+    systemctl disable apache2 >/dev/null 2>&1 || true
+    systemctl mask apache2 >/dev/null 2>&1 || true
+fi
+if systemctl list-unit-files httpd.service &>/dev/null || command -v httpd &>/dev/null; then
+    systemctl stop httpd >/dev/null 2>&1 || true
+    systemctl disable httpd >/dev/null 2>&1 || true
+    systemctl mask httpd >/dev/null 2>&1 || true
+fi
+
 NGINX_DEST=""
 if [ -d "/etc/nginx/sites-available" ]; then
     NGINX_DEST="/etc/nginx/sites-available/clearpanel"

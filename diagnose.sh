@@ -122,6 +122,17 @@ echo ""
 echo "  Listening ports (nginx):"
 ss -tulpn 2>/dev/null | grep nginx | sed 's/^/    /' || echo "    (none)"
 
+# Check for conflicting web servers
+if systemctl is-active --quiet apache2 2>/dev/null; then
+  fail "Conflicting web server Apache (apache2) is RUNNING and may hijack ports 80/443!"
+  echo "      Fix with: sudo systemctl stop apache2 && sudo systemctl disable apache2 && sudo systemctl mask apache2"
+elif systemctl list-unit-files apache2.service &>/dev/null && [ "$(systemctl is-enabled apache2 2>/dev/null)" != "masked" ]; then
+  warn "Apache (apache2) is installed and not masked — could hijack port 80 on reboot."
+  echo "      Fix with: sudo systemctl disable apache2 && sudo systemctl mask apache2"
+else
+  ok "No conflicting web server detected (Apache is inactive/masked)"
+fi
+
 echo ""
 echo "  Nginx error log (last 15 lines):"
 echo "  ──────────────────────"
