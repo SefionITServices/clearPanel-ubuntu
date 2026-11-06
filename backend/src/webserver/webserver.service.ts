@@ -250,7 +250,64 @@ map $arg_v $asset_immutable {
 
     await this.ensureEmailAutoconfigSnippet();
 
-    const configContent = `server {
+    // Check if Let's Encrypt certificates exist for this domain
+    const sslCertPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
+    const sslKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+    let hasSsl = false;
+    try {
+      await fs.access(sslCertPath);
+      await fs.access(sslKeyPath);
+      hasSsl = true;
+    } catch {
+      hasSsl = false;
+    }
+
+    let sslOptions = '';
+    try {
+      await fs.access('/etc/letsencrypt/options-ssl-nginx.conf');
+      sslOptions = '    include /etc/letsencrypt/options-ssl-nginx.conf;\n';
+    } catch {}
+
+    let sslDhparam = '';
+    try {
+      await fs.access('/etc/letsencrypt/ssl-dhparams.pem');
+      sslDhparam = '    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;\n';
+    } catch {}
+
+    const configContent = hasSsl
+      ? `server {
+    listen [::]:443 ssl;
+    listen 443 ssl;
+    server_name ${domain} www.${domain};
+    
+    root ${documentRoot};
+    index index.html index.htm index.php;
+    
+    # Logging
+    access_log /var/log/nginx/${domain}-access.log;
+    error_log /var/log/nginx/${domain}-error.log;
+    
+    # Email autoconfig & Roundcube webmail
+    include /etc/nginx/snippets/clearpanel-roundcube.conf;
+
+  ${locationBlock}
+    
+    # Deny access to hidden files
+    location ~ /\\. {
+        deny all;
+    }
+
+    ssl_certificate ${sslCertPath};
+    ssl_certificate_key ${sslKeyPath};
+${sslOptions}${sslDhparam}}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${domain} www.${domain};
+    return 301 https://$host$request_uri;
+}`
+      : `server {
     listen 80;
     listen [::]:80;
     server_name ${domain} www.${domain};

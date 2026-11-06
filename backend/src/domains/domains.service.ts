@@ -111,16 +111,16 @@ export class DomainsService {
     return undefined;
   }
 
-  private async inspectContainer(containerId: string): Promise<{ id: string; name: string; port?: number }> {
-    if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
-      throw new Error('Invalid container id');
+  private async inspectContainer(containerIdOrName: string): Promise<{ id: string; name: string; port?: number }> {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(containerIdOrName)) {
+      throw new Error('Invalid container id or name');
     }
-    const { stdout } = await exec(`docker inspect ${containerId}`);
+    const { stdout } = await exec(`docker inspect ${containerIdOrName}`);
     const arr = JSON.parse(stdout || '[]');
     const data = arr[0] || {};
-    const name = String(data?.Name || '').replace(/^\//, '') || containerId;
+    const name = String(data?.Name || '').replace(/^\//, '') || containerIdOrName;
     return {
-      id: String(data?.Id || containerId),
+      id: String(data?.Id || containerIdOrName),
       name,
       port: this.detectContainerPortFromInspect(data),
     };
@@ -409,7 +409,38 @@ export class DomainsService {
   }
 
   async listDomains(): Promise<Domain[]> {
-    return this.readDomains();
+    const domains = await this.readDomains();
+    // Auto-heal container ID if container was recreated but keeps the same name
+    try {
+      const { stdout } = await exec('docker ps --format "{{.ID}}\t{{.Names}}" 2>/dev/null');
+      const lines = stdout.trim().split('\n').filter(Boolean);
+      const runningMap = new Map<string, string>();
+      for (const line of lines) {
+        const [cid, cname] = line.split('\t');
+        if (cid && cname) {
+          runningMap.set(cname.replace(/^\//, ''), cid);
+        }
+      }
+
+      let changed = false;
+      for (const d of domains) {
+        if (d.linkedContainerName && runningMap.has(d.linkedContainerName)) {
+          const currentId = runningMap.get(d.linkedContainerName)!;
+          if (d.linkedContainerId !== currentId) {
+            d.linkedContainerId = currentId;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await getFileLock(getDataFilePath('domains.json')).runExclusive(async () => {
+          await this.writeDomains(domains);
+        });
+      }
+    } catch {
+      // Docker daemon may not be running or accessible
+    }
+    return domains;
   }
 
   async updateDomainPath(id: string, newPath: string): Promise<Domain | null> {
@@ -607,16 +638,30 @@ export class DomainsService {
     const domain = domains.find((d) => d.id === id);
     if (!domain) return { success: false, message: 'Domain not found' };
 
-    const conflict = domains.find((d) => d.id !== id && d.linkedContainerId === containerId);
-    if (conflict) {
-      return { success: false, message: `This container is already linked to ${conflict.name}. Unlink it first.` };
-    }
-
     let containerMeta: { id: string; name: string; port?: number };
     try {
       containerMeta = await this.inspectContainer(containerId);
     } catch (e: any) {
-      return { success: false, message: `Container not found: ${e.message}` };
+      if (domain.linkedContainerName) {
+        try {
+          containerMeta = await this.inspectContainer(domain.linkedContainerName);
+        } catch {
+          return { success: false, message: `Container not found: ${e.message}` };
+        }
+      } else {
+        return { success: false, message: `Container not found: ${e.message}` };
+      }
+    }
+
+    const conflict = domains.find(
+      (d) => d.id !== id && (
+        d.linkedContainerId === containerId ||
+        (containerMeta && d.linkedContainerId === containerMeta.id) ||
+        (containerMeta && d.linkedContainerName && d.linkedContainerName === containerMeta.name)
+      )
+    );
+    if (conflict) {
+      return { success: false, message: `This container is already linked to ${conflict.name}. Unlink it first.` };
     }
 
     const resolvedPort = port ?? containerMeta.port;

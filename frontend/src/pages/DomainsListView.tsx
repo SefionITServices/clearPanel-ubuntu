@@ -199,7 +199,11 @@ export default function DomainsListView() {
         || (domain.linkedContainerId && domain.linkedContainerId.startsWith && domain.linkedContainerId.startsWith(c.id))
         || (c.id && c.id.startsWith && c.id.startsWith(domain.linkedContainerId))
       );
-      const matchedByName = list.find((c: any) => c.name === domain.name || c.name === domain.name.replace(/\./g, '-'));
+      const matchedByName = list.find((c: any) =>
+        (domain.linkedContainerName && (c.name === domain.linkedContainerName || c.name === `/${domain.linkedContainerName}`))
+        || c.name === domain.name
+        || c.name === domain.name.replace(/\./g, '-')
+      );
       const byFound = matchedById || matchedByName;
       if (byFound) {
         // Always use the container list id (short) for the select value
