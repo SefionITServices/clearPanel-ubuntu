@@ -332,72 +332,89 @@ class _ConversationViewState extends State<ConversationView> {
     return Container(
       height: 48,
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, size: 20),
-            tooltip: 'Back to list',
-            onPressed: widget.onBack,
-          ),
-          if (isMobile) const Spacer() else const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.archive_outlined, size: 20),
-            tooltip: 'Archive',
-            onPressed: () {
-              widget.state.toggleSelectThread(widget.thread.id);
-              widget.state.batchArchive();
-              widget.onBack();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            tooltip: 'Delete',
-            onPressed: () {
-              widget.state.toggleSelectThread(widget.thread.id);
-              widget.state.batchDelete();
-              widget.onBack();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.mark_email_unread_outlined, size: 20),
-            tooltip: 'Mark as unread',
-            onPressed: () {
-              widget.state.toggleSelectThread(widget.thread.id);
-              widget.state.batchMarkAsRead(false);
-              widget.onBack();
-            },
-          ),
-          IconButton(
-            icon: Icon(
-              widget.thread.isStarred ? Icons.star : Icons.star_border,
-              size: 20,
-              color: widget.thread.isStarred ? GmailColors.starActive : null,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 20),
+              tooltip: 'Back to list',
+              onPressed: widget.onBack,
             ),
-            tooltip: 'Star',
-            onPressed: () => widget.state.toggleStar(widget.thread),
-          ),
-          IconButton(
-            icon: Icon(
-              _contentScale > 1.0 ? Icons.zoom_out : Icons.zoom_in,
-              size: 20,
-              color: _contentScale > 1.0 ? GmailColors.googleBlue : null,
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.archive_outlined, size: 20),
+              tooltip: 'Archive',
+              onPressed: () {
+                widget.state.toggleSelectThread(widget.thread.id);
+                widget.state.batchArchive();
+                widget.onBack();
+              },
             ),
-            tooltip: 'Zoom text (${(_contentScale * 100).toInt()}%)',
-            onPressed: () {
-              setState(() {
-                if (_contentScale == 1.0) {
-                  _contentScale = 1.25;
-                } else if (_contentScale == 1.25) {
-                  _contentScale = 1.5;
-                } else if (_contentScale == 1.5) {
-                  _contentScale = 1.8;
-                } else {
-                  _contentScale = 1.0;
-                }
-              });
-            },
-          ),
-        ],
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              tooltip: 'Delete',
+              onPressed: () {
+                widget.state.toggleSelectThread(widget.thread.id);
+                widget.state.batchDelete();
+                widget.onBack();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.mark_email_unread_outlined, size: 20),
+              tooltip: 'Mark as unread',
+              onPressed: () {
+                widget.state.toggleSelectThread(widget.thread.id);
+                widget.state.batchMarkAsRead(false);
+                widget.onBack();
+              },
+            ),
+            IconButton(
+              icon: Icon(
+                widget.thread.isStarred ? Icons.star : Icons.star_border,
+                size: 20,
+                color: widget.thread.isStarred ? GmailColors.starActive : null,
+              ),
+              tooltip: 'Star',
+              onPressed: () => widget.state.toggleStar(widget.thread),
+            ),
+            IconButton(
+              icon: Icon(
+                _contentScale > 1.0 ? Icons.zoom_out : Icons.zoom_in,
+                size: 20,
+                color: _contentScale > 1.0 ? GmailColors.googleBlue : null,
+              ),
+              tooltip: 'Zoom text (${(_contentScale * 100).toInt()}%)',
+              onPressed: () {
+                setState(() {
+                  if (_contentScale == 1.0) {
+                    _contentScale = 1.25;
+                  } else if (_contentScale == 1.25) {
+                    _contentScale = 1.5;
+                  } else if (_contentScale == 1.5) {
+                    _contentScale = 1.8;
+                  } else {
+                    _contentScale = 1.0;
+                  }
+                });
+              },
+            ),
+            if (_contentScale > 1.0)
+              Container(
+                margin: const EdgeInsets.only(left: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: GmailColors.googleBlue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${(_contentScale * 100).toInt()}%',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: GmailColors.googleBlue),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -590,19 +607,12 @@ class _ConversationViewState extends State<ConversationView> {
             // Message Body
             Padding(
               padding: EdgeInsets.all(isMobile ? 14 : 20),
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 3.5,
-                clipBehavior: Clip.none,
-                panEnabled: false,
-                scaleEnabled: true,
-                child: isRawHtml
-                    ? SelectableText(
-                        msg.bodyHtml ?? '',
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 12 * _contentScale, height: 1.4),
-                      )
-                    : _buildFormattedContent(msg),
-              ),
+              child: isRawHtml
+                  ? SelectableText(
+                      msg.bodyHtml ?? '',
+                      style: TextStyle(fontFamily: 'monospace', fontSize: 12 * _contentScale, height: 1.4),
+                    )
+                  : _buildFormattedContent(msg),
             ),
 
             // Attachments

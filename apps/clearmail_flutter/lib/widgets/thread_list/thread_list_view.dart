@@ -53,7 +53,19 @@ class ThreadListView extends StatelessWidget {
               displacement: 40,
               edgeOffset: 0,
               child: state.isLoading && filteredThreads.isEmpty
-                  ? const Center(child: CircularProgressIndicator())
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.5,
+                          child: const Center(
+                            child: CircularProgressIndicator(color: GmailColors.googleBlue),
+                          ),
+                        ),
+                      ],
+                    )
                   : filteredThreads.isEmpty
                       ? ListView(
                           physics: const AlwaysScrollableScrollPhysics(

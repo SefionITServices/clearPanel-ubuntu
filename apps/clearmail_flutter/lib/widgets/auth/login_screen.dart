@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: _emailController,
                   focusNode: _emailFocusNode,
-                  autofocus: true,
+                  autofocus: false,
                   style: TextStyle(color: textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Email address',

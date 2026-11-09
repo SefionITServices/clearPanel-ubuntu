@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID, createHash } from 'crypto';
-import { exec } from 'node:child_process';
+import { exec, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { simpleParser, ParsedMail } from 'mailparser';
 import * as nodemailer from 'nodemailer';
@@ -16,6 +16,7 @@ import {
 import { getDataFilePath } from '../../common/paths';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class MailStorageService {
@@ -86,15 +87,39 @@ export class MailStorageService {
   async verifyCredentials(email: string, password: string): Promise<{ valid: boolean; email: string }> {
     const normalized = email.trim().toLowerCase();
 
-    // 1. Try doveadm auth test
+    // 1. Try doveadm auth test via sudo
     try {
-      const { stdout } = await execAsync(`doveadm auth test ${JSON.stringify(normalized)} ${JSON.stringify(password)}`);
+      const { stdout } = await execFileAsync('sudo', ['/usr/bin/doveadm', 'auth', 'test', normalized, password]);
       if (stdout.includes('auth succeeded') || stdout.includes('auth successful')) {
         return { valid: true, email: normalized };
       }
     } catch {}
 
-    // 2. Direct verify against /etc/clearpanel/mail/dovecot-users and /etc/clearpanel/mail/passwd
+    // Also try doveadm directly without sudo if available
+    try {
+      const { stdout } = await execFileAsync('doveadm', ['auth', 'test', normalized, password]);
+      if (stdout.includes('auth succeeded') || stdout.includes('auth successful')) {
+        return { valid: true, email: normalized };
+      }
+    } catch {}
+
+    // 2. Collect candidate password hashes from mail-domains.json, dovecot-users, and passwd
+    const candidateHashes: string[] = [];
+
+    // Check mail-domains.json
+    try {
+      const raw = await fs.readFile(getDataFilePath('mail-domains.json'), 'utf8');
+      const domains = JSON.parse(raw);
+      for (const d of domains) {
+        for (const mb of (d.mailboxes || [])) {
+          if (mb.email && mb.email.toLowerCase().trim() === normalized && mb.passwordHash) {
+            candidateHashes.push(mb.passwordHash.trim());
+          }
+        }
+      }
+    } catch {}
+
+    // Check /etc/clearpanel/mail/dovecot-users and /etc/clearpanel/mail/passwd
     const userFiles = ['/etc/clearpanel/mail/dovecot-users', '/etc/clearpanel/mail/passwd'];
     for (const filePath of userFiles) {
       try {
@@ -104,35 +129,63 @@ export class MailStorageService {
           const parts = line.split(':');
           if (parts[0] && parts[0].trim().toLowerCase() === normalized) {
             const passHash = parts[1]?.trim();
-            if (!passHash) continue;
-
-            if (passHash.startsWith('{PLAIN}')) {
-              if (passHash.replace('{PLAIN}', '') === password) {
-                return { valid: true, email: normalized };
-              }
+            if (passHash) {
+              candidateHashes.push(passHash);
             }
-
-            // Test scheme prefix with doveadm pw
-            const schemeHash = passHash.startsWith('{') ? passHash : `{SHA512-CRYPT}${passHash}`;
-            try {
-              await execAsync(`doveadm pw -t ${JSON.stringify(schemeHash)} -p ${JSON.stringify(password)}`);
-              return { valid: true, email: normalized };
-            } catch {}
-
-            // Standard Unix SHA-512 Crypt ($6$) via openssl
-            try {
-              const rawHash = passHash.replace(/^\{[A-Z0-9-]+\}/i, '');
-              const saltMatch = rawHash.match(/^\$6\$([^$]+)\$/);
-              if (saltMatch) {
-                const salt = saltMatch[1];
-                const { stdout } = await execAsync(`openssl passwd -6 -salt ${JSON.stringify(salt)} ${JSON.stringify(password)}`);
-                if (stdout.trim() === rawHash) {
-                  return { valid: true, email: normalized };
-                }
-              }
-            } catch {}
           }
         }
+      } catch {}
+    }
+
+    // 3. Test candidate hashes
+    for (const passHash of candidateHashes) {
+      if (passHash.startsWith('{PLAIN}')) {
+        if (passHash.replace('{PLAIN}', '') === password) {
+          return { valid: true, email: normalized };
+        }
+      }
+
+      if (!passHash.startsWith('$') && !passHash.startsWith('{') && passHash === password) {
+        return { valid: true, email: normalized };
+      }
+
+      // Test scheme prefix with sudo doveadm pw -t
+      const schemeHash = passHash.startsWith('{') ? passHash : `{SHA512-CRYPT}${passHash}`;
+      try {
+        await execFileAsync('sudo', ['/usr/bin/doveadm', 'pw', '-t', schemeHash, '-p', password]);
+        return { valid: true, email: normalized };
+      } catch {}
+
+      // Test Unix crypt ($6$ SHA-512) via openssl
+      const rawHash = passHash.replace(/^\{[A-Z0-9-]+\}/i, '');
+      const saltMatch = rawHash.match(/^\$6\$([^$]+)\$/);
+      if (saltMatch) {
+        const salt = saltMatch[1];
+        try {
+          const matched = await new Promise<boolean>((resolve) => {
+            const proc = spawn('openssl', ['passwd', '-6', '-salt', salt, '-stdin']);
+            let out = '';
+            proc.stdout.on('data', (d) => (out += d));
+            proc.on('close', (code) => resolve(code === 0 && out.trim() === rawHash));
+            proc.on('error', () => resolve(false));
+            proc.stdin.write(password);
+            proc.stdin.end();
+          });
+          if (matched) {
+            return { valid: true, email: normalized };
+          }
+        } catch {}
+      }
+
+      // Python3 crypt fallback
+      try {
+        await execFileAsync('python3', [
+          '-c',
+          'import crypt, sys; sys.exit(0 if crypt.crypt(sys.argv[1], sys.argv[2]) == sys.argv[2] else 1)',
+          password,
+          rawHash,
+        ]);
+        return { valid: true, email: normalized };
       } catch {}
     }
 

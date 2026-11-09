@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:ui';
 import 'dart:html' as html;
 import 'services/mail_api_service.dart';
 import 'services/mail_socket_service.dart';
@@ -107,6 +108,14 @@ class _ClearMailAppState extends State<ClearMailApp> {
         return MaterialApp(
           title: 'ClearMail - Business Email',
           debugShowCheckedModeBanner: false,
+          scrollBehavior: const MaterialScrollBehavior().copyWith(
+            dragDevices: {
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.trackpad,
+            },
+          ),
           theme: GmailTheme.lightTheme,
           darkTheme: GmailTheme.darkTheme,
           themeMode: _mailState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
@@ -220,11 +229,7 @@ class _ClearMailHomeState extends State<ClearMailHome> {
 
     final isMobile = MediaQuery.of(context).size.width < 768;
 
-    return KeyboardListener(
-      focusNode: _keyboardFocusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
+    final scaffold = Scaffold(
         key: _scaffoldKey,
         drawer: isMobile
             ? Drawer(
@@ -423,7 +428,17 @@ class _ClearMailHomeState extends State<ClearMailHome> {
               ),
           ],
         ),
-      ),
+      );
+
+    if (isMobile) {
+      return scaffold;
+    }
+
+    return KeyboardListener(
+      focusNode: _keyboardFocusNode,
+      autofocus: false,
+      onKeyEvent: _handleKeyEvent,
+      child: scaffold,
     );
   }
 
