@@ -589,6 +589,25 @@ export class MailController {
     return this.mailSsoService.generateSsoUrl(id, mailboxId);
   }
 
+  // ---- ClearMail SSO ----
+
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Post('clearmail-sso')
+  generateClearMailSso(@Body() body: { email: string }) {
+    if (!body?.email) {
+      throw new BadRequestException('email is required');
+    }
+    return this.mailSsoService.generateClearMailSso(body.email);
+  }
+
+  // ---- Deliverability Health Wizard ----
+
+  @SkipThrottle()
+  @Get('domains/:id/deliverability')
+  checkDeliverability(@Param('id') id: string) {
+    return this.mailService.checkDeliverability(id);
+  }
+
   @SkipThrottle()
   @Get('sso/verify')
   verifySsoToken(@Query('token') token: string) {

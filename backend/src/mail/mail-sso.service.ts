@@ -89,6 +89,34 @@ export class MailSsoService {
     return { url, token };
   }
 
+  /**
+   * Generate an SSO token and URL specifically for ClearMail (Flutter Gmail client)
+   */
+  async generateClearMailSso(email: string): Promise<{ url: string; token: string; email: string }> {
+    const normalized = email.trim().toLowerCase();
+    const payload: SsoPayload = {
+      email: normalized,
+      domainId: '',
+      mailboxId: '',
+      nonce: randomBytes(16).toString('hex'),
+      exp: Math.floor(Date.now() / 1000) + 300, // 5-minute valid window
+    };
+
+    const token = this.signPayload(payload);
+
+    // Build ClearMail URL
+    const explicit = this.config.get<string>('CLEARMAIL_URL')?.trim();
+    let url: string;
+    if (explicit) {
+      url = `${explicit.replace(/\/+$/, '')}/?sso_token=${encodeURIComponent(token)}`;
+    } else {
+      url = `/?sso_token=${encodeURIComponent(token)}`;
+    }
+
+    this.logger.log(`ClearMail SSO token issued for ${normalized}`);
+    return { url, token, email: normalized };
+  }
+
   // ── Token verification (used by the Roundcube plugin via HTTP) ──
 
   /**

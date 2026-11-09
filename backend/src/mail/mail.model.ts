@@ -98,3 +98,26 @@ export interface DmarcReportSummary {
   organizations: string[];
   topSenders: { ip: string; count: number }[];
 }
+
+// ---- Deliverability Health Wizard ----
+
+export interface DeliverabilityCheckItem {
+  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr';
+  name: string;
+  recordType: string;
+  expectedHost: string;
+  expectedValue: string;
+  currentValue?: string | null;
+  status: 'pass' | 'warn' | 'fail';
+  description: string;
+  recommendation: string;
+}
+
+export interface DeliverabilityReport {
+  domain: string;
+  serverIp: string;
+  score: number; // 0-100
+  rating: 'excellent' | 'good' | 'critical';
+  checkedAt: string;
+  items: DeliverabilityCheckItem[];
+}

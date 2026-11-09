@@ -47,8 +47,10 @@ import {
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
   OpenInNew as OpenInNewIcon,
+  Shield as ShieldIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
+import { DeliverabilityWizardModal } from '../components/mail/DeliverabilityWizardModal';
 import {
   mailAPI,
   MailDomain,
@@ -163,6 +165,10 @@ export default function EmailAccountsPage() {
   // Client settings dialog
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsMailbox, setSettingsMailbox] = useState<FlatMailbox | null>(null);
+
+  // Deliverability wizard dialog
+  const [deliverabilityOpen, setDeliverabilityOpen] = useState(false);
+  const [selectedDeliverabilityDomain, setSelectedDeliverabilityDomain] = useState<{ id: string; domain: string } | null>(null);
 
   // -- state: form fields --------------------------------------------------
   const [newLocalPart, setNewLocalPart] = useState('');
@@ -359,7 +365,21 @@ export default function EmailAccountsPage() {
     }
   };
 
-  // -- handlers: webmail SSO -----------------------------------------------
+  // -- handlers: ClearMail & webmail SSO -----------------------------------
+  const handleLaunchClearMail = async (email: string) => {
+    try {
+      const res = await mailAPI.getClearMailSso(email);
+      let targetUrl = res.url;
+      if (!targetUrl.startsWith('http')) {
+        const host = window.location.hostname;
+        targetUrl = `http://${host}:7510/?sso_token=${encodeURIComponent(res.token)}`;
+      }
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      setSnack({ open: true, message: err.message || 'Failed to generate ClearMail SSO session', severity: 'error' });
+    }
+  };
+
   const handleWebmail = async () => {
     if (!selectedMailbox) return;
     closeMenu();
@@ -399,6 +419,32 @@ export default function EmailAccountsPage() {
           <Typography variant="h4" sx={{ fontWeight: 700, flexGrow: 1 }}>
             Email Accounts
           </Typography>
+          <Button
+            variant="outlined"
+            startIcon={<ShieldIcon sx={{ color: '#34A853' }} />}
+            sx={{ textTransform: 'none', color: '#1a73e8', borderColor: '#1a73e8', fontWeight: 600 }}
+            onClick={() => {
+              if (domains.length > 0 && !selectedDeliverabilityDomain) {
+                setSelectedDeliverabilityDomain({ id: domains[0].id, domain: domains[0].domain });
+              }
+              setDeliverabilityOpen(true);
+            }}
+            disabled={domains.length === 0}
+          >
+            Deliverability Health
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<EmailIcon sx={{ color: '#EA4335' }} />}
+            sx={{ textTransform: 'none', color: '#EA4335', borderColor: '#EA4335', fontWeight: 600 }}
+            onClick={() => {
+              const first = allMailboxes.length > 0 ? allMailboxes[0].email : '';
+              if (first) handleLaunchClearMail(first);
+              else window.open(`http://${window.location.hostname}:7510/`, '_blank');
+            }}
+          >
+            ClearMail App
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -630,6 +676,20 @@ export default function EmailAccountsPage() {
                             </Typography>
                           </TableCell>
                           <TableCell>
+                            <Tooltip title="Open in ClearMail (1-Click SSO)">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleLaunchClearMail(mb.email)}
+                                sx={{
+                                  mr: 0.5,
+                                  bgcolor: '#e8f0fe',
+                                  color: '#1a73e8',
+                                  '&:hover': { bgcolor: '#d2e3fc' },
+                                }}
+                              >
+                                <EmailIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </Tooltip>
                             <IconButton size="small" onClick={(e) => openMenu(e, mb)}>
                               <MoreVertIcon />
                             </IconButton>
@@ -818,9 +878,19 @@ export default function EmailAccountsPage() {
           <CopyIcon sx={{ mr: 1, fontSize: 20 }} />
           Client Settings
         </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (selectedMailbox) handleLaunchClearMail(selectedMailbox.email);
+            closeMenu();
+          }}
+          sx={{ color: '#1a73e8', fontWeight: 600 }}
+        >
+          <EmailIcon sx={{ mr: 1, fontSize: 20, color: '#1a73e8' }} />
+          Open in ClearMail
+        </MenuItem>
         <MenuItem onClick={handleWebmail}>
           <OpenInNewIcon sx={{ mr: 1, fontSize: 20 }} />
-          Access Webmail
+          Legacy Roundcube Webmail
         </MenuItem>
         <Divider />
         <MenuItem
@@ -967,6 +1037,16 @@ export default function EmailAccountsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ===== Deliverability Health Wizard Dialog ===== */}
+      <DeliverabilityWizardModal
+        open={deliverabilityOpen}
+        onClose={() => setDeliverabilityOpen(false)}
+        domainId={selectedDeliverabilityDomain?.id || (domains.length > 0 ? domains[0].id : '')}
+        domainName={selectedDeliverabilityDomain?.domain || (domains.length > 0 ? domains[0].domain : '')}
+        allDomains={domains.map((d) => ({ id: d.id, domain: d.domain }))}
+        onSelectDomain={(id, domain) => setSelectedDeliverabilityDomain({ id, domain })}
+      />
 
       {/* ===== Snackbar ===== */}
       <Snackbar

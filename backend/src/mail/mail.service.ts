@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as dns from 'dns/promises';
 import { randomUUID } from 'crypto';
-import { MailAlias, MailDomain, Mailbox } from './mail.model';
+import { MailAlias, MailDomain, Mailbox, DeliverabilityReport, DeliverabilityCheckItem } from './mail.model';
 import { MailAutomationService, AutomationLog, DkimResult } from './mail-automation.service';
 import { MailHistoryService, MailAutomationScope, MailAutomationHistoryRecord } from './mail-history.service';
 import { MailStatusService, MailMetrics } from './mail-status.service';
@@ -1566,5 +1567,251 @@ export class MailService {
     const cleaned = url?.trim() || null;
     await this.serverSettings.updateSettings({ webmailUrl: cleaned ?? undefined });
     return cleaned;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deliverability Health Wizard
+  // ---------------------------------------------------------------------------
+
+  async checkDeliverability(domainId: string): Promise<DeliverabilityReport> {
+    const domains = await this.readDomains();
+    const domain = domains.find(d => d.id === domainId || d.domain.toLowerCase() === domainId.toLowerCase());
+    if (!domain) throw new BadRequestException('Mail domain not found');
+
+    const serverIp = await this.serverSettings.getServerIp();
+    const targetDomain = domain.domain.toLowerCase().trim();
+    const dkimSelector = domain.dkimSelector || 'default';
+    const checkedAt = new Date().toISOString();
+
+    const items: DeliverabilityCheckItem[] = [];
+
+    // 1. Check MX Record
+    const expectedMx = `mail.${targetDomain}`;
+    let mxStatus: 'pass' | 'warn' | 'fail' = 'fail';
+    let currentMx: string | null = null;
+    let mxDesc = 'Primary mail exchanger (routing inbound mail to your server).';
+    let mxRec = `Configure MX record with Priority 10 pointing to ${expectedMx}.`;
+
+    try {
+      const mxRecords = await dns.resolveMx(targetDomain);
+      if (mxRecords && mxRecords.length > 0) {
+        currentMx = mxRecords.map(m => `${m.exchange} (pri ${m.priority})`).join(', ');
+        const matchesServer = mxRecords.some(m =>
+          m.exchange.toLowerCase() === expectedMx.toLowerCase() ||
+          m.exchange.toLowerCase().includes(targetDomain)
+        );
+        if (matchesServer) {
+          mxStatus = 'pass';
+          mxRec = 'MX records are properly configured and point to your server.';
+        } else {
+          mxStatus = 'warn';
+          mxRec = `MX points to an external server (${currentMx}). If this domain sends mail from ClearPanel, point MX to ${expectedMx}.`;
+        }
+      }
+    } catch {
+      mxStatus = 'fail';
+      currentMx = null;
+      mxRec = `No MX records found for ${targetDomain}. Inbound mail will fail to deliver. Add MX 10 -> ${expectedMx}`;
+    }
+
+    items.push({
+      id: 'mx',
+      name: 'Mail Exchanger (MX)',
+      recordType: 'MX',
+      expectedHost: '@',
+      expectedValue: `${expectedMx} (priority 10)`,
+      currentValue: currentMx,
+      status: mxStatus,
+      description: mxDesc,
+      recommendation: mxRec,
+    });
+
+    // 2. Check SPF Record
+    const expectedSpf = `v=spf1 mx a ip4:${serverIp} ~all`;
+    let spfStatus: 'pass' | 'warn' | 'fail' = 'fail';
+    let currentSpf: string | null = null;
+    let spfDesc = 'Authorizes your server IP to send outbound emails on behalf of this domain.';
+    let spfRec = `Publish TXT @ with value "${expectedSpf}".`;
+
+    try {
+      const txtRecords = await dns.resolveTxt(targetDomain);
+      const flattened = txtRecords.map(chunks => chunks.join(''));
+      const spf = flattened.find(t => t.toLowerCase().startsWith('v=spf1'));
+      if (spf) {
+        currentSpf = spf;
+        const includesIp = spf.includes(serverIp) || spf.includes('mx') || spf.includes('a');
+        const hasPolicy = spf.includes('~all') || spf.includes('-all');
+        if (includesIp && hasPolicy) {
+          spfStatus = 'pass';
+          spfRec = 'SPF record is active and authorizes this server.';
+        } else {
+          spfStatus = 'warn';
+          spfRec = `SPF record exists but does not explicitly whitelist ${serverIp}. Update to "${expectedSpf}".`;
+        }
+      }
+    } catch {
+      spfStatus = 'fail';
+      currentSpf = null;
+      spfRec = `No SPF record found. Major providers (Gmail, Microsoft) will reject or spam your emails. Add TXT @ -> "${expectedSpf}"`;
+    }
+
+    items.push({
+      id: 'spf',
+      name: 'Sender Policy Framework (SPF)',
+      recordType: 'TXT',
+      expectedHost: '@',
+      expectedValue: expectedSpf,
+      currentValue: currentSpf,
+      status: spfStatus,
+      description: spfDesc,
+      recommendation: spfRec,
+    });
+
+    // 3. Check DKIM Record
+    const dkimHost = `${dkimSelector}._domainkey.${targetDomain}`;
+    let dkimStatus: 'pass' | 'warn' | 'fail' = 'fail';
+    let currentDkim: string | null = null;
+    const expectedDkim = domain.dkimPublicKey || 'v=DKIM1; k=rsa; p=...';
+    let dkimDesc = 'Cryptographically signs outbound emails to verify sender authenticity and prevent tampering.';
+    let dkimRec = `Publish TXT at ${dkimSelector}._domainkey with your public DKIM key.`;
+
+    try {
+      const dkimTxtRecords = await dns.resolveTxt(dkimHost);
+      const dkimFlattened = dkimTxtRecords.map(chunks => chunks.join(''));
+      const dkimTxt = dkimFlattened.find(t => t.includes('v=DKIM1') || t.includes('p='));
+      if (dkimTxt) {
+        currentDkim = dkimTxt;
+        if (domain.dkimPublicKey && (dkimTxt === domain.dkimPublicKey || dkimTxt.includes(domain.dkimPublicKey.substring(10, 40)))) {
+          dkimStatus = 'pass';
+          dkimRec = 'DKIM public key is active and matches server private key.';
+        } else {
+          dkimStatus = 'warn';
+          dkimRec = 'DKIM record found in DNS, but key does not match local server key. Re-export or rotate DKIM.';
+        }
+      }
+    } catch {
+      dkimStatus = 'fail';
+      currentDkim = null;
+      dkimRec = `No DKIM record found at ${dkimHost}. Outbound emails will fail cryptographic validation.`;
+    }
+
+    items.push({
+      id: 'dkim',
+      name: 'DomainKeys Identified Mail (DKIM)',
+      recordType: 'TXT',
+      expectedHost: `${dkimSelector}._domainkey`,
+      expectedValue: expectedDkim,
+      currentValue: currentDkim,
+      status: dkimStatus,
+      description: dkimDesc,
+      recommendation: dkimRec,
+    });
+
+    // 4. Check DMARC Record
+    const dmarcHost = `_dmarc.${targetDomain}`;
+    const expectedDmarc = `v=DMARC1; p=quarantine; rua=mailto:abuse@${targetDomain}; fo=1`;
+    let dmarcStatus: 'pass' | 'warn' | 'fail' = 'fail';
+    let currentDmarc: string | null = null;
+    let dmarcDesc = 'Instructs recipient servers how to handle emails failing SPF/DKIM and reports spoofing attempts.';
+    let dmarcRec = `Publish TXT at _dmarc with value "${expectedDmarc}".`;
+
+    try {
+      const dmarcRecords = await dns.resolveTxt(dmarcHost);
+      const dmarcFlattened = dmarcRecords.map(chunks => chunks.join(''));
+      const dmarcTxt = dmarcFlattened.find(t => t.toLowerCase().startsWith('v=dmarc1'));
+      if (dmarcTxt) {
+        currentDmarc = dmarcTxt;
+        if (dmarcTxt.includes('p=quarantine') || dmarcTxt.includes('p=reject')) {
+          dmarcStatus = 'pass';
+          dmarcRec = 'DMARC policy is strict and protects your domain against spoofing.';
+        } else {
+          dmarcStatus = 'warn';
+          dmarcRec = 'DMARC is in monitor-only mode (p=none). Upgrade to p=quarantine or p=reject for maximum inbox delivery.';
+        }
+      }
+    } catch {
+      dmarcStatus = 'fail';
+      currentDmarc = null;
+      dmarcRec = `No DMARC record found at ${dmarcHost}. Google Workspace enforces DMARC since Feb 2024. Add TXT _dmarc -> "${expectedDmarc}"`;
+    }
+
+    items.push({
+      id: 'dmarc',
+      name: 'DMARC Policy',
+      recordType: 'TXT',
+      expectedHost: '_dmarc',
+      expectedValue: expectedDmarc,
+      currentValue: currentDmarc,
+      status: dmarcStatus,
+      description: dmarcDesc,
+      recommendation: dmarcRec,
+    });
+
+    // 5. Check Reverse DNS (PTR) Record
+    let ptrStatus: 'pass' | 'warn' | 'fail' = 'warn';
+    let currentPtr: string | null = null;
+    const expectedPtr = `mail.${targetDomain}`;
+    let ptrDesc = 'Verifies that server IP matches your mail domain hostname (crucial for Yahoo/Outlook/Gmail deliverability).';
+    let ptrRec = `Set Reverse DNS (PTR record) for IP ${serverIp} to "${expectedPtr}" in your VPS hosting control panel.`;
+
+    try {
+      const ptrRecords = await dns.reverse(serverIp);
+      if (ptrRecords && ptrRecords.length > 0) {
+        currentPtr = ptrRecords.join(', ');
+        if (ptrRecords.some(p => p.toLowerCase().includes(targetDomain) || p.toLowerCase().includes('mail'))) {
+          ptrStatus = 'pass';
+          ptrRec = `PTR record is valid (${currentPtr}).`;
+        } else {
+          ptrStatus = 'warn';
+          ptrRec = `PTR record points to "${currentPtr}". For optimal deliverability, point PTR to "${expectedPtr}".`;
+        }
+      }
+    } catch {
+      ptrStatus = 'warn';
+      currentPtr = null;
+      ptrRec = `No PTR record found for server IP ${serverIp}. Set PTR in your hosting provider's networking dashboard.`;
+    }
+
+    items.push({
+      id: 'ptr',
+      name: 'Reverse DNS (PTR)',
+      recordType: 'PTR',
+      expectedHost: serverIp,
+      expectedValue: expectedPtr,
+      currentValue: currentPtr,
+      status: ptrStatus,
+      description: ptrDesc,
+      recommendation: ptrRec,
+    });
+
+    // Calculate Deliverability Score (0 - 100)
+    // Weights: MX (25%), SPF (25%), DKIM (25%), DMARC (15%), PTR (10%)
+    const weights: Record<string, number> = {
+      mx: 25,
+      spf: 25,
+      dkim: 25,
+      dmarc: 15,
+      ptr: 10,
+    };
+
+    let score = 0;
+    for (const item of items) {
+      const w = weights[item.id] || 0;
+      if (item.status === 'pass') score += w;
+      else if (item.status === 'warn') score += Math.round(w * 0.5);
+    }
+
+    let rating: 'excellent' | 'good' | 'critical' = 'critical';
+    if (score >= 90) rating = 'excellent';
+    else if (score >= 65) rating = 'good';
+
+    return {
+      domain: targetDomain,
+      serverIp,
+      score,
+      rating,
+      checkedAt,
+      items,
+    };
   }
 }

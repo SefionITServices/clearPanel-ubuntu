@@ -318,6 +318,27 @@ export interface DmarcReportSummary {
   topSenders: { ip: string; count: number }[];
 }
 
+export interface DeliverabilityCheckItem {
+  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr';
+  name: string;
+  recordType: string;
+  expectedHost: string;
+  expectedValue: string;
+  currentValue?: string | null;
+  status: 'pass' | 'warn' | 'fail';
+  description: string;
+  recommendation: string;
+}
+
+export interface DeliverabilityReport {
+  domain: string;
+  serverIp: string;
+  score: number;
+  rating: 'excellent' | 'good' | 'critical';
+  checkedAt: string;
+  items: DeliverabilityCheckItem[];
+}
+
 const API_BASE = '/api/mail';
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
@@ -633,6 +654,22 @@ export const mailAPI = {
     return fetchJSON<{ url: string; token: string }>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/sso`, {
       method: 'POST',
     });
+  },
+
+  // ---- ClearMail SSO ----
+
+  async getClearMailSso(email: string): Promise<{ url: string; token: string; email: string }> {
+    return fetchJSON<{ url: string; token: string; email: string }>(`${API_BASE}/clearmail-sso`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  // ---- Deliverability Health Wizard ----
+
+  async checkDeliverability(domainId: string): Promise<DeliverabilityReport> {
+    return fetchJSON<DeliverabilityReport>(`${API_BASE}/domains/${domainId}/deliverability`);
   },
 
   // ---- Webmail URL ----
