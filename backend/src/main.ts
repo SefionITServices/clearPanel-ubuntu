@@ -106,11 +106,20 @@ async function bootstrap() {
 
   // Serve static frontend files (including ClearMail web client) with cache headers
   const isProd = config.get<string>('NODE_ENV') === 'production';
+  const htmlNoCacheHeaders = (res: any, filePath: string) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  };
+
   app.useStaticAssets(join(__dirname, '..', 'public'), {
     maxAge: isProd ? '7d' : 0,
     immutable: isProd,
     etag: true,
     lastModified: true,
+    setHeaders: htmlNoCacheHeaders,
   });
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
 
@@ -121,6 +130,7 @@ async function bootstrap() {
       prefix: '/clearmail/',
       maxAge: isProd ? '7d' : 0,
       immutable: isProd,
+      setHeaders: htmlNoCacheHeaders,
     });
   } catch {
     Logger.warn('ClearMail web build directory not mounted', 'Bootstrap');
