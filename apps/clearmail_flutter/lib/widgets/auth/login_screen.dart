@@ -12,8 +12,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: 'admin@clearpanel.local');
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
   bool _obscurePassword = true;
   String? _error;
 
@@ -21,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -42,22 +46,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = widget.state.isDarkMode;
+    final cardBg = isDark ? const Color(0xFF1E1F20) : Colors.white;
+    final borderCol = isDark ? const Color(0xFF444746) : Colors.grey.shade300;
+    final textPrimary = isDark ? Colors.white : GmailColors.textDark;
+    final textSecondary = isDark ? const Color(0xFFC4C7C5) : GmailColors.textSnippet;
+    final scaffoldBg = isDark ? const Color(0xFF131314) : const Color(0xFFF0F4F9);
+
     return Scaffold(
-      backgroundColor: GmailColors.scaffoldBackground,
+      backgroundColor: scaffoldBg,
       body: Center(
         child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Container(
             width: 440,
             padding: const EdgeInsets.all(40),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              color: cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: borderCol),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
@@ -65,154 +77,171 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo & Title
+                // Logo & Product Title
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(9),
                       decoration: BoxDecoration(
                         color: GmailColors.googleRed.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.mail, color: GmailColors.googleRed, size: 28),
+                      child: const Icon(Icons.mail_rounded, color: GmailColors.googleRed, size: 28),
                     ),
-                    const SizedBox(width: 12),
-                    const Text(
+                    const SizedBox(width: 14),
+                    Text(
                       'ClearMail',
                       style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: GmailColors.textDark,
-                        letterSpacing: -0.3,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: textPrimary,
+                        letterSpacing: -0.4,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 28),
 
-                const Text(
+                Text(
                   'Sign in',
                   style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w500,
-                    color: GmailColors.textDark,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                    color: textPrimary,
+                    letterSpacing: -0.2,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'to continue to your Business Email on ClearPanel',
-                  style: TextStyle(fontSize: 14, color: GmailColors.textSnippet),
+                Text(
+                  'to access your business email account',
+                  style: TextStyle(fontSize: 14, color: textSecondary),
                 ),
                 const SizedBox(height: 24),
 
+                // Error Feedback Banner
                 if (_error != null) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade200),
+                      color: isDark ? const Color(0xFF3C1F1E) : Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isDark ? Colors.red.shade900 : Colors.red.shade200),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 18),
-                        const SizedBox(width: 8),
+                        const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             _error!,
-                            style: const TextStyle(fontSize: 13, color: Colors.red),
+                            style: const TextStyle(fontSize: 13, color: Colors.redAccent, fontWeight: FontWeight.w500),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                 ],
 
-                // Email Field
+                // Email Address Field
                 TextField(
                   controller: _emailController,
+                  focusNode: _emailFocusNode,
+                  autofocus: true,
+                  style: TextStyle(color: textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Email address',
                     hintText: 'user@yourdomain.com',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    prefixIcon: Icon(Icons.alternate_email_rounded, color: textSecondary, size: 20),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: borderCol),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: GmailColors.googleBlue, width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                   keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  onSubmitted: (_) => _passwordFocusNode.requestFocus(),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
                 // Password Field
                 TextField(
                   controller: _passwordController,
+                  focusNode: _passwordFocusNode,
                   obscureText: _obscurePassword,
+                  style: TextStyle(color: textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    hintText: 'Enter your password',
+                    prefixIcon: Icon(Icons.lock_outline_rounded, color: textSecondary, size: 20),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: borderCol),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: GmailColors.googleBlue, width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                         size: 20,
-                        color: Colors.grey,
+                        color: textSecondary,
                       ),
                       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
+                  textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _handleLogin(),
                 ),
                 const SizedBox(height: 28),
 
-                // Action Buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        // Demo auto-fill
-                        setState(() {
-                          _emailController.text = 'admin@clearpanel.local';
-                          _passwordController.text = 'password';
-                        });
-                      },
-                      child: const Text('Fill Demo Account'),
+                // Action Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: widget.state.isLoading ? null : _handleLogin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: GmailColors.googleBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
                     ),
-                    ElevatedButton(
-                      onPressed: widget.state.isLoading ? null : _handleLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: GmailColors.googleBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                      child: widget.state.isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Text(
-                              'Sign In',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                    ),
-                  ],
+                    child: widget.state.isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                          )
+                        : const Text(
+                            'Sign In',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                  ),
                 ),
 
                 const SizedBox(height: 32),
-                const Divider(),
-                const SizedBox(height: 12),
+                Divider(color: borderCol),
+                const SizedBox(height: 16),
 
                 // Security Shield Notice
-                const Row(
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.shield_outlined, size: 16, color: GmailColors.googleGreen),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Secured by ClearPanel Postfix, Dovecot & TLS 1.3',
-                        style: TextStyle(fontSize: 12, color: GmailColors.textMuted),
-                      ),
+                    const Icon(Icons.verified_user_outlined, size: 16, color: GmailColors.googleGreen),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Secured by ClearPanel Postfix, Dovecot & TLS 1.3',
+                      style: TextStyle(fontSize: 12, color: textSecondary),
                     ),
                   ],
                 ),
@@ -224,4 +253,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

@@ -1,4 +1,12 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy, forwardRef, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+  forwardRef,
+  Inject,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -98,7 +106,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   async authenticate(email: string, pass: string): Promise<{ token: string; email: string }> {
     const res = await this.storageService.verifyCredentials(email, pass);
     if (!res.valid) {
-      throw new Error('Invalid email address or password');
+      throw new UnauthorizedException('Invalid email address or password');
     }
     const token = Buffer.from(JSON.stringify({ email: res.email, ts: Date.now() })).toString('base64');
     return { token, email: res.email };
@@ -148,13 +156,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       }
     } catch {}
 
-    // Ingest physical messages
+    // Ingest physical messages from Maildir and mbox
     await this.syncFromMaildir(normalized, store);
-
-    // If still 0 messages, seed initial welcome message
-    if (store.messages.size === 0) {
-      this.seedInitialMessages(normalized, store);
-    }
 
     await this.saveStore(normalized, store);
     this.stores.set(normalized, store);
@@ -241,76 +244,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
   private sanitizeFilename(input: string): string {
     return input.replace(/[^a-zA-Z0-9._-]/g, '_');
-  }
-
-  // ---------------------------------------------------------------------------
-  // Demo Seed Data
-  // ---------------------------------------------------------------------------
-
-  private seedInitialMessages(mailboxEmail: string, store: MailboxStore) {
-    const now = Date.now();
-    const domain = mailboxEmail.split('@')[1] || 'clearpanel.local';
-
-    const msg1Id = randomUUID();
-    const th1Id = randomUUID();
-    const msg1: EmailMessage = {
-      id: msg1Id,
-      threadId: th1Id,
-      mailboxEmail,
-      folder: 'inbox',
-      labels: ['Important', 'System'],
-      from: { name: 'ClearPanel Postmaster', email: `postmaster@${domain}` },
-      to: [{ name: mailboxEmail.split('@')[0], email: mailboxEmail }],
-      subject: 'Welcome to your ClearPanel Business Email',
-      snippet: 'Your business mailbox is active. SPF, DKIM, and DMARC have been configured for maximum deliverability...',
-      bodyHtml: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #202124;">
-          <h2 style="color: #1a73e8;">Welcome to ClearPanel Business Email</h2>
-          <p>Congratulations! Your business email on <strong>${domain}</strong> is fully set up and ready to use.</p>
-          <div style="background-color: #f1f3f4; padding: 16px; border-radius: 8px; margin: 16px 0;">
-            <h4 style="margin-top: 0; color: #137333;">✓ Deliverability Shield Active</h4>
-            <ul style="margin-bottom: 0; padding-left: 20px;">
-              <li><strong>SPF Record:</strong> Pass</li>
-              <li><strong>DKIM 2048-bit Signature:</strong> Valid</li>
-              <li><strong>DMARC Alignment:</strong> 100% Protected</li>
-              <li><strong>TLS 1.3:</strong> In-transit encryption enabled</li>
-            </ul>
-          </div>
-          <p>Enjoy lightning-fast email sync, conversation threading, attachments, and real-time push.</p>
-          <p style="color: #5f6368; font-size: 13px;">— The ClearPanel Team</p>
-        </div>
-      `,
-      bodyText: `Welcome to ClearPanel Business Email!\nYour business mailbox is active with full SPF, DKIM, and DMARC deliverability.`,
-      isRead: false,
-      isStarred: true,
-      hasAttachments: false,
-      security: {
-        spf: 'pass',
-        dkim: 'pass',
-        dmarc: 'pass',
-        tlsVersion: 'TLSv1.3',
-        signedBy: domain,
-      },
-      date: new Date(now - 1000 * 60 * 15).toISOString(),
-      size: 4096,
-    };
-
-    const th1: EmailThread = {
-      id: th1Id,
-      subject: msg1.subject,
-      snippet: msg1.snippet,
-      lastMessageDate: msg1.date,
-      messageCount: 1,
-      unreadCount: 1,
-      participants: [msg1.from],
-      folder: 'inbox',
-      labels: msg1.labels,
-      hasAttachments: false,
-      isStarred: true,
-    };
-
-    store.messages.set(msg1Id, msg1);
-    store.threads.set(th1Id, th1);
   }
 
   // ---------------------------------------------------------------------------
@@ -870,12 +803,31 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       usedBytes += m.size || 2048;
     }
 
+    let quotaMb = 1024; // Default 1GB
+    try {
+      const data = await fs.readFile(getDataFilePath('mail-domains.json'), 'utf8');
+      const domains = JSON.parse(data);
+      if (Array.isArray(domains)) {
+        for (const dom of domains) {
+          if (Array.isArray(dom.mailboxes)) {
+            const found = dom.mailboxes.find(
+              (m: any) => m.email && m.email.trim().toLowerCase() === mailboxEmail.trim().toLowerCase(),
+            );
+            if (found && typeof found.quotaMb === 'number' && found.quotaMb > 0) {
+              quotaMb = found.quotaMb;
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+
     return {
       mailboxEmail,
       unreadCount,
       totalThreads: store.threads.size,
       usedBytes,
-      quotaBytes: 15 * 1024 * 1024 * 1024,
+      quotaBytes: quotaMb * 1024 * 1024,
       foldersCount,
     };
   }

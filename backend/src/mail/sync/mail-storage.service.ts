@@ -86,30 +86,40 @@ export class MailStorageService {
   async verifyCredentials(email: string, password: string): Promise<{ valid: boolean; email: string }> {
     const normalized = email.trim().toLowerCase();
 
+    // 1. Try doveadm auth test
     try {
       const { stdout } = await execAsync(`doveadm auth test ${JSON.stringify(normalized)} ${JSON.stringify(password)}`);
-      if (stdout.includes('auth successful') || stdout.includes('passdb:')) {
+      if (stdout.includes('auth succeeded') || stdout.includes('auth successful')) {
         return { valid: true, email: normalized };
       }
     } catch {}
 
-    try {
-      const content = await fs.readFile('/etc/clearpanel/mail/dovecot-users', 'utf8');
-      const lines = content.split('\n');
-      for (const line of lines) {
-        const parts = line.split(':');
-        if (parts[0] && parts[0].trim().toLowerCase() === normalized) {
-          const passHash = parts[1]?.trim();
-          if (passHash) {
+    // 2. Direct verify against /etc/clearpanel/mail/dovecot-users and /etc/clearpanel/mail/passwd
+    const userFiles = ['/etc/clearpanel/mail/dovecot-users', '/etc/clearpanel/mail/passwd'];
+    for (const filePath of userFiles) {
+      try {
+        const content = await fs.readFile(filePath, 'utf8');
+        const lines = content.split('\n');
+        for (const line of lines) {
+          const parts = line.split(':');
+          if (parts[0] && parts[0].trim().toLowerCase() === normalized) {
+            const passHash = parts[1]?.trim();
+            if (!passHash) continue;
+
             if (passHash.startsWith('{PLAIN}')) {
               if (passHash.replace('{PLAIN}', '') === password) {
                 return { valid: true, email: normalized };
               }
             }
+
+            // Test scheme prefix with doveadm pw
+            const schemeHash = passHash.startsWith('{') ? passHash : `{SHA512-CRYPT}${passHash}`;
             try {
-              await execAsync(`doveadm pw -t ${JSON.stringify(passHash)} -p ${JSON.stringify(password)}`);
+              await execAsync(`doveadm pw -t ${JSON.stringify(schemeHash)} -p ${JSON.stringify(password)}`);
               return { valid: true, email: normalized };
             } catch {}
+
+            // Standard Unix SHA-512 Crypt ($6$) via openssl
             try {
               const rawHash = passHash.replace(/^\{[A-Z0-9-]+\}/i, '');
               const saltMatch = rawHash.match(/^\$6\$([^$]+)\$/);
@@ -123,11 +133,7 @@ export class MailStorageService {
             } catch {}
           }
         }
-      }
-    } catch {}
-
-    if (normalized.endsWith('@clearpanel.local') || normalized === 'admin@clearpanel.local') {
-      return { valid: true, email: normalized };
+      } catch {}
     }
 
     return { valid: false, email: normalized };
@@ -532,12 +538,13 @@ export class MailStorageService {
     const fileName = `${Date.now()}.${draftId}:2,DS`;
     const filePath = path.join(draftsDir, fileName);
 
+    const domain = mailboxEmail.split('@')[1] || 'mail';
     const raw = [
       `From: ${mailboxEmail}`,
       `To: ${(draft.to || []).map((t) => (t.name ? `"${t.name}" <${t.email}>` : t.email)).join(', ')}`,
       `Subject: ${draft.subject || '(No Subject)'}`,
       `Date: ${new Date().toUTCString()}`,
-      `Message-ID: <${draftId}@clearmail.local>`,
+      `Message-ID: <${draftId}@${domain}>`,
       'Content-Type: text/html; charset=utf-8',
       '',
       draft.bodyHtml || draft.bodyText || '',

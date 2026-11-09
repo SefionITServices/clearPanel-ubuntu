@@ -236,12 +236,10 @@ class _GmailHeaderState extends State<GmailHeader> {
 
           // User Profile Avatar Chip
           PopupMenuButton<String>(
-            tooltip: 'ClearPanel Account',
+            tooltip: 'ClearMail Account',
             onSelected: (val) {
               if (val == '__logout__') {
                 widget.state.logout();
-              } else {
-                widget.state.switchMailbox(val);
               }
             },
             itemBuilder: (ctx) => [
@@ -257,20 +255,6 @@ class _GmailHeaderState extends State<GmailHeader> {
                     ),
                   ],
                 ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'admin@clearpanel.local',
-                child: Text('Switch: admin@clearpanel.local'),
-              ),
-              const PopupMenuItem(
-                value: 'sarah@clearpanel.local',
-                child: Text('Switch: sarah@clearpanel.local'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'alex@clearpanel.local',
-                child: Text('Switch: alex@clearpanel.local'),
               ),
               const PopupMenuDivider(),
               const PopupMenuItem(

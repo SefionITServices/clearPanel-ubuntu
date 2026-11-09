@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:html' as html;
 import '../models/email_models.dart';
 import '../services/mail_api_service.dart';
 import '../services/mail_socket_service.dart';
@@ -68,6 +70,7 @@ class MailState extends ChangeNotifier {
   Future<void> initAuthAndLoad({String? ssoToken}) async {
     _initSocket();
 
+    // 1. If opened with SSO token (?sso_token=...), authenticate via SSO
     if (ssoToken != null && ssoToken.isNotEmpty) {
       final success = await handleSso(ssoToken);
       if (success) {
@@ -77,21 +80,30 @@ class MailState extends ChangeNotifier {
       }
     }
 
+    // 2. Load preferences (theme, layout)
     try {
       final prefs = await SharedPreferences.getInstance();
       _isDarkMode = prefs.getBool('clearmail_dark_mode') ?? false;
       _isSplitView = prefs.getBool('clearmail_split_view') ?? false;
-      final savedEmail = prefs.getString('clearmail_user_email');
-      final savedToken = prefs.getString('clearmail_session_token');
-
-      if (savedEmail != null && savedEmail.isNotEmpty) {
-        _currentMailbox = savedEmail;
-        _sessionToken = savedToken;
-        socketService.connect(_currentMailbox);
-        await loadThreads();
-        await loadStats();
-      }
     } catch (_) {}
+
+    // 3. Regular link access:
+    // If the user refreshed the active tab, restore session from sessionStorage.
+    // When opened from a new tab, window, or regular link, sessionStorage is empty,
+    // so the user is prompted to enter their email ID and password.
+    if (kIsWeb) {
+      try {
+        final sessionEmail = html.window.sessionStorage['clearmail_session_email'];
+        final sessionToken = html.window.sessionStorage['clearmail_session_token'];
+        if (sessionEmail != null && sessionEmail.isNotEmpty) {
+          _currentMailbox = sessionEmail;
+          _sessionToken = sessionToken;
+          socketService.connect(_currentMailbox);
+          await loadThreads();
+          await loadStats();
+        }
+      } catch (_) {}
+    }
 
     _isAuthInitialized = true;
     notifyListeners();
@@ -111,13 +123,21 @@ class MailState extends ChangeNotifier {
       _sessionToken = res['token'];
       _currentMailbox = res['email'];
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('clearmail_user_email', _currentMailbox);
-        if (_sessionToken != null) {
-          await prefs.setString('clearmail_session_token', _sessionToken!);
-        }
-      } catch (_) {}
+      if (kIsWeb) {
+        try {
+          html.window.sessionStorage['clearmail_session_email'] = _currentMailbox;
+          if (_sessionToken != null) {
+            html.window.sessionStorage['clearmail_session_token'] = _sessionToken!;
+          }
+          final path = html.window.location.pathname ?? '/';
+          html.window.history.replaceState(null, 'ClearMail', path);
+        } catch (_) {}
+      }
+
+      // Reset old threads/selection to guarantee domain/mailbox isolation
+      _threads.clear();
+      _selectedThread = null;
+      _selectedThreadIds.clear();
 
       socketService.connect(_currentMailbox);
       await loadThreads();
@@ -142,13 +162,21 @@ class MailState extends ChangeNotifier {
       _sessionToken = res['token'];
       _currentMailbox = res['email'];
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('clearmail_user_email', _currentMailbox);
-        if (_sessionToken != null) {
-          await prefs.setString('clearmail_session_token', _sessionToken!);
-        }
-      } catch (_) {}
+      if (kIsWeb) {
+        try {
+          html.window.sessionStorage['clearmail_session_email'] = _currentMailbox;
+          if (_sessionToken != null) {
+            html.window.sessionStorage['clearmail_session_token'] = _sessionToken!;
+          }
+          final path = html.window.location.pathname ?? '/';
+          html.window.history.replaceState(null, 'ClearMail', path);
+        } catch (_) {}
+      }
+
+      // Reset old threads/selection to guarantee domain/mailbox isolation
+      _threads.clear();
+      _selectedThread = null;
+      _selectedThreadIds.clear();
 
       socketService.connect(_currentMailbox);
       await loadThreads();
@@ -170,6 +198,15 @@ class MailState extends ChangeNotifier {
     _selectedThread = null;
     _selectedThreadIds.clear();
     socketService.disconnect();
+
+    if (kIsWeb) {
+      try {
+        html.window.sessionStorage.remove('clearmail_session_email');
+        html.window.sessionStorage.remove('clearmail_session_token');
+        final path = html.window.location.pathname ?? '/';
+        html.window.history.replaceState(null, 'ClearMail', path);
+      } catch (_) {}
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();

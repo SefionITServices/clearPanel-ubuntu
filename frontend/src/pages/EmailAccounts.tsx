@@ -369,11 +369,7 @@ export default function EmailAccountsPage() {
   const handleLaunchClearMail = async (email: string) => {
     try {
       const res = await mailAPI.getClearMailSso(email);
-      let targetUrl = res.url;
-      if (!targetUrl.startsWith('http')) {
-        const host = window.location.hostname;
-        targetUrl = `http://${host}:7510/?sso_token=${encodeURIComponent(res.token)}`;
-      }
+      const targetUrl = res.url;
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     } catch (err: any) {
       setSnack({ open: true, message: err.message || 'Failed to generate ClearMail SSO session', severity: 'error' });

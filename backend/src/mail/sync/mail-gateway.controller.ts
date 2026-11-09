@@ -245,49 +245,4 @@ export class MailGatewayController {
     }
     return this.mailGatewayService.handleInboundDelivery(body.mailboxEmail, body);
   }
-
-  @Post('test/simulate-inbound')
-  async simulateInboundEmail(
-    @Body()
-    body: {
-      mailboxEmail: string;
-      fromName?: string;
-      fromEmail?: string;
-      subject?: string;
-      bodyText?: string;
-      bodyHtml?: string;
-    },
-  ) {
-    if (!body?.mailboxEmail) {
-      throw new BadRequestException('mailboxEmail is required');
-    }
-
-    const domain = body.mailboxEmail.split('@')[1] || 'clearpanel.local';
-    return this.mailGatewayService.handleInboundDelivery(body.mailboxEmail, {
-      from: {
-        name: body.fromName || 'Stripe Billing',
-        email: body.fromEmail || `invoicing@stripe.${domain}`,
-      },
-      to: [{ name: body.mailboxEmail.split('@')[0], email: body.mailboxEmail }],
-      subject: body.subject || `Receipt for Payment to Acme Corp (#${Math.floor(10000 + Math.random() * 90000)})`,
-      bodyText: body.bodyText || `Your payment of $499.00 USD was successfully processed. Thank you for your business!`,
-      bodyHtml:
-        body.bodyHtml ||
-        `
-        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <h2 style="color: #635bff;">Payment Receipt</h2>
-          <p>Amount: <strong>$499.00 USD</strong></p>
-          <p>Status: <span style="color: #2e7d32; font-weight: bold;">Paid</span></p>
-          <p>Thanks for choosing our services!</p>
-        </div>
-      `,
-      security: {
-        spf: 'pass',
-        dkim: 'pass',
-        dmarc: 'pass',
-        tlsVersion: 'TLSv1.3',
-        signedBy: 'stripe.com',
-      },
-    });
-  }
 }

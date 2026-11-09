@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:html' as html;
 import 'services/mail_api_service.dart';
 import 'services/mail_socket_service.dart';
 import 'state/mail_state.dart';
@@ -28,6 +30,54 @@ class _ClearMailAppState extends State<ClearMailApp> {
   late MailSocketService _socketService;
   late MailState _mailState;
 
+  String? _extractSsoToken() {
+    if (kIsWeb) {
+      try {
+        final search = html.window.location.search;
+        if (search != null && search.isNotEmpty) {
+          final queryStr = search.startsWith('?') ? search.substring(1) : search;
+          final params = Uri.splitQueryString(queryStr);
+          if (params['sso_token'] != null && params['sso_token']!.isNotEmpty) {
+            return params['sso_token'];
+          }
+        }
+
+        final hash = html.window.location.hash;
+        if (hash != null && hash.contains('?')) {
+          final qIndex = hash.indexOf('?');
+          final params = Uri.splitQueryString(hash.substring(qIndex + 1));
+          if (params['sso_token'] != null && params['sso_token']!.isNotEmpty) {
+            return params['sso_token'];
+          }
+        }
+
+        final href = html.window.location.href;
+        if (href != null && href.contains('sso_token=')) {
+          final uri = Uri.parse(href);
+          if (uri.queryParameters['sso_token'] != null && uri.queryParameters['sso_token']!.isNotEmpty) {
+            return uri.queryParameters['sso_token'];
+          }
+        }
+      } catch (_) {}
+    }
+
+    final q = Uri.base.queryParameters['sso_token'];
+    if (q != null && q.isNotEmpty) return q;
+
+    if (Uri.base.hasFragment) {
+      final frag = Uri.base.fragment;
+      final qIndex = frag.indexOf('?');
+      if (qIndex != -1) {
+        final params = Uri.splitQueryString(frag.substring(qIndex + 1));
+        if (params['sso_token'] != null && params['sso_token']!.isNotEmpty) {
+          return params['sso_token'];
+        }
+      }
+    }
+
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -38,8 +88,8 @@ class _ClearMailAppState extends State<ClearMailApp> {
       socketService: _socketService,
     );
 
-    // Check SSO token in URL parameters (?sso_token=xyz)
-    final ssoToken = Uri.base.queryParameters['sso_token'];
+    // Check SSO token in URL parameters (?sso_token=xyz or from fragment)
+    final ssoToken = _extractSsoToken();
     _mailState.initAuthAndLoad(ssoToken: ssoToken);
   }
 
