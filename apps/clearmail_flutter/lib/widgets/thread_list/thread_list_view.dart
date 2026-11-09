@@ -46,13 +46,30 @@ class ThreadListView extends StatelessWidget {
 
           // Thread List Content
           Expanded(
-            child: state.isLoading && filteredThreads.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : filteredThreads.isEmpty
-                    ? _buildEmptyState(isMobile: isMobile)
-                    : RefreshIndicator(
-                        onRefresh: () => state.loadThreads(),
-                        child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: () => state.loadThreads(),
+              color: GmailColors.googleBlue,
+              backgroundColor: Colors.white,
+              displacement: 40,
+              edgeOffset: 0,
+              child: state.isLoading && filteredThreads.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : filteredThreads.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          children: [
+                            SizedBox(
+                              height: MediaQuery.of(context).size.height * 0.6,
+                              child: _buildEmptyState(isMobile: isMobile),
+                            ),
+                          ],
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
                           itemCount: filteredThreads.length,
                           itemBuilder: (ctx, index) {
                             final thread = filteredThreads[index];
@@ -65,7 +82,7 @@ class ThreadListView extends StatelessWidget {
                             );
                           },
                         ),
-                      ),
+            ),
           ),
         ],
       ),

@@ -27,6 +27,7 @@ class ConversationView extends StatefulWidget {
 class _ConversationViewState extends State<ConversationView> {
   final Set<String> _collapsedMessageIds = {};
   final Set<String> _showRawHtmlMessageIds = {};
+  double _contentScale = 1.0;
 
   String _formatFullDate(DateTime dt) {
     return DateFormat('EEE, MMM d, y, h:mm a').format(dt);
@@ -133,9 +134,20 @@ class _ConversationViewState extends State<ConversationView> {
 
           // Conversation Scroll Area
           Expanded(
-            child: ListView(
-              padding: isMobile ? const EdgeInsets.all(16) : const EdgeInsets.all(24),
-              children: [
+            child: RefreshIndicator(
+              onRefresh: () async {
+                await widget.state.openThread(thread);
+              },
+              color: GmailColors.googleBlue,
+              backgroundColor: Colors.white,
+              displacement: 40,
+              edgeOffset: 0,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: isMobile ? const EdgeInsets.all(16) : const EdgeInsets.all(24),
+                children: [
                 // Subject Header
                 if (isMobile) ...[
                   Text(
@@ -310,10 +322,11 @@ class _ConversationViewState extends State<ConversationView> {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildActionToolbar(bool isMobile) {
     return Container(
@@ -362,6 +375,27 @@ class _ConversationViewState extends State<ConversationView> {
             ),
             tooltip: 'Star',
             onPressed: () => widget.state.toggleStar(widget.thread),
+          ),
+          IconButton(
+            icon: Icon(
+              _contentScale > 1.0 ? Icons.zoom_out : Icons.zoom_in,
+              size: 20,
+              color: _contentScale > 1.0 ? GmailColors.googleBlue : null,
+            ),
+            tooltip: 'Zoom text (${(_contentScale * 100).toInt()}%)',
+            onPressed: () {
+              setState(() {
+                if (_contentScale == 1.0) {
+                  _contentScale = 1.25;
+                } else if (_contentScale == 1.25) {
+                  _contentScale = 1.5;
+                } else if (_contentScale == 1.5) {
+                  _contentScale = 1.8;
+                } else {
+                  _contentScale = 1.0;
+                }
+              });
+            },
           ),
         ],
       ),
@@ -556,12 +590,19 @@ class _ConversationViewState extends State<ConversationView> {
             // Message Body
             Padding(
               padding: EdgeInsets.all(isMobile ? 14 : 20),
-              child: isRawHtml
-                  ? SelectableText(
-                      msg.bodyHtml ?? '',
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.4),
-                    )
-                  : _buildFormattedContent(msg),
+              child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 3.5,
+                clipBehavior: Clip.none,
+                panEnabled: false,
+                scaleEnabled: true,
+                child: isRawHtml
+                    ? SelectableText(
+                        msg.bodyHtml ?? '',
+                        style: TextStyle(fontFamily: 'monospace', fontSize: 12 * _contentScale, height: 1.4),
+                      )
+                    : _buildFormattedContent(msg),
+              ),
             ),
 
             // Attachments
@@ -587,7 +628,7 @@ class _ConversationViewState extends State<ConversationView> {
 
     return SelectableText(
       text,
-      style: const TextStyle(fontSize: 14, height: 1.6, color: GmailColors.textDark),
+      style: TextStyle(fontSize: 14 * _contentScale, height: 1.6, color: GmailColors.textDark),
     );
   }
 
