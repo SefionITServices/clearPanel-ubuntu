@@ -446,17 +446,18 @@ export default function EmailAccountsPage() {
     setProfileSaving(true);
     try {
       let updatedAvatarUrl = profileMailbox.avatarUrl;
+      const trimmedName = profileName.trim();
       if (profileAvatarFile) {
         const res = await mailAPI.uploadMailboxAvatar(
           profileMailbox.domainId,
           profileMailbox.mailboxId,
           profileAvatarFile,
-          profileName.trim()
+          trimmedName
         );
         updatedAvatarUrl = res.avatarUrl;
       } else {
         await mailAPI.updateMailbox(profileMailbox.domainId, profileMailbox.mailboxId, {
-          name: profileName.trim(),
+          name: trimmedName,
         });
       }
 
@@ -467,7 +468,7 @@ export default function EmailAccountsPage() {
             ...d,
             mailboxes: d.mailboxes.map((m) =>
               m.id === profileMailbox.mailboxId
-                ? { ...m, name: profileName.trim() || undefined, avatarUrl: updatedAvatarUrl }
+                ? { ...m, name: trimmedName || undefined, avatarUrl: updatedAvatarUrl }
                 : m
             ),
           };

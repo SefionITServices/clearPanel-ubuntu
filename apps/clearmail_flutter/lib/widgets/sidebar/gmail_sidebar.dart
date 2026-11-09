@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../state/mail_state.dart';
 import '../../theme/gmail_theme.dart';
+import '../profile/profile_dialog.dart';
 
 class GmailSidebar extends StatelessWidget {
   final MailState state;
@@ -28,44 +29,61 @@ class GmailSidebar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Mobile Drawer Header
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: GmailColors.threadBorder, width: 1)),
-                ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: GmailColors.googleBlue,
-                      foregroundImage: state.currentMailbox.isNotEmpty
-                          ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(state.currentMailbox)}')
-                          : null,
-                      onForegroundImageError: (_, __) {},
-                      child: Text(
-                        state.currentMailbox.isNotEmpty ? state.currentMailbox[0].toUpperCase() : 'U',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              InkWell(
+                onTap: () {
+                  onFolderSelected?.call();
+                  ProfileDialog.show(context, state);
+                },
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: GmailColors.threadBorder, width: 1)),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: GmailColors.googleBlue,
+                        foregroundImage: (state.avatarUrl != null && state.avatarUrl!.isNotEmpty)
+                            ? NetworkImage(state.avatarUrl!)
+                            : (state.currentMailbox.isNotEmpty
+                                ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(state.currentMailbox)}')
+                                : null),
+                        onForegroundImageError: (_, __) {},
+                        child: Text(
+                          state.displayName.isNotEmpty
+                              ? state.displayName[0].toUpperCase()
+                              : (state.currentMailbox.isNotEmpty ? state.currentMailbox[0].toUpperCase() : 'U'),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'ClearMail',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: GmailColors.googleRed),
-                          ),
-                          Text(
-                            state.currentMailbox,
-                            style: const TextStyle(fontSize: 13, color: GmailColors.textSnippet, fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              state.displayName.isNotEmpty ? state.displayName : 'ClearMail',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: state.displayName.isNotEmpty ? GmailColors.textDark : GmailColors.googleRed,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              state.currentMailbox,
+                              style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet, fontWeight: FontWeight.w500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const Icon(Icons.edit_outlined, size: 18, color: GmailColors.textSnippet),
+                    ],
+                  ),
                 ),
               ),
 

@@ -273,6 +273,55 @@ class MailApiService {
   }
 
   // ---------------------------------------------------------------------------
+  // Profile & Avatar Management
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> getProfile({required String mailbox}) async {
+    try {
+      final response = await http.get(_uri('/mail/sync/profile', {'mailbox': mailbox}));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+    } catch (_) {}
+    return {'email': mailbox, 'avatarUrl': '/api/mail/avatars/${Uri.encodeComponent(mailbox)}'};
+  }
+
+  Future<Map<String, dynamic>> updateProfile({
+    required String mailbox,
+    String? name,
+    List<int>? avatarBytes,
+    String? filename,
+  }) async {
+    if (avatarBytes != null && avatarBytes.isNotEmpty) {
+      final request = http.MultipartRequest('POST', _uri('/mail/sync/profile'));
+      request.fields['mailbox'] = mailbox;
+      if (name != null) request.fields['name'] = name;
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'avatar',
+          avatarBytes,
+          filename: filename ?? 'avatar.png',
+        ),
+      );
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      }
+      throw Exception('Failed to upload profile: ${response.statusCode}');
+    } else {
+      final response = await http.post(
+        _uri('/mail/sync/profile'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'mailbox': mailbox, if (name != null) 'name': name}),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      }
+      throw Exception('Failed to update profile: ${response.statusCode}');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Test: Simulate Inbound Email
   // ---------------------------------------------------------------------------
   Future<void> simulateInboundEmail({

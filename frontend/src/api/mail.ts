@@ -447,7 +447,7 @@ export const mailAPI = {
     const res = await fetch(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/avatar`, {
       method: 'POST',
       body: formData,
-      credentials: 'same-origin',
+      credentials: 'include',
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: 'Failed to upload avatar' }));
@@ -468,7 +468,7 @@ export const mailAPI = {
     const res = await fetch(`${API_BASE}/domains/${domainId}/bimi-logo`, {
       method: 'POST',
       body: formData,
-      credentials: 'same-origin',
+      credentials: 'include',
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: 'Failed to upload BIMI logo' }));

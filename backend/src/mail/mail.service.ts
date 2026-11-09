@@ -504,15 +504,33 @@ export class MailService {
     await fs.mkdir(avatarsDir, { recursive: true });
 
     let ext = '.png';
-    if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') ext = '.jpg';
-    else if (file.mimetype === 'image/svg+xml') ext = '.svg';
-    else if (file.mimetype === 'image/webp') ext = '.webp';
+    const lower = (file.originalname || '').toLowerCase();
+    if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg' || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      ext = '.jpg';
+    } else if (file.mimetype === 'image/svg+xml' || lower.endsWith('.svg')) {
+      ext = '.svg';
+    } else if (file.mimetype === 'image/webp' || lower.endsWith('.webp')) {
+      ext = '.webp';
+    } else if (file.mimetype === 'image/gif' || lower.endsWith('.gif')) {
+      ext = '.gif';
+    }
+
+    // Clean up any old avatar file for this email with different extensions
+    for (const oldExt of ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif']) {
+      try {
+        await fs.unlink(path.join(avatarsDir, `${mailbox.email.toLowerCase()}${oldExt}`));
+      } catch {}
+    }
 
     const filename = `${mailbox.email.toLowerCase()}${ext}`;
     const filePath = path.join(avatarsDir, filename);
     await fs.writeFile(filePath, file.buffer);
+    try {
+      await fs.chmod(filePath, 0o644);
+    } catch {}
 
-    mailbox.avatarUrl = `/api/mail/avatars/${encodeURIComponent(mailbox.email)}`;
+    const v = Date.now();
+    mailbox.avatarUrl = `/api/mail/avatars/${encodeURIComponent(mailbox.email)}?v=${v}`;
     if (name !== undefined) {
       mailbox.name = name.trim() || undefined;
     }
@@ -520,6 +538,43 @@ export class MailService {
     await this.writeDomains(domains);
 
     return { avatarUrl: mailbox.avatarUrl, name: mailbox.name };
+  }
+
+  async saveMailboxAvatarByEmail(
+    email: string,
+    file?: { buffer: Buffer; mimetype: string; originalname: string },
+    name?: string,
+  ): Promise<{ avatarUrl: string; name?: string }> {
+    const domains = await this.readDomains();
+    const cleanEmail = email.toLowerCase().trim();
+    let foundMailbox: any = null;
+    let foundDomain: any = null;
+
+    for (const d of domains) {
+      const mb = (d.mailboxes || []).find((m: any) => m.email.toLowerCase() === cleanEmail);
+      if (mb) {
+        foundMailbox = mb;
+        foundDomain = d;
+        break;
+      }
+    }
+    if (!foundMailbox || !foundDomain) {
+      throw new Error(`Mailbox ${email} not found`);
+    }
+
+    if (file && file.buffer) {
+      return this.saveMailboxAvatar(foundDomain.id, foundMailbox.id, file, name);
+    } else {
+      if (name !== undefined) {
+        foundMailbox.name = name.trim() || undefined;
+      }
+      foundMailbox.updatedAt = new Date().toISOString();
+      await this.writeDomains(domains);
+      return {
+        avatarUrl: foundMailbox.avatarUrl || `/api/mail/avatars/${encodeURIComponent(cleanEmail)}`,
+        name: foundMailbox.name,
+      };
+    }
   }
 
   async removeMailboxAvatar(domainId: string, mailboxId: string): Promise<void> {
@@ -531,7 +586,7 @@ export class MailService {
     if (!mailbox) throw new Error('Mailbox not found');
 
     const avatarsDir = '/var/lib/clearpanel/mail/avatars';
-    for (const ext of ['.png', '.jpg', '.jpeg', '.svg', '.webp']) {
+    for (const ext of ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif']) {
       try {
         await fs.unlink(path.join(avatarsDir, `${mailbox.email.toLowerCase()}${ext}`));
       } catch {}
@@ -831,7 +886,7 @@ export class MailService {
     return { domain: domain.domain, records };
   }
 
-  private async readDomains(): Promise<MailDomain[]> {
+  async readDomains(): Promise<MailDomain[]> {
     const now = Date.now();
     if (this.mailDomainsCache && now - this.mailDomainsCache.ts < MailService.CACHE_TTL) {
       return this.mailDomainsCache.data.map(d => ({ ...d })); // shallow clone to avoid mutation

@@ -30,6 +30,8 @@ class MailState extends ChangeNotifier {
 
   String _searchQuery = '';
   MailboxStats? _stats;
+  String _displayName = '';
+  String? _avatarUrl;
 
   // Undo Send Manager
   String? _activePendingSendId;
@@ -62,6 +64,37 @@ class MailState extends ChangeNotifier {
   MailboxStats? get stats => _stats;
   String? get activePendingSendId => _activePendingSendId;
   int get undoCountdown => _undoCountdown;
+  String get displayName => _displayName;
+  String? get avatarUrl => _avatarUrl;
+
+  Future<void> loadProfile() async {
+    if (_currentMailbox.isEmpty) return;
+    try {
+      final p = await apiService.getProfile(mailbox: _currentMailbox);
+      _displayName = p['name'] ?? '';
+      _avatarUrl = p['avatarUrl'];
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<bool> updateProfile({String? name, List<int>? avatarBytes, String? filename}) async {
+    try {
+      final res = await apiService.updateProfile(
+        mailbox: _currentMailbox,
+        name: name,
+        avatarBytes: avatarBytes,
+        filename: filename,
+      );
+      if (res['name'] != null) _displayName = res['name'];
+      if (res['avatarUrl'] != null) _avatarUrl = res['avatarUrl'];
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to update profile: $e';
+      notifyListeners();
+      return false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Lifecycle & Persistence
@@ -101,6 +134,7 @@ class MailState extends ChangeNotifier {
           socketService.connect(_currentMailbox);
           await loadThreads();
           await loadStats();
+          await loadProfile();
         }
       } catch (_) {}
     }
@@ -142,6 +176,7 @@ class MailState extends ChangeNotifier {
       socketService.connect(_currentMailbox);
       await loadThreads();
       await loadStats();
+      await loadProfile();
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -181,6 +216,7 @@ class MailState extends ChangeNotifier {
       socketService.connect(_currentMailbox);
       await loadThreads();
       await loadStats();
+      await loadProfile();
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');

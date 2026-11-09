@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../state/mail_state.dart';
 import '../../theme/gmail_theme.dart';
+import '../profile/profile_dialog.dart';
 
 class GmailHeader extends StatefulWidget {
   final MailState state;
@@ -43,10 +45,12 @@ class _GmailHeaderState extends State<GmailHeader> {
     return PopupMenuButton<String>(
       offset: const Offset(0, 48),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tooltip: 'Google Account',
+      tooltip: 'Account Profile',
       onSelected: (val) {
         if (val == '__logout__') {
           widget.state.logout();
+        } else if (val == '__profile__') {
+          ProfileDialog.show(context, widget.state);
         }
       },
       itemBuilder: (ctx) => [
@@ -55,11 +59,30 @@ class _GmailHeaderState extends State<GmailHeader> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Signed in as', style: TextStyle(fontSize: 11, color: GmailColors.textMuted)),
+              if (widget.state.displayName.isNotEmpty)
+                Text(
+                  widget.state.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: GmailColors.textDark, fontSize: 14),
+                ),
               Text(
                 widget.state.currentMailbox,
-                style: const TextStyle(fontWeight: FontWeight.bold, color: GmailColors.textDark, fontSize: 13),
+                style: TextStyle(
+                  fontWeight: widget.state.displayName.isNotEmpty ? FontWeight.normal : FontWeight.bold,
+                  color: widget.state.displayName.isNotEmpty ? GmailColors.textSnippet : GmailColors.textDark,
+                  fontSize: 12,
+                ),
               ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: '__profile__',
+          child: Row(
+            children: [
+              Icon(Icons.badge_outlined, size: 18, color: GmailColors.textDark),
+              SizedBox(width: 8),
+              Text('Edit Profile & Photo', style: TextStyle(color: GmailColors.textDark, fontWeight: FontWeight.w500)),
             ],
           ),
         ),
@@ -78,14 +101,18 @@ class _GmailHeaderState extends State<GmailHeader> {
       child: CircleAvatar(
         radius: 17,
         backgroundColor: GmailColors.googleBlue,
-        foregroundImage: widget.state.currentMailbox.isNotEmpty
-            ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(widget.state.currentMailbox)}')
-            : null,
+        foregroundImage: (widget.state.avatarUrl != null && widget.state.avatarUrl!.isNotEmpty)
+            ? NetworkImage(widget.state.avatarUrl!)
+            : (widget.state.currentMailbox.isNotEmpty
+                ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(widget.state.currentMailbox)}')
+                : null),
         onForegroundImageError: (_, __) {},
         child: Text(
-          widget.state.currentMailbox.isNotEmpty
-              ? widget.state.currentMailbox[0].toUpperCase()
-              : 'U',
+          widget.state.displayName.isNotEmpty
+              ? widget.state.displayName[0].toUpperCase()
+              : (widget.state.currentMailbox.isNotEmpty
+                  ? widget.state.currentMailbox[0].toUpperCase()
+                  : 'U'),
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ),
@@ -345,8 +372,10 @@ class _GmailHeaderState extends State<GmailHeader> {
           // Settings
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: GmailColors.textSnippet),
-            onPressed: () {},
-            tooltip: 'Settings',
+            onPressed: () {
+              ProfileDialog.show(context, widget.state);
+            },
+            tooltip: 'Settings / Profile',
           ),
           const SizedBox(width: 8),
 

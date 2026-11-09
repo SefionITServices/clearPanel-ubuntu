@@ -16,7 +16,7 @@ export class MailPublicController {
   @Get(['api/mail/avatars/:email', 'mail/avatars/:email'])
   async getAvatar(@Param('email') rawEmail: string, @Res() res: Response) {
     const email = decodeURIComponent(rawEmail).trim().toLowerCase();
-    const extensions = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
+    const extensions = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif'];
 
     for (const ext of extensions) {
       const filePath = path.join(this.avatarsDir, `${email}${ext}`);
@@ -26,9 +26,11 @@ export class MailPublicController {
         if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
         else if (ext === '.svg') mime = 'image/svg+xml';
         else if (ext === '.webp') mime = 'image/webp';
+        else if (ext === '.gif') mime = 'image/gif';
 
         res.setHeader('Content-Type', mime);
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
         return res.end(data);
       } catch {}
     }

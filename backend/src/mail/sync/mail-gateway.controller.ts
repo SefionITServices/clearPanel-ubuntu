@@ -222,6 +222,31 @@ export class MailGatewayController {
   }
 
   // ---------------------------------------------------------------------------
+  // User Profile & Avatar
+  // ---------------------------------------------------------------------------
+
+  @Get('profile')
+  async getProfile(@Query('mailbox') mailbox: string) {
+    if (!mailbox) {
+      throw new BadRequestException('mailbox query param is required');
+    }
+    return this.mailGatewayService.getMailboxProfile(mailbox);
+  }
+
+  @Post('profile')
+  @UseInterceptors(FileInterceptor('avatar', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async updateProfile(
+    @Body('mailbox') mailbox: string,
+    @Body('name') name?: string,
+    @UploadedFile() file?: any,
+  ) {
+    if (!mailbox) {
+      throw new BadRequestException('mailbox is required');
+    }
+    return this.mailGatewayService.updateMailboxProfile(mailbox, name, file);
+  }
+
+  // ---------------------------------------------------------------------------
   // Inbound Webhooks
   // ---------------------------------------------------------------------------
 

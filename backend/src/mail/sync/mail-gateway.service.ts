@@ -22,6 +22,7 @@ import { getDataFilePath } from '../../common/paths';
 import { MailGateway } from './mail-gateway.gateway';
 import { MailStorageService } from './mail-storage.service';
 import { MailSsoService } from '../mail-sso.service';
+import { MailService } from '../mail.service';
 
 interface MailboxStore {
   threads: Map<string, EmailThread>;
@@ -43,7 +44,42 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     private readonly gateway: MailGateway,
     private readonly storageService: MailStorageService,
     private readonly ssoService: MailSsoService,
+    @Inject(forwardRef(() => MailService))
+    private readonly mailService: MailService,
   ) {}
+
+  async getMailboxProfile(mailboxEmail: string): Promise<{ email: string; name?: string; avatarUrl?: string }> {
+    const cleanEmail = mailboxEmail.toLowerCase().trim();
+    const domains = await this.mailService.readDomains();
+    for (const d of domains) {
+      const mb = (d.mailboxes || []).find((m: any) => m.email.toLowerCase() === cleanEmail);
+      if (mb) {
+        return {
+          email: cleanEmail,
+          name: mb.name,
+          avatarUrl: mb.avatarUrl || `/api/mail/avatars/${encodeURIComponent(cleanEmail)}`,
+        };
+      }
+    }
+    return {
+      email: cleanEmail,
+      avatarUrl: `/api/mail/avatars/${encodeURIComponent(cleanEmail)}`,
+    };
+  }
+
+  async updateMailboxProfile(
+    mailboxEmail: string,
+    name?: string,
+    file?: any,
+  ): Promise<{ success: boolean; email: string; name?: string; avatarUrl: string }> {
+    const res = await this.mailService.saveMailboxAvatarByEmail(mailboxEmail, file, name);
+    return {
+      success: true,
+      email: mailboxEmail,
+      name: res.name,
+      avatarUrl: res.avatarUrl,
+    };
+  }
 
   async onModuleInit() {
     try {

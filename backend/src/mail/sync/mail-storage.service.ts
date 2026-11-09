@@ -298,9 +298,22 @@ export class MailStorageService {
     filePath?: string,
     fileOffset?: number,
   ): EmailMessage {
-    const fromAddr: EmailAddress = parsed.from?.value[0]
-      ? { name: parsed.from.value[0].name || '', email: parsed.from.value[0].address || '' }
-      : { name: 'Unknown', email: 'unknown@domain.com' };
+    const xAvatar = (parsed.headers?.get('x-avatar-url') as string) ||
+                    (parsed.headers?.get('x-image-url') as string) ||
+                    (parsed.headers?.get('image-url') as string) ||
+                    (parsed.headers?.get('x-sender-avatar') as string);
+    const parsedFrom = parsed.from?.value[0];
+    const fromAddr: EmailAddress = parsedFrom
+      ? {
+          name: parsedFrom.name || '',
+          email: parsedFrom.address || '',
+          avatarUrl: xAvatar || (parsedFrom.address ? `/api/mail/avatars/${encodeURIComponent(parsedFrom.address)}` : undefined),
+        }
+      : {
+          name: 'Unknown',
+          email: 'unknown@domain.com',
+          avatarUrl: '/api/mail/avatars/unknown%40domain.com',
+        };
 
     const toAddrs: EmailAddress[] = (parsed.to ? (Array.isArray(parsed.to) ? parsed.to : [parsed.to]) : [])
       .flatMap((entry: any) => entry.value || [])
@@ -594,7 +607,7 @@ export class MailStorageService {
     const displayName = profile?.name?.trim();
     const formattedFrom = displayName ? `"${displayName}" <${fromEmail}>` : fromEmail;
     const domain = fromEmail.split('@')[1] || 'mail';
-    const serverHost = process.env.PANEL_HOST || 'srv1119881.hstgr.cloud';
+    const serverHost = process.env.PANEL_HOST || 'panel.mainserver.in';
     const avatarUrl = `https://${serverHost}/api/mail/avatars/${encodeURIComponent(fromEmail)}`;
     const generatedMsgId = `<${randomUUID()}@${domain}>`;
 
@@ -611,20 +624,34 @@ export class MailStorageService {
       }
     }
 
+    let finalHtml = payload.bodyHtml;
+    if (!finalHtml && payload.bodyText) {
+      const escaped = payload.bodyText
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br/>');
+      finalHtml = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #202124; line-height: 1.6;">${escaped}</div>`;
+    }
+
     const mailOptions: nodemailer.SendMailOptions = {
       from: formattedFrom,
       sender: fromEmail,
+      replyTo: displayName ? `"${displayName}" <${fromEmail}>` : fromEmail,
       to: payload.to.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       cc: payload.cc?.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       bcc: payload.bcc?.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       subject: payload.subject,
       text: payload.bodyText,
-      html: payload.bodyHtml,
+      html: finalHtml,
       messageId: generatedMsgId,
       headers: {
         'X-Mailer': 'ClearPanel ClearMail',
         'X-Avatar-URL': avatarUrl,
         'X-Image-URL': avatarUrl,
+        'Image-URL': avatarUrl,
+        'X-Sender-Avatar': avatarUrl,
+        'BIMI-Location': `v=BIMI1; l=https://${serverHost}/api/mail/bimi/${encodeURIComponent(domain)}.svg;`,
         'Auto-Submitted': 'no',
       },
       inReplyTo: payload.replyToMessageId,

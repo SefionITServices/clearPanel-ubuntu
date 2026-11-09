@@ -359,8 +359,10 @@ class _ComposeDialogState extends State<ComposeDialog> {
                   const Text('From  ', style: TextStyle(color: GmailColors.textSnippet, fontSize: 14)),
                   Expanded(
                     child: Text(
-                      widget.state.currentMailbox,
-                      style: const TextStyle(fontSize: 14, color: GmailColors.textDark),
+                      widget.state.displayName.isNotEmpty
+                          ? '${widget.state.displayName} <${widget.state.currentMailbox}>'
+                          : widget.state.currentMailbox,
+                      style: const TextStyle(fontSize: 14, color: GmailColors.textDark, fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
