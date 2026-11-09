@@ -57,10 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: scaffoldBg,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: Container(
-            width: 440,
-            padding: const EdgeInsets.all(40),
+            constraints: const BoxConstraints(maxWidth: 440),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(20),

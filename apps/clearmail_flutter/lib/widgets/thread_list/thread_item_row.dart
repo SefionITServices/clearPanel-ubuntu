@@ -46,8 +46,153 @@ class _ThreadItemRowState extends State<ThreadItemRow> {
     return widget.thread.participants.map((p) => p.name.isNotEmpty ? p.name : p.email).join(', ');
   }
 
+  Widget _buildMobileRow(BuildContext context) {
+    final thread = widget.thread;
+    final isUnread = thread.isUnread;
+    final sender = thread.participants.isNotEmpty ? thread.participants.first : null;
+    final senderName = sender != null && sender.name.isNotEmpty ? sender.name : (sender?.email.split('@')[0] ?? 'Sender');
+    final senderEmail = sender?.email ?? '';
+    final senderAvatarUrl = sender?.avatarUrl ?? (senderEmail.isNotEmpty ? '/api/mail/avatars/${Uri.encodeComponent(senderEmail)}' : null);
+
+    return InkWell(
+      onTap: widget.onTap,
+      onLongPress: () => widget.state.toggleSelectThread(thread.id),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: widget.isSelected
+              ? GmailColors.threadSelectedBg
+              : (isUnread ? GmailColors.threadUnreadBg : Colors.transparent),
+          border: const Border(
+            bottom: BorderSide(color: GmailColors.threadBorder, width: 0.5),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Left Avatar or Selection Indicator
+            GestureDetector(
+              onTap: () => widget.state.toggleSelectThread(thread.id),
+              child: widget.isSelected
+                  ? const CircleAvatar(
+                      radius: 20,
+                      backgroundColor: GmailColors.googleBlue,
+                      child: Icon(Icons.check, color: Colors.white, size: 20),
+                    )
+                  : CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.blueGrey.shade100,
+                      foregroundImage: senderAvatarUrl != null ? NetworkImage(senderAvatarUrl) : null,
+                      onForegroundImageError: (_, __) {},
+                      child: Text(
+                        senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 16),
+                      ),
+                    ),
+            ),
+
+            const SizedBox(width: 14),
+
+            // Middle Content: Sender, Subject, Snippet
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Line: Sender Name + Message Count + Date
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _getParticipantsText(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: isUnread ? FontWeight.w700 : FontWeight.w500,
+                            color: isUnread ? GmailColors.textDark : GmailColors.textMuted,
+                          ),
+                        ),
+                      ),
+                      if (thread.messageCount > 1) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '${thread.messageCount}',
+                          style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatDate(thread.lastMessageDate),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isUnread ? FontWeight.w700 : FontWeight.w400,
+                          color: isUnread ? GmailColors.googleBlue : GmailColors.textSnippet,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  // Middle Line: Subject
+                  Text(
+                    thread.subject.isEmpty ? '(No Subject)' : thread.subject,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isUnread ? FontWeight.w700 : FontWeight.w400,
+                      color: isUnread ? GmailColors.textDark : Colors.black87,
+                    ),
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  // Bottom Line: Snippet + Attachments + Star
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          thread.snippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: GmailColors.textSnippet,
+                          ),
+                        ),
+                      ),
+                      if (thread.hasAttachments) ...[
+                        const SizedBox(width: 6),
+                        const Icon(Icons.attachment, size: 16, color: GmailColors.textSnippet),
+                      ],
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => widget.state.toggleStar(thread),
+                        child: Icon(
+                          thread.isStarred ? Icons.star : Icons.star_border,
+                          size: 20,
+                          color: thread.isStarred ? GmailColors.starActive : GmailColors.starInactive,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 768;
+    if (isMobile) {
+      return _buildMobileRow(context);
+    }
+
     final thread = widget.thread;
     final isUnread = thread.isUnread;
 

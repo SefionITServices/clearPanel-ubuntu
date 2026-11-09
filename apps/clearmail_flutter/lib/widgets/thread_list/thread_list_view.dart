@@ -16,19 +16,21 @@ class ThreadListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
     return Container(
       decoration: BoxDecoration(
         color: GmailColors.surfaceWhite,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(16),
       ),
-      margin: const EdgeInsets.only(right: 16, bottom: 16),
+      margin: isMobile ? EdgeInsets.zero : const EdgeInsets.only(right: 16, bottom: 16),
       child: Column(
         children: [
           // Top Action Toolbar
-          _buildTopToolbar(context),
+          _buildTopToolbar(context, isMobile: isMobile),
 
           // Gmail Category Tabs (Only on Inbox folder)
-          if (state.currentFolder == 'inbox') _buildCategoryTabs(),
+          if (state.currentFolder == 'inbox') _buildCategoryTabs(isMobile: isMobile),
 
           const Divider(height: 1, color: GmailColors.threadBorder),
 
@@ -38,18 +40,21 @@ class ThreadListView extends StatelessWidget {
                 ? const Center(child: CircularProgressIndicator())
                 : state.threads.isEmpty
                     ? _buildEmptyState()
-                    : ListView.builder(
-                        itemCount: state.threads.length,
-                        itemBuilder: (ctx, index) {
-                          final thread = state.threads[index];
-                          final isSelected = state.selectedThreadIds.contains(thread.id);
-                          return ThreadItemRow(
-                            thread: thread,
-                            state: state,
-                            isSelected: isSelected,
-                            onTap: () => onOpenThread(thread),
-                          );
-                        },
+                    : RefreshIndicator(
+                        onRefresh: () => state.loadThreads(),
+                        child: ListView.builder(
+                          itemCount: state.threads.length,
+                          itemBuilder: (ctx, index) {
+                            final thread = state.threads[index];
+                            final isSelected = state.selectedThreadIds.contains(thread.id);
+                            return ThreadItemRow(
+                              thread: thread,
+                              state: state,
+                              isSelected: isSelected,
+                              onTap: () => onOpenThread(thread),
+                            );
+                          },
+                        ),
                       ),
           ),
         ],
@@ -57,31 +62,61 @@ class ThreadListView extends StatelessWidget {
     );
   }
 
-  Widget _buildTopToolbar(BuildContext context) {
+  Widget _buildTopToolbar(BuildContext context, {bool isMobile = false}) {
     final hasSelection = state.selectedThreadIds.isNotEmpty;
     final allSelected =
         state.threads.isNotEmpty && state.selectedThreadIds.length == state.threads.length;
+
+    if (isMobile && !hasSelection) {
+      return Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Text(
+              state.currentFolder.toUpperCase(),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.8, color: GmailColors.textSnippet),
+            ),
+            const Spacer(),
+            Text(
+              '${state.threads.length} conversations',
+              style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          // Select All Checkbox
-          Checkbox(
-            value: allSelected ? true : (hasSelection ? null : false),
-            tristate: true,
-            onChanged: (val) {
-              state.selectAllThreads(val ?? false);
-            },
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-          ),
+          if (hasSelection)
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              tooltip: 'Clear selection',
+              onPressed: () => state.clearSelection(),
+            )
+          else
+            Checkbox(
+              value: allSelected ? true : (hasSelection ? null : false),
+              tristate: true,
+              onChanged: (val) {
+                state.selectAllThreads(val ?? false);
+              },
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
 
           const SizedBox(width: 8),
 
           if (hasSelection) ...[
-            // Batch Actions
+            Text(
+              '${state.selectedThreadIds.length}',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: GmailColors.textDark),
+            ),
+            const Spacer(),
             IconButton(
               icon: const Icon(Icons.archive_outlined, size: 20),
               tooltip: 'Archive',
@@ -102,11 +137,6 @@ class ThreadListView extends StatelessWidget {
               tooltip: 'Mark as unread',
               onPressed: () => state.batchMarkAsRead(false),
             ),
-            const SizedBox(width: 8),
-            Text(
-              '${state.selectedThreadIds.length} selected',
-              style: const TextStyle(fontSize: 13, color: GmailColors.textSnippet),
-            ),
           ] else ...[
             // Default Toolbar
             IconButton(
@@ -119,31 +149,56 @@ class ThreadListView extends StatelessWidget {
               tooltip: 'More',
               onPressed: () {},
             ),
+            const Spacer(),
+            if (!isMobile)
+              Text(
+                '1–${state.threads.length} of ${state.threads.length}',
+                style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet),
+              ),
           ],
-
-          const Spacer(),
-
-          // Pagination
-          Text(
-            '1–${state.threads.length} of ${state.threads.length}',
-            style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_left, size: 20),
-            onPressed: null,
-            splashRadius: 16,
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, size: 20),
-            onPressed: null,
-            splashRadius: 16,
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildCategoryTabs() {
+  Widget _buildCategoryTabs({bool isMobile = false}) {
+    if (isMobile) {
+      return SizedBox(
+        height: 44,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              _buildCategoryTab(
+                id: 'primary',
+                title: 'Primary',
+                icon: Icons.inbox,
+                activeColor: GmailColors.googleRed,
+              ),
+              _buildCategoryTab(
+                id: 'promotions',
+                title: 'Promotions',
+                icon: Icons.local_offer_outlined,
+                activeColor: GmailColors.googleGreen,
+              ),
+              _buildCategoryTab(
+                id: 'social',
+                title: 'Social',
+                icon: Icons.people_outline,
+                activeColor: GmailColors.googleBlue,
+              ),
+              _buildCategoryTab(
+                id: 'updates',
+                title: 'Updates',
+                icon: Icons.info_outline,
+                activeColor: GmailColors.googleYellow,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return SizedBox(
       height: 48,
       child: Row(

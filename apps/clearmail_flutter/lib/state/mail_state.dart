@@ -408,6 +408,13 @@ class MailState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearSelection() {
+    _selectedThreadIds.clear();
+    notifyListeners();
+  }
+
+  void toggleTheme() => toggleDarkMode();
+
   // ---------------------------------------------------------------------------
   // Optimistic Thread Actions
   // ---------------------------------------------------------------------------

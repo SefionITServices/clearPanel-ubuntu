@@ -129,6 +129,8 @@ class ClearMailHome extends StatefulWidget {
 class _ClearMailHomeState extends State<ClearMailHome> {
   MailState get _mailState => widget.mailState;
 
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   bool _isSidebarCollapsed = false;
   bool _isComposeOpen = false;
 
@@ -216,11 +218,42 @@ class _ClearMailHomeState extends State<ClearMailHome> {
       return LoginScreen(state: _mailState);
     }
 
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
     return KeyboardListener(
       focusNode: _keyboardFocusNode,
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
       child: Scaffold(
+        key: _scaffoldKey,
+        drawer: isMobile
+            ? Drawer(
+                child: GmailSidebar(
+                  state: _mailState,
+                  isCollapsed: false,
+                  isDrawer: true,
+                  onComposePressed: () {
+                    Navigator.of(context).pop();
+                    _openCompose();
+                  },
+                  onFolderSelected: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+              )
+            : null,
+        floatingActionButton: (isMobile && _mailState.selectedThread == null && !_isComposeOpen)
+            ? FloatingActionButton.extended(
+                onPressed: () => _openCompose(),
+                backgroundColor: GmailColors.surfaceWhite,
+                elevation: 4,
+                icon: const Icon(Icons.edit_outlined, color: GmailColors.googleRed),
+                label: const Text(
+                  'Compose',
+                  style: TextStyle(color: GmailColors.textDark, fontWeight: FontWeight.bold),
+                ),
+              )
+            : null,
         body: Stack(
           children: [
             // Main Layout Column
@@ -230,9 +263,13 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                 GmailHeader(
                   state: _mailState,
                   onToggleSidebar: () {
-                    setState(() {
-                      _isSidebarCollapsed = !_isSidebarCollapsed;
-                    });
+                    if (isMobile) {
+                      _scaffoldKey.currentState?.openDrawer();
+                    } else {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    }
                   },
                 ),
 
@@ -241,16 +278,17 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Sidebar
-                      GmailSidebar(
-                        state: _mailState,
-                        isCollapsed: _isSidebarCollapsed,
-                        onComposePressed: () => _openCompose(),
-                      ),
+                      // Desktop Sidebar
+                      if (!isMobile)
+                        GmailSidebar(
+                          state: _mailState,
+                          isCollapsed: _isSidebarCollapsed,
+                          onComposePressed: () => _openCompose(),
+                        ),
 
                       // Center Views (Single Pane vs. Split-View)
                       Expanded(
-                        child: _mailState.isSplitView
+                        child: (!isMobile && _mailState.isSplitView)
                             ? _buildSplitView()
                             : _buildSinglePaneView(),
                       ),
@@ -260,47 +298,80 @@ class _ClearMailHomeState extends State<ClearMailHome> {
               ],
             ),
 
-            // Floating Docked Compose Dialog (Bottom-Right)
+            // Floating Docked Compose Dialog (Full screen on mobile, bottom-right on desktop)
             if (_isComposeOpen)
-              Positioned(
-                right: 24,
-                bottom: 0,
-                child: ComposeDialog(
-                  state: _mailState,
-                  initialTo: _composeTo,
-                  initialSubject: _composeSubject,
-                  initialBody: _composeBody,
-                  replyToThreadId: _composeReplyThreadId,
-                  onClose: _closeCompose,
-                  onSend: ({
-                    required to,
-                    cc,
-                    bcc,
-                    required subject,
-                    required bodyText,
-                    attachments,
-                    replyToThreadId,
-                  }) {
-                    _closeCompose();
-                    _mailState.sendEmail(
-                      to: to,
-                      cc: cc,
-                      bcc: bcc,
-                      subject: subject,
-                      bodyText: bodyText,
-                      attachments: attachments,
-                      replyToThreadId: replyToThreadId,
-                      undoGraceSeconds: 10,
-                    );
-                  },
-                ),
-              ),
+              isMobile
+                  ? Positioned.fill(
+                      child: ComposeDialog(
+                        state: _mailState,
+                        initialTo: _composeTo,
+                        initialSubject: _composeSubject,
+                        initialBody: _composeBody,
+                        replyToThreadId: _composeReplyThreadId,
+                        onClose: _closeCompose,
+                        onSend: ({
+                          required to,
+                          cc,
+                          bcc,
+                          required subject,
+                          required bodyText,
+                          attachments,
+                          replyToThreadId,
+                        }) {
+                          _closeCompose();
+                          _mailState.sendEmail(
+                            to: to,
+                            cc: cc,
+                            bcc: bcc,
+                            subject: subject,
+                            bodyText: bodyText,
+                            attachments: attachments,
+                            replyToThreadId: replyToThreadId,
+                            undoGraceSeconds: 10,
+                          );
+                        },
+                      ),
+                    )
+                  : Positioned(
+                      right: 24,
+                      bottom: 0,
+                      child: ComposeDialog(
+                        state: _mailState,
+                        initialTo: _composeTo,
+                        initialSubject: _composeSubject,
+                        initialBody: _composeBody,
+                        replyToThreadId: _composeReplyThreadId,
+                        onClose: _closeCompose,
+                        onSend: ({
+                          required to,
+                          cc,
+                          bcc,
+                          required subject,
+                          required bodyText,
+                          attachments,
+                          replyToThreadId,
+                        }) {
+                          _closeCompose();
+                          _mailState.sendEmail(
+                            to: to,
+                            cc: cc,
+                            bcc: bcc,
+                            subject: subject,
+                            bodyText: bodyText,
+                            attachments: attachments,
+                            replyToThreadId: replyToThreadId,
+                            undoGraceSeconds: 10,
+                          );
+                        },
+                      ),
+                    ),
 
-            // Floating "Undo Send" Snackbar (Bottom-Left)
+            // Floating "Undo Send" Snackbar
             if (_mailState.activePendingSendId != null)
               Positioned(
-                left: 24,
-                bottom: 24,
+                left: isMobile ? 16 : 24,
+                right: isMobile ? 16 : null,
+                bottom: isMobile ? 16 : 24,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
@@ -315,13 +386,15 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                     ],
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: isMobile ? MainAxisSize.max : MainAxisSize.min,
                     children: [
                       const Icon(Icons.check_circle, color: GmailColors.googleGreen, size: 18),
                       const SizedBox(width: 10),
-                      const Text(
-                        'Message sent.',
-                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                      const Expanded(
+                        child: Text(
+                          'Message sent.',
+                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
                       ),
                       const SizedBox(width: 16),
                       InkWell(

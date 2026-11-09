@@ -39,8 +39,124 @@ class _GmailHeaderState extends State<GmailHeader> {
     super.dispose();
   }
 
+  Widget _buildAccountMenu(BuildContext context) {
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 48),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      tooltip: 'Google Account',
+      onSelected: (val) {
+        if (val == '__logout__') {
+          widget.state.logout();
+        }
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Signed in as', style: TextStyle(fontSize: 11, color: GmailColors.textMuted)),
+              Text(
+                widget.state.currentMailbox,
+                style: const TextStyle(fontWeight: FontWeight.bold, color: GmailColors.textDark, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: '__logout__',
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 18, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Sign out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ],
+      child: CircleAvatar(
+        radius: 17,
+        backgroundColor: GmailColors.googleBlue,
+        foregroundImage: widget.state.currentMailbox.isNotEmpty
+            ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(widget.state.currentMailbox)}')
+            : null,
+        onForegroundImageError: (_, __) {},
+        child: Text(
+          widget.state.currentMailbox.isNotEmpty
+              ? widget.state.currentMailbox[0].toUpperCase()
+              : 'U',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      color: GmailColors.scaffoldBackground,
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: GmailColors.surfaceWhite,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.menu, color: GmailColors.textSnippet),
+              onPressed: widget.onToggleSidebar,
+              tooltip: 'Navigation',
+            ),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: 'Search in mail',
+                  hintStyle: TextStyle(fontSize: 15, color: GmailColors.textSnippet),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 10),
+                ),
+                style: const TextStyle(fontSize: 15),
+                onSubmitted: (val) {
+                  widget.state.setSearchQuery(val.trim());
+                },
+              ),
+            ),
+            if (_searchController.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: GmailColors.textSnippet),
+                onPressed: () {
+                  _searchController.clear();
+                  widget.state.setSearchQuery('');
+                },
+              ),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildAccountMenu(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 768;
+    if (isMobile) {
+      return _buildMobileHeader(context);
+    }
+
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -235,54 +351,7 @@ class _GmailHeaderState extends State<GmailHeader> {
           const SizedBox(width: 8),
 
           // User Profile Avatar Chip
-          PopupMenuButton<String>(
-            tooltip: 'ClearMail Account',
-            onSelected: (val) {
-              if (val == '__logout__') {
-                widget.state.logout();
-              }
-            },
-            itemBuilder: (ctx) => [
-              PopupMenuItem(
-                enabled: false,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Signed in as', style: TextStyle(fontSize: 11, color: GmailColors.textMuted)),
-                    Text(
-                      widget.state.currentMailbox,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: GmailColors.textDark, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: '__logout__',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 18, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Sign out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-            ],
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: GmailColors.googleBlue,
-              foregroundImage: widget.state.currentMailbox.isNotEmpty
-                  ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(widget.state.currentMailbox)}')
-                  : null,
-              onForegroundImageError: (_, __) {},
-              child: Text(
-                widget.state.currentMailbox.isNotEmpty
-                    ? widget.state.currentMailbox[0].toUpperCase()
-                    : 'U',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-            ),
-          ),
+          _buildAccountMenu(context),
         ],
       ),
     );

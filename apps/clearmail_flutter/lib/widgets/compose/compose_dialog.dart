@@ -206,7 +206,9 @@ class _ComposeDialogState extends State<ComposeDialog> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isMinimized) {
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
+    if (!isMobile && _isMinimized) {
       return Container(
         width: 260,
         height: 40,
@@ -243,64 +245,130 @@ class _ComposeDialogState extends State<ComposeDialog> {
       );
     }
 
-    final double dialogWidth = _isMaximized ? MediaQuery.of(context).size.width * 0.75 : 560;
-    final double dialogHeight = _isMaximized ? MediaQuery.of(context).size.height * 0.8 : 540;
+    final double dialogWidth = isMobile
+        ? double.infinity
+        : (_isMaximized ? MediaQuery.of(context).size.width * 0.75 : 560);
+    final double dialogHeight = isMobile
+        ? double.infinity
+        : (_isMaximized ? MediaQuery.of(context).size.height * 0.8 : 540);
 
     return Container(
       width: dialogWidth,
       height: dialogHeight,
       decoration: BoxDecoration(
         color: GmailColors.surfaceWhite,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.25),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: isMobile ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(8)),
+        boxShadow: isMobile
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
       ),
       child: Column(
         children: [
           // Header Bar
-          Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF2F6FC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  widget.initialSubject != null && widget.initialSubject!.isNotEmpty
-                      ? widget.initialSubject!
-                      : 'New Message',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: GmailColors.textDark,
+          if (isMobile)
+            Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: const BoxDecoration(
+                color: GmailColors.surfaceWhite,
+                border: Border(bottom: BorderSide(color: Color(0xFFE0E2EC))),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: GmailColors.textDark),
+                    tooltip: 'Back',
+                    onPressed: widget.onClose,
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 18),
-                  tooltip: 'Minimize',
-                  onPressed: () => setState(() => _isMinimized = true),
-                ),
-                IconButton(
-                  icon: Icon(_isMaximized ? Icons.close_fullscreen : Icons.open_in_full, size: 16),
-                  tooltip: _isMaximized ? 'Exit full screen' : 'Full screen',
-                  onPressed: () => setState(() => _isMaximized = !_isMaximized),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Save & close',
-                  onPressed: widget.onClose,
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Text(
+                    widget.initialSubject != null && widget.initialSubject!.isNotEmpty
+                        ? widget.initialSubject!
+                        : 'Compose',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: GmailColors.textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.attach_file, color: GmailColors.textDark),
+                    tooltip: 'Attach file',
+                    onPressed: _pickFiles,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.send, color: GmailColors.googleBlue),
+                    tooltip: 'Send',
+                    onPressed: _handleSend,
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF2F6FC),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    widget.initialSubject != null && widget.initialSubject!.isNotEmpty
+                        ? widget.initialSubject!
+                        : 'New Message',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: GmailColors.textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.remove, size: 18),
+                    tooltip: 'Minimize',
+                    onPressed: () => setState(() => _isMinimized = true),
+                  ),
+                  IconButton(
+                    icon: Icon(_isMaximized ? Icons.close_fullscreen : Icons.open_in_full, size: 16),
+                    tooltip: _isMaximized ? 'Exit full screen' : 'Full screen',
+                    onPressed: () => setState(() => _isMaximized = !_isMaximized),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Save & close',
+                    onPressed: widget.onClose,
+                  ),
+                ],
+              ),
             ),
-          ),
+
+          if (isMobile)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  const Text('From  ', style: TextStyle(color: GmailColors.textSnippet, fontSize: 14)),
+                  Expanded(
+                    child: Text(
+                      widget.state.currentMailbox,
+                      style: const TextStyle(fontSize: 14, color: GmailColors.textDark),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (isMobile)
+            const Divider(height: 1, color: Color(0xFFE0E2EC)),
 
           // To Input with Cc / Bcc toggle actions
           Padding(
@@ -495,69 +563,105 @@ class _ComposeDialogState extends State<ComposeDialog> {
           const Divider(height: 1, color: Color(0xFFE0E2EC)),
 
           // Bottom Action Bar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                // Send Pill Button
-                ElevatedButton(
-                  onPressed: _handleSend,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: GmailColors.googleBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    elevation: 0,
+          if (isMobile)
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.format_bold, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Bold',
+                    onPressed: () => _applyFormat('**', '**'),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Send', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      SizedBox(width: 4),
-                      Icon(Icons.arrow_drop_down, size: 18),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.format_italic, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Italic',
+                    onPressed: () => _applyFormat('*', '*'),
                   ),
-                ),
-                const SizedBox(width: 12),
+                  IconButton(
+                    icon: const Icon(Icons.format_list_bulleted, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Bullet list',
+                    onPressed: () => _applyFormat('\n• ', ''),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.insert_link, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Insert link',
+                    onPressed: () => _applyFormat('[Link title](https://', ')'),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Discard draft',
+                    onPressed: widget.onClose,
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  // Send Pill Button
+                  ElevatedButton(
+                    onPressed: _handleSend,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: GmailColors.googleBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: 0,
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Send', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        SizedBox(width: 4),
+                        Icon(Icons.arrow_drop_down, size: 18),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
 
-                // Formatting Icons
-                IconButton(
-                  icon: const Icon(Icons.format_bold, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Bold',
-                  onPressed: () => _applyFormat('**', '**'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_italic, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Italic',
-                  onPressed: () => _applyFormat('*', '*'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_list_bulleted, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Bullet list',
-                  onPressed: () => _applyFormat('\n• ', ''),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.attach_file, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Attach files',
-                  onPressed: _pickFiles,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.insert_link, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Insert link',
-                  onPressed: () => _applyFormat('[Link title](https://', ')'),
-                ),
+                  // Formatting Icons
+                  IconButton(
+                    icon: const Icon(Icons.format_bold, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Bold',
+                    onPressed: () => _applyFormat('**', '**'),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.format_italic, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Italic',
+                    onPressed: () => _applyFormat('*', '*'),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.format_list_bulleted, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Bullet list',
+                    onPressed: () => _applyFormat('\n• ', ''),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.attach_file, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Attach files',
+                    onPressed: _pickFiles,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.insert_link, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Insert link',
+                    onPressed: () => _applyFormat('[Link title](https://', ')'),
+                  ),
 
-                const Spacer(),
+                  const Spacer(),
 
-                // Discard Draft
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20, color: GmailColors.textSnippet),
-                  tooltip: 'Discard draft',
-                  onPressed: widget.onClose,
-                ),
-              ],
+                  // Discard Draft
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20, color: GmailColors.textSnippet),
+                    tooltip: 'Discard draft',
+                    onPressed: widget.onClose,
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

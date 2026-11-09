@@ -5,17 +5,171 @@ import '../../theme/gmail_theme.dart';
 class GmailSidebar extends StatelessWidget {
   final MailState state;
   final bool isCollapsed;
+  final bool isDrawer;
   final VoidCallback onComposePressed;
+  final VoidCallback? onFolderSelected;
 
   const GmailSidebar({
     super.key,
     required this.state,
     required this.isCollapsed,
     required this.onComposePressed,
+    this.isDrawer = false,
+    this.onFolderSelected,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (isDrawer) {
+      return Container(
+        color: GmailColors.scaffoldBackground,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mobile Drawer Header
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: GmailColors.threadBorder, width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: GmailColors.googleBlue,
+                      foregroundImage: state.currentMailbox.isNotEmpty
+                          ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(state.currentMailbox)}')
+                          : null,
+                      onForegroundImageError: (_, __) {},
+                      child: Text(
+                        state.currentMailbox.isNotEmpty ? state.currentMailbox[0].toUpperCase() : 'U',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ClearMail',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: GmailColors.googleRed),
+                          ),
+                          Text(
+                            state.currentMailbox,
+                            style: const TextStyle(fontSize: 13, color: GmailColors.textSnippet, fontWeight: FontWeight.w500),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Folders List
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  children: [
+                    _buildNavItem(
+                      icon: Icons.inbox,
+                      label: 'Inbox',
+                      folderKey: 'inbox',
+                      badgeCount: state.stats?.unreadCount ?? 0,
+                    ),
+                    _buildNavItem(
+                      icon: Icons.star_border,
+                      label: 'Starred',
+                      folderKey: 'starred',
+                      badgeCount: state.stats?.foldersCount['starred'] ?? 0,
+                    ),
+                    _buildNavItem(
+                      icon: Icons.access_time,
+                      label: 'Snoozed',
+                      folderKey: 'snoozed',
+                    ),
+                    _buildNavItem(
+                      icon: Icons.send_outlined,
+                      label: 'Sent',
+                      folderKey: 'sent',
+                      badgeCount: state.stats?.foldersCount['sent'] ?? 0,
+                    ),
+                    _buildNavItem(
+                      icon: Icons.drafts_outlined,
+                      label: 'Drafts',
+                      folderKey: 'drafts',
+                      badgeCount: state.stats?.foldersCount['drafts'] ?? 0,
+                    ),
+                    _buildNavItem(
+                      icon: Icons.label_important_outline,
+                      label: 'Important',
+                      folderKey: 'important',
+                    ),
+                    _buildNavItem(
+                      icon: Icons.report_outlined,
+                      label: 'Spam',
+                      folderKey: 'spam',
+                      badgeCount: state.stats?.foldersCount['spam'] ?? 0,
+                    ),
+                    _buildNavItem(
+                      icon: Icons.delete_outline,
+                      label: 'Trash',
+                      folderKey: 'trash',
+                      badgeCount: state.stats?.foldersCount['trash'] ?? 0,
+                    ),
+                    const Divider(height: 16, color: GmailColors.threadBorder),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text('Labels', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: GmailColors.textSnippet)),
+                    ),
+                    _buildLabelItem('Work', GmailColors.googleBlue),
+                    _buildLabelItem('Personal', GmailColors.googleGreen),
+                    _buildLabelItem('Receipts', GmailColors.googleYellow),
+                  ],
+                ),
+              ),
+
+              // Drawer Footer (Dark Mode & Sign Out)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: GmailColors.threadBorder, width: 1)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(state.isDarkMode ? Icons.dark_mode : Icons.light_mode, size: 20, color: GmailColors.textSnippet),
+                        const SizedBox(width: 8),
+                        Text(state.isDarkMode ? 'Dark' : 'Light', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                    Switch(
+                      value: state.isDarkMode,
+                      onChanged: (_) => state.toggleTheme(),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.logout, size: 20, color: Colors.red),
+                      tooltip: 'Sign out',
+                      onPressed: () {
+                        onFolderSelected?.call();
+                        state.logout();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isCollapsed) {
       return Container(
         width: 72,
@@ -252,7 +406,10 @@ class GmailSidebar extends StatelessWidget {
                 ),
               )
             : null,
-        onTap: () => state.setFolder(folderKey),
+        onTap: () {
+          state.setFolder(folderKey);
+          onFolderSelected?.call();
+        },
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
         ),
@@ -280,7 +437,10 @@ class GmailSidebar extends StatelessWidget {
             color: isActive ? GmailColors.sidebarActiveText : GmailColors.sidebarInactiveText,
           ),
         ),
-        onTap: () => state.setLabel(label),
+        onTap: () {
+          state.setLabel(label);
+          onFolderSelected?.call();
+        },
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
         ),
