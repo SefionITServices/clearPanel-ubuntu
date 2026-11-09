@@ -18,6 +18,50 @@ class MailApiService {
   }
 
   // ---------------------------------------------------------------------------
+  // Authentication (Direct & SSO)
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
+  }) async {
+    final response = await http.post(
+      _uri('/mail/sync/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'email': email, 'password': password}),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body);
+    } else {
+      try {
+        final err = json.decode(response.body);
+        throw Exception(err['message'] ?? 'Login failed');
+      } catch (e) {
+        throw Exception('Login failed: ${response.statusCode}');
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> ssoLogin({
+    required String ssoToken,
+  }) async {
+    final response = await http.post(
+      _uri('/mail/sync/auth/sso'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'ssoToken': ssoToken}),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body);
+    } else {
+      try {
+        final err = json.decode(response.body);
+        throw Exception(err['message'] ?? 'SSO verification failed');
+      } catch (e) {
+        throw Exception('SSO failed: ${response.statusCode}');
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Fetch Threads
   // ---------------------------------------------------------------------------
   Future<List<EmailThread>> fetchThreads({

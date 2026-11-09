@@ -16,6 +16,22 @@ import { MailFolder } from './mail-sync.model';
 export class MailGatewayController {
   constructor(private readonly mailGatewayService: MailGatewayService) {}
 
+  @Post('auth/login')
+  async login(@Body() body: { email: string; password?: string }) {
+    if (!body?.email || !body?.password) {
+      throw new BadRequestException('Email and password are required');
+    }
+    return this.mailGatewayService.authenticate(body.email, body.password);
+  }
+
+  @Post('auth/sso')
+  async ssoLogin(@Body() body: { ssoToken: string }) {
+    if (!body?.ssoToken) {
+      throw new BadRequestException('ssoToken is required');
+    }
+    return this.mailGatewayService.authenticateSso(body.ssoToken);
+  }
+
   @Get('threads')
   async listThreads(
     @Query('mailbox') mailbox: string,

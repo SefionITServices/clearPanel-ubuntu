@@ -217,20 +217,50 @@ class _GmailHeaderState extends State<GmailHeader> {
           PopupMenuButton<String>(
             tooltip: 'ClearPanel Account',
             onSelected: (val) {
-              widget.state.switchMailbox(val);
+              if (val == '__logout__') {
+                widget.state.logout();
+              } else {
+                widget.state.switchMailbox(val);
+              }
             },
             itemBuilder: (ctx) => [
+              PopupMenuItem(
+                enabled: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Signed in as', style: TextStyle(fontSize: 11, color: GmailColors.textMuted)),
+                    Text(
+                      widget.state.currentMailbox,
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: GmailColors.textDark, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'admin@clearpanel.local',
-                child: Text('admin@clearpanel.local (Default)'),
+                child: Text('Switch: admin@clearpanel.local'),
               ),
               const PopupMenuItem(
                 value: 'sarah@clearpanel.local',
-                child: Text('sarah@clearpanel.local'),
+                child: Text('Switch: sarah@clearpanel.local'),
               ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'alex@clearpanel.local',
-                child: Text('alex@clearpanel.local'),
+                child: Text('Switch: alex@clearpanel.local'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: '__logout__',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Sign out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500)),
+                  ],
+                ),
               ),
             ],
             child: CircleAvatar(

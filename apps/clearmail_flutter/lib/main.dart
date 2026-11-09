@@ -8,6 +8,7 @@ import 'widgets/sidebar/gmail_sidebar.dart';
 import 'widgets/thread_list/thread_list_view.dart';
 import 'widgets/conversation/conversation_view.dart';
 import 'widgets/compose/compose_dialog.dart';
+import 'widgets/auth/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +59,10 @@ class _ClearMailHomeState extends State<ClearMailHome> {
       apiService: _apiService,
       socketService: _socketService,
     );
+
+    // Check SSO token in URL parameters (?sso_token=xyz)
+    final ssoToken = Uri.base.queryParameters['sso_token'];
+    _mailState.initAuthAndLoad(ssoToken: ssoToken);
   }
 
   @override
@@ -96,6 +101,19 @@ class _ClearMailHomeState extends State<ClearMailHome> {
     return ListenableBuilder(
       listenable: _mailState,
       builder: (context, _) {
+        if (!_mailState.isAuthInitialized) {
+          return const Scaffold(
+            backgroundColor: GmailColors.scaffoldBackground,
+            body: Center(
+              child: CircularProgressIndicator(color: GmailColors.googleBlue),
+            ),
+          );
+        }
+
+        if (!_mailState.isAuthenticated) {
+          return LoginScreen(state: _mailState);
+        }
+
         return Scaffold(
           body: Stack(
             children: [

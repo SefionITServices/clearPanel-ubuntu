@@ -1,15 +1,32 @@
 import { MailGatewayService } from '../src/mail/sync/mail-gateway.service';
 import { MailGateway } from '../src/mail/sync/mail-gateway.gateway';
+import { MailStorageService } from '../src/mail/sync/mail-storage.service';
+import { MailSsoService } from '../src/mail/mail-sso.service';
 
 describe('MailGatewayService', () => {
   let service: MailGatewayService;
   let mockGateway: Partial<MailGateway>;
+  let mockStorage: Partial<MailStorageService>;
+  let mockSso: Partial<MailSsoService>;
 
   beforeEach(async () => {
     mockGateway = {
       emitToMailbox: jest.fn(),
     };
-    service = new MailGatewayService(mockGateway as MailGateway);
+    mockStorage = {
+      readFolderMessages: jest.fn().mockResolvedValue([]),
+      sendRealSmtp: jest.fn().mockResolvedValue({ messageId: 'test-msg-id' }),
+      verifyCredentials: jest.fn().mockResolvedValue({ valid: true, email: 'testuser@example.com' }),
+    };
+    mockSso = {
+      verifyToken: jest.fn().mockReturnValue({ email: 'testuser@example.com' }),
+    };
+
+    service = new MailGatewayService(
+      mockGateway as MailGateway,
+      mockStorage as MailStorageService,
+      mockSso as MailSsoService,
+    );
     await service.onModuleInit();
   });
 

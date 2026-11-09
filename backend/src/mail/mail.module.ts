@@ -15,6 +15,8 @@ import { DnsModule } from '../dns/dns.module';
 import { DnsServerModule } from '../dns-server/dns-server.module';
 import { AppStoreModule } from '../app-store/app-store.module';
 
+import { MailStorageService } from './sync/mail-storage.service';
+
 @Module({
   imports: [ConfigModule, ServerModule, DnsModule, DnsServerModule, AppStoreModule],
   controllers: [MailController, MailAutoconfigController, MailGatewayController],
@@ -26,7 +28,8 @@ import { AppStoreModule } from '../app-store/app-store.module';
     MailSsoService,
     MailGatewayService,
     MailGateway,
+    MailStorageService,
   ],
-  exports: [MailService, MailStatusService, MailGatewayService, MailGateway],
+  exports: [MailService, MailStatusService, MailGatewayService, MailGateway, MailStorageService],
 })
 export class MailModule {}

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/email_models.dart';
 import '../services/mail_api_service.dart';
 import '../services/mail_socket_service.dart';
@@ -8,7 +9,9 @@ class MailState extends ChangeNotifier {
   final MailApiService apiService;
   final MailSocketService socketService;
 
-  String _currentMailbox = 'admin@clearpanel.local';
+  String _currentMailbox = '';
+  String? _sessionToken;
+  bool _isAuthInitialized = false;
   String _currentFolder = 'inbox';
   String? _currentLabel;
   String _currentCategory = 'primary'; // primary, social, promotions, updates
@@ -33,14 +36,13 @@ class MailState extends ChangeNotifier {
   MailState({
     required this.apiService,
     required this.socketService,
-  }) {
-    _initSocket();
-    loadThreads();
-    loadStats();
-  }
+  });
 
   // Getters
   String get currentMailbox => _currentMailbox;
+  String? get sessionToken => _sessionToken;
+  bool get isAuthInitialized => _isAuthInitialized;
+  bool get isAuthenticated => _currentMailbox.isNotEmpty;
   String get currentFolder => _currentFolder;
   String? get currentLabel => _currentLabel;
   String get currentCategory => _currentCategory;
@@ -54,6 +56,123 @@ class MailState extends ChangeNotifier {
   MailboxStats? get stats => _stats;
   String? get activePendingSendId => _activePendingSendId;
   int get undoCountdown => _undoCountdown;
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle & Persistence
+  // ---------------------------------------------------------------------------
+
+  Future<void> initAuthAndLoad({String? ssoToken}) async {
+    _initSocket();
+
+    if (ssoToken != null && ssoToken.isNotEmpty) {
+      final success = await handleSso(ssoToken);
+      if (success) {
+        _isAuthInitialized = true;
+        notifyListeners();
+        return;
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedEmail = prefs.getString('clearmail_user_email');
+      final savedToken = prefs.getString('clearmail_session_token');
+
+      if (savedEmail != null && savedEmail.isNotEmpty) {
+        _currentMailbox = savedEmail;
+        _sessionToken = savedToken;
+        socketService.connect(_currentMailbox);
+        await loadThreads();
+        await loadStats();
+      }
+    } catch (_) {}
+
+    _isAuthInitialized = true;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Authentication (Login / Logout / SSO)
+  // ---------------------------------------------------------------------------
+
+  Future<bool> login(String email, String password) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final res = await apiService.login(email: email, password: password);
+      _sessionToken = res['token'];
+      _currentMailbox = res['email'];
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('clearmail_user_email', _currentMailbox);
+        if (_sessionToken != null) {
+          await prefs.setString('clearmail_session_token', _sessionToken!);
+        }
+      } catch (_) {}
+
+      socketService.connect(_currentMailbox);
+      await loadThreads();
+      await loadStats();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> handleSso(String ssoToken) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final res = await apiService.ssoLogin(ssoToken: ssoToken);
+      _sessionToken = res['token'];
+      _currentMailbox = res['email'];
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('clearmail_user_email', _currentMailbox);
+        if (_sessionToken != null) {
+          await prefs.setString('clearmail_session_token', _sessionToken!);
+        }
+      } catch (_) {}
+
+      socketService.connect(_currentMailbox);
+      await loadThreads();
+      await loadStats();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> logout() async {
+    _sessionToken = null;
+    _currentMailbox = '';
+    _threads.clear();
+    _selectedThread = null;
+    _selectedThreadIds.clear();
+    socketService.disconnect();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('clearmail_user_email');
+      await prefs.remove('clearmail_session_token');
+    } catch (_) {}
+
+    notifyListeners();
+  }
 
   void _initSocket() {
     socketService.onConnectionChange = (connected) {
@@ -95,7 +214,9 @@ class MailState extends ChangeNotifier {
       notifyListeners();
     };
 
-    socketService.connect(_currentMailbox);
+    if (_currentMailbox.isNotEmpty) {
+      socketService.connect(_currentMailbox);
+    }
   }
 
   void switchMailbox(String newMailbox) {

@@ -12,6 +12,8 @@ import {
 } from './mail-sync.model';
 import { getDataFilePath } from '../../common/paths';
 import { MailGateway } from './mail-gateway.gateway';
+import { MailStorageService } from './mail-storage.service';
+import { MailSsoService } from '../mail-sso.service';
 
 interface MailboxStore {
   threads: Map<string, EmailThread>;
@@ -29,6 +31,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(forwardRef(() => MailGateway))
     private readonly gateway: MailGateway,
+    private readonly storageService: MailStorageService,
+    private readonly ssoService: MailSsoService,
   ) {}
 
   async onModuleInit() {
@@ -69,6 +73,25 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   // Store Management (Load / Save)
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Authentication
+  // ---------------------------------------------------------------------------
+
+  async authenticate(email: string, pass: string): Promise<{ token: string; email: string }> {
+    const res = await this.storageService.verifyCredentials(email, pass);
+    if (!res.valid) {
+      throw new Error('Invalid email address or password');
+    }
+    const token = Buffer.from(JSON.stringify({ email: res.email, ts: Date.now() })).toString('base64');
+    return { token, email: res.email };
+  }
+
+  async authenticateSso(ssoToken: string): Promise<{ token: string; email: string }> {
+    const verified = this.ssoService.verifyToken(ssoToken);
+    const token = Buffer.from(JSON.stringify({ email: verified.email, ts: Date.now() })).toString('base64');
+    return { token, email: verified.email };
+  }
+
   private async getStore(mailboxEmail: string): Promise<MailboxStore> {
     const normalized = mailboxEmail.trim().toLowerCase();
     if (this.stores.has(normalized)) {
@@ -95,13 +118,72 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
         }
       }
     } catch {
-      // Store does not exist yet. Seed initial welcome emails for demo/testing.
-      this.seedInitialMessages(normalized, store);
-      await this.saveStore(normalized, store);
+      // Not yet cached to JSON
     }
 
+    // Ingest real messages from physical Maildir (/var/mail/vhosts)
+    await this.syncFromMaildir(normalized, store);
+
+    // If store has 0 messages, seed the welcome message
+    if (store.messages.size === 0) {
+      this.seedInitialMessages(normalized, store);
+    }
+
+    await this.saveStore(normalized, store);
     this.stores.set(normalized, store);
     return store;
+  }
+
+  async syncFromMaildir(mailboxEmail: string, store: MailboxStore): Promise<void> {
+    try {
+      const folders: MailFolder[] = ['inbox', 'sent', 'drafts', 'trash', 'spam'];
+      for (const folder of folders) {
+        const realMsgs = await this.storageService.readFolderMessages(mailboxEmail, folder);
+        for (const msg of realMsgs) {
+          if (!store.messages.has(msg.id)) {
+            // Match or compute thread
+            const normalizedSubject = this.normalizeSubject(msg.subject);
+            let thread = Array.from(store.threads.values()).find(
+              (t) =>
+                this.normalizeSubject(t.subject).toLowerCase() === normalizedSubject.toLowerCase() ||
+                (msg.inReplyTo && t.messages?.some((m) => m.messageIdHeader === msg.inReplyTo)),
+            );
+
+            const threadId = thread ? thread.id : randomUUID();
+            msg.threadId = threadId;
+            store.messages.set(msg.id, msg);
+
+            if (thread) {
+              thread.messageCount += 1;
+              if (!msg.isRead) thread.unreadCount += 1;
+              if (new Date(msg.date).getTime() > new Date(thread.lastMessageDate).getTime()) {
+                thread.lastMessageDate = msg.date;
+                thread.snippet = msg.snippet;
+              }
+              if (!thread.participants.some((p) => p.email === msg.from.email)) {
+                thread.participants.push(msg.from);
+              }
+            } else {
+              store.threads.set(threadId, {
+                id: threadId,
+                subject: msg.subject,
+                snippet: msg.snippet,
+                lastMessageDate: msg.date,
+                messageCount: 1,
+                unreadCount: msg.isRead ? 0 : 1,
+                participants: [msg.from],
+                folder: msg.folder,
+                labels: msg.labels,
+                hasAttachments: msg.hasAttachments,
+                isStarred: msg.isStarred,
+              });
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not sync Maildir for ${mailboxEmail}: ${err.message}`);
+    }
   }
 
   private async saveStore(mailboxEmail: string, store: MailboxStore): Promise<void> {
@@ -514,10 +596,20 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       if (item.status === 'pending' && now >= item.sendAfter) {
         item.status = 'sending';
         try {
-          // Here: In production, hand off to Postfix / Dovecot submission.
-          // For now, mark as successfully sent and broadcast event.
+          // Send real email via local Postfix SMTP
+          await this.storageService.sendRealSmtp(item.mailboxEmail, {
+            to: item.message.to,
+            cc: item.message.cc,
+            bcc: item.message.bcc,
+            subject: item.message.subject,
+            bodyHtml: item.message.bodyHtml,
+            bodyText: item.message.bodyText,
+            attachments: item.message.attachments,
+            replyToMessageId: item.message.inReplyTo,
+          });
+
           item.status = 'sent';
-          this.logger.log(`Dispatched email ${item.message.id} to SMTP successfully.`);
+          this.logger.log(`Dispatched real SMTP email ${item.message.id} successfully.`);
 
           this.gateway.emitToMailbox(item.mailboxEmail, 'mail:send_completed', {
             pendingId: id,
