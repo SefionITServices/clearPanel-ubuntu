@@ -9,8 +9,11 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard, SkipThrottle } from '@nestjs/throttler';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '../auth/auth.guard';
 import { MailService, DomainSettingsUpdate } from './mail.service';
 import { MailStatusService } from './mail-status.service';
@@ -151,7 +154,7 @@ export class MailController {
   @Post('domains/:id/mailboxes')
   addMailbox(
     @Param('id') id: string,
-    @Body() body: { email: string; password?: string; passwordHash?: string; quotaMb?: number },
+    @Body() body: { email: string; name?: string; avatarUrl?: string; password?: string; passwordHash?: string; quotaMb?: number },
   ) {
     if (!body.email) {
       throw new BadRequestException('email is required');
@@ -161,6 +164,8 @@ export class MailController {
     }
     return this.mailService.addMailbox(id, {
       email: body.email,
+      name: body.name,
+      avatarUrl: body.avatarUrl,
       password: body.password,
       passwordHash: body.passwordHash,
       quotaMb: body.quotaMb,
@@ -172,19 +177,59 @@ export class MailController {
   updateMailbox(
     @Param('id') id: string,
     @Param('mailboxId') mailboxId: string,
-    @Body() body: { password?: string; passwordHash?: string; quotaMb?: number | null },
+    @Body() body: { name?: string; avatarUrl?: string | null; password?: string; passwordHash?: string; quotaMb?: number | null },
   ) {
     if (!body) {
       throw new BadRequestException('update payload is required');
     }
-    if (!body.password && !body.passwordHash && body.quotaMb === undefined) {
-      throw new BadRequestException('Provide password/passwordHash and/or quotaMb');
+    if (!body.password && !body.passwordHash && body.quotaMb === undefined && body.name === undefined && body.avatarUrl === undefined) {
+      throw new BadRequestException('Provide name, avatarUrl, password/passwordHash and/or quotaMb');
     }
     return this.mailService.updateMailbox(id, mailboxId, {
+      name: body.name,
+      avatarUrl: body.avatarUrl,
       password: body.password,
       passwordHash: body.passwordHash,
       quotaMb: body.quotaMb,
     });
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Post('domains/:id/mailboxes/:mailboxId/avatar')
+  @UseInterceptors(FileInterceptor('avatar', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadMailboxAvatar(
+    @Param('id') domainId: string,
+    @Param('mailboxId') mailboxId: string,
+    @UploadedFile() file: any,
+    @Body('name') name?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Avatar image file is required');
+    }
+    return this.mailService.saveMailboxAvatar(domainId, mailboxId, file, name);
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Delete('domains/:id/mailboxes/:mailboxId/avatar')
+  async deleteMailboxAvatar(
+    @Param('id') domainId: string,
+    @Param('mailboxId') mailboxId: string,
+  ) {
+    await this.mailService.removeMailboxAvatar(domainId, mailboxId);
+    return { success: true };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('domains/:id/bimi-logo')
+  @UseInterceptors(FileInterceptor('logo', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  async uploadBimiLogo(
+    @Param('id') domainId: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('SVG logo file is required');
+    }
+    return this.mailService.saveBimiLogo(domainId, file);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })

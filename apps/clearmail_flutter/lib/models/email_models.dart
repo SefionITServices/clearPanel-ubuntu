@@ -1,19 +1,27 @@
 class EmailAddress {
   final String name;
   final String email;
+  final String? avatarUrl;
 
-  EmailAddress({required this.name, required this.email});
+  EmailAddress({
+    required this.name,
+    required this.email,
+    this.avatarUrl,
+  });
 
   factory EmailAddress.fromJson(Map<String, dynamic> json) {
+    final email = json['email'] ?? '';
     return EmailAddress(
       name: json['name'] ?? '',
-      email: json['email'] ?? '',
+      email: email,
+      avatarUrl: json['avatarUrl'] ?? (email.isNotEmpty ? '/api/mail/avatars/${Uri.encodeComponent(email)}' : null),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'email': email,
+    'avatarUrl': avatarUrl,
   };
 }
 

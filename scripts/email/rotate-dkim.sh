@@ -24,7 +24,7 @@ generate_dkim_key "$DOMAIN" "$SELECTOR" >/dev/null
 RECORD_FILE="${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 if [[ -f "$RECORD_FILE" ]]; then
   RECORD="$(cat "$RECORD_FILE")"
-  printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN"
+  printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN" >&2
   printf '%s\n' "$RECORD"
   exit 0
 fi

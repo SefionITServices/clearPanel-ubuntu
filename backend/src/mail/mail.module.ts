@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MailController } from './mail.controller';
 import { MailAutoconfigController } from './mail-autoconfig.controller';
+import { MailPublicController } from './mail-public.controller';
 import { MailGatewayController } from './sync/mail-gateway.controller';
 import { MailService } from './mail.service';
 import { MailAutomationService } from './mail-automation.service';
@@ -19,7 +20,7 @@ import { MailStorageService } from './sync/mail-storage.service';
 
 @Module({
   imports: [ConfigModule, ServerModule, DnsModule, DnsServerModule, AppStoreModule],
-  controllers: [MailController, MailAutoconfigController, MailGatewayController],
+  controllers: [MailController, MailAutoconfigController, MailPublicController, MailGatewayController],
   providers: [
     MailService,
     MailAutomationService,

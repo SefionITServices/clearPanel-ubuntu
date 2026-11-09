@@ -32,6 +32,9 @@ import {
   Snackbar,
   Tooltip,
   Skeleton,
+  Avatar,
+  Badge,
+  Stack,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -48,6 +51,10 @@ import {
   Warning as WarningIcon,
   OpenInNew as OpenInNewIcon,
   Shield as ShieldIcon,
+  Edit as EditIcon,
+  PhotoCamera as PhotoCameraIcon,
+  DeleteOutline as DeleteOutlineIcon,
+  AccountCircle as AccountCircleIcon,
 } from '@mui/icons-material';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { DeliverabilityWizardModal } from '../components/mail/DeliverabilityWizardModal';
@@ -68,6 +75,8 @@ interface FlatMailbox {
   domain: string;
   mailboxId: string;
   email: string;
+  name?: string;
+  avatarUrl?: string;
   quotaMb: number;
   usedBytes: number;
   active: boolean;
@@ -170,8 +179,17 @@ export default function EmailAccountsPage() {
   const [deliverabilityOpen, setDeliverabilityOpen] = useState(false);
   const [selectedDeliverabilityDomain, setSelectedDeliverabilityDomain] = useState<{ id: string; domain: string } | null>(null);
 
+  // Profile & Avatar dialog
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileMailbox, setProfileMailbox] = useState<FlatMailbox | null>(null);
+  const [profileName, setProfileName] = useState('');
+  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
+  const [profileAvatarPreview, setProfileAvatarPreview] = useState<string | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
+
   // -- state: form fields --------------------------------------------------
   const [newLocalPart, setNewLocalPart] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
   const [newDomainId, setNewDomainId] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newQuota, setNewQuota] = useState('1024');
@@ -231,6 +249,8 @@ export default function EmailAccountsPage() {
           domain: d.domain,
           mailboxId: mb.id,
           email: mb.email,
+          name: mb.name,
+          avatarUrl: mb.avatarUrl,
           quotaMb: mb.quotaMb ?? 0,
           usedBytes: diskMap.get(mb.email) ?? 0,
           active: mb.active,
@@ -310,12 +330,14 @@ export default function EmailAccountsPage() {
     try {
       await mailAPI.addMailbox(newDomainId, {
         email: `${newLocalPart}@${domains.find((d) => d.id === newDomainId)?.domain ?? ''}`,
+        name: newDisplayName.trim() || undefined,
         password: newPassword,
         quotaMb: Number(newQuota) || undefined,
       });
       setSnack({ open: true, message: 'Email account created', severity: 'success' });
       setCreateOpen(false);
       setNewLocalPart('');
+      setNewDisplayName('');
       setNewPassword('');
       setNewQuota('1024');
       loadData(true);
@@ -373,6 +395,92 @@ export default function EmailAccountsPage() {
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     } catch (err: any) {
       setSnack({ open: true, message: err.message || 'Failed to generate ClearMail SSO session', severity: 'error' });
+    }
+  };
+
+  const handleOpenProfile = (mb: FlatMailbox) => {
+    setProfileMailbox(mb);
+    setProfileName(mb.name || '');
+    setProfileAvatarFile(null);
+    setProfileAvatarPreview(mb.avatarUrl || `/api/mail/avatars/${encodeURIComponent(mb.email)}`);
+    setProfileOpen(true);
+    closeMenu();
+  };
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setProfileAvatarFile(file);
+      setProfileAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!profileMailbox) return;
+    setProfileSaving(true);
+    try {
+      await mailAPI.removeMailboxAvatar(profileMailbox.domainId, profileMailbox.mailboxId);
+      setProfileAvatarFile(null);
+      setProfileAvatarPreview(null);
+      setDomains((prev) =>
+        prev.map((d) => {
+          if (d.id !== profileMailbox.domainId) return d;
+          return {
+            ...d,
+            mailboxes: d.mailboxes.map((m) =>
+              m.id === profileMailbox.mailboxId ? { ...m, avatarUrl: undefined } : m
+            ),
+          };
+        })
+      );
+      setSnack({ open: true, message: 'Profile avatar removed', severity: 'success' });
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Failed to remove avatar', severity: 'error' });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profileMailbox) return;
+    setProfileSaving(true);
+    try {
+      let updatedAvatarUrl = profileMailbox.avatarUrl;
+      if (profileAvatarFile) {
+        const res = await mailAPI.uploadMailboxAvatar(
+          profileMailbox.domainId,
+          profileMailbox.mailboxId,
+          profileAvatarFile,
+          profileName.trim()
+        );
+        updatedAvatarUrl = res.avatarUrl;
+      } else {
+        await mailAPI.updateMailbox(profileMailbox.domainId, profileMailbox.mailboxId, {
+          name: profileName.trim(),
+        });
+      }
+
+      setDomains((prev) =>
+        prev.map((d) => {
+          if (d.id !== profileMailbox.domainId) return d;
+          return {
+            ...d,
+            mailboxes: d.mailboxes.map((m) =>
+              m.id === profileMailbox.mailboxId
+                ? { ...m, name: profileName.trim() || undefined, avatarUrl: updatedAvatarUrl }
+                : m
+            ),
+          };
+        })
+      );
+
+      setSnack({ open: true, message: 'Sender profile & logo updated successfully', severity: 'success' });
+      setProfileOpen(false);
+      loadData(true);
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Failed to save profile', severity: 'error' });
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -590,14 +698,57 @@ export default function EmailAccountsPage() {
                       return (
                         <TableRow key={mb.mailboxId} hover>
                           <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <EmailIcon sx={{ color: '#4285F4', fontSize: 20 }} />
-                              <Typography
-                                variant="body2"
-                                sx={{ fontWeight: 500, fontFamily: 'monospace' }}
-                              >
-                                {mb.email}
-                              </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Tooltip title="Click to edit profile photo & sender name">
+                                <Avatar
+                                  src={mb.avatarUrl || `/api/mail/avatars/${encodeURIComponent(mb.email)}`}
+                                  sx={{
+                                    width: 36,
+                                    height: 36,
+                                    bgcolor: '#1a73e8',
+                                    fontWeight: 600,
+                                    fontSize: '0.9rem',
+                                    cursor: 'pointer',
+                                    border: '1px solid rgba(0,0,0,0.08)',
+                                    transition: 'transform 0.15s ease',
+                                    '&:hover': { transform: 'scale(1.08)' },
+                                  }}
+                                  onClick={() => handleOpenProfile(mb)}
+                                >
+                                  {mb.name ? mb.name[0].toUpperCase() : mb.email[0].toUpperCase()}
+                                </Avatar>
+                              </Tooltip>
+                              <Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      color: '#202124',
+                                      '&:hover': { color: '#1a73e8' },
+                                    }}
+                                    onClick={() => handleOpenProfile(mb)}
+                                  >
+                                    {mb.name || mb.email.split('@')[0]}
+                                  </Typography>
+                                  <Tooltip title="Edit Sender Name & Photo / Logo">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleOpenProfile(mb)}
+                                      sx={{ p: 0.2, color: 'text.secondary', '&:hover': { color: '#1a73e8' } }}
+                                    >
+                                      <EditIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ fontWeight: 500, fontFamily: 'monospace', color: 'text.secondary', display: 'block' }}
+                                >
+                                  {mb.email}
+                                </Typography>
+                              </Box>
                             </Box>
                           </TableCell>
                           <TableCell>
@@ -854,6 +1005,15 @@ export default function EmailAccountsPage() {
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
         <MenuItem
           onClick={() => {
+            if (selectedMailbox) handleOpenProfile(selectedMailbox);
+          }}
+          sx={{ fontWeight: 600, color: '#1a73e8' }}
+        >
+          <AccountCircleIcon sx={{ mr: 1, fontSize: 20, color: '#1a73e8' }} />
+          Edit Sender Profile & Logo
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
             setChangePassword('');
             setPasswordOpen(true);
           }}
@@ -950,6 +1110,17 @@ export default function EmailAccountsPage() {
                 helperText="0 = unlimited"
               />
             </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                label="Sender Display Name (Optional)"
+                placeholder="e.g. Alex Johnson or Safon Support"
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+                size="small"
+                helperText="Replaces bare email address in recipient inboxes (Gmail, Apple Mail, Outlook)"
+              />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -960,6 +1131,132 @@ export default function EmailAccountsPage() {
             disabled={saving || !newLocalPart || !newDomainId || !newPassword}
           >
             {saving ? <CircularProgress size={20} /> : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ===== Edit Sender Profile & Logo Dialog ===== */}
+      <Dialog open={profileOpen} onClose={() => setProfileOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AccountCircleIcon sx={{ color: '#1a73e8' }} />
+          Sender Identity & Email Logo
+        </DialogTitle>
+        <DialogContent sx={{ pt: '16px !important' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+            Configure how your mailbox name and profile photo or brand logo will appear when external users receive emails from you.
+          </Typography>
+
+          {/* Recipient Inbox Preview Card */}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 3,
+              bgcolor: '#f8f9fa',
+              borderRadius: 2,
+              border: '1px solid #e0e0e0',
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Recipient Inbox Preview
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Avatar
+                src={profileAvatarPreview || undefined}
+                sx={{ width: 44, height: 44, bgcolor: '#1a73e8', fontWeight: 600, border: '1px solid rgba(0,0,0,0.1)' }}
+              >
+                {profileName.trim()
+                  ? profileName.trim()[0].toUpperCase()
+                  : (profileMailbox?.email ? profileMailbox.email[0].toUpperCase() : 'U')}
+              </Avatar>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#202124' }}>
+                    {profileName.trim() || profileMailbox?.email.split('@')[0] || 'Sender Name'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#5f6368', fontFamily: 'monospace' }}>
+                    &lt;{profileMailbox?.email || 'user@domain.com'}&gt;
+                  </Typography>
+                </Box>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#3c4043', fontSize: '0.85rem' }}>
+                  Weekly Business Update & Proposal
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#80868b', display: 'block' }}>
+                  Hi there, here is the verified proposal from our team...
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+
+          <Stack spacing={2.5}>
+            <TextField
+              fullWidth
+              label="Sender Display Name"
+              placeholder="e.g. Safon Support or Alex Johnson"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              size="small"
+              helperText="This friendly name replaces bare email addresses in Gmail, Outlook, Apple Mail, and ClearMail."
+            />
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, borderRadius: 2, border: '1px dashed #ced4da', bgcolor: '#fafafa' }}>
+              <Avatar
+                src={profileAvatarPreview || undefined}
+                sx={{ width: 64, height: 64, bgcolor: '#1a73e8', fontSize: '1.5rem', fontWeight: 600 }}
+              >
+                {profileName.trim()
+                  ? profileName.trim()[0].toUpperCase()
+                  : (profileMailbox?.email ? profileMailbox.email[0].toUpperCase() : 'U')}
+              </Avatar>
+
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Email Logo / Profile Photo
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  PNG, JPG, or SVG (Max 5MB). Scaled cleanly for all webmail and mobile clients.
+                </Typography>
+
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    component="label"
+                    startIcon={<PhotoCameraIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Upload Photo / Logo
+                    <input type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={handleAvatarFileChange} />
+                  </Button>
+                  {(profileAvatarPreview || profileMailbox?.avatarUrl) && (
+                    <Button
+                      variant="text"
+                      color="error"
+                      size="small"
+                      startIcon={<DeleteOutlineIcon />}
+                      onClick={handleRemoveAvatar}
+                      disabled={profileSaving}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: '#f8f9fa' }}>
+          <Button onClick={() => setProfileOpen(false)} disabled={profileSaving}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveProfile}
+            disabled={profileSaving}
+            sx={{ textTransform: 'none', bgcolor: '#1a73e8' }}
+          >
+            {profileSaving ? <CircularProgress size={20} /> : 'Save Sender Profile'}
           </Button>
         </DialogActions>
       </Dialog>

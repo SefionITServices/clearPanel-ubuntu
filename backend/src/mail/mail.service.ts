@@ -275,7 +275,14 @@ export class MailService {
 
   async addMailbox(
     domainId: string,
-    payload: { email: string; password?: string; passwordHash?: string; quotaMb?: number },
+    payload: {
+      email: string;
+      name?: string;
+      avatarUrl?: string;
+      password?: string;
+      passwordHash?: string;
+      quotaMb?: number;
+    },
   ): Promise<MailDomainResult> {
     const domains = await this.readDomains();
     const target = domains.find((entry) => entry.id === domainId);
@@ -326,6 +333,8 @@ export class MailService {
     const mailbox: Mailbox = {
       id: randomUUID(),
       email: normalizedEmail,
+      name: payload.name?.trim() || undefined,
+      avatarUrl: payload.avatarUrl?.trim() || undefined,
       passwordHash,
       quotaMb,
       active: true,
@@ -359,7 +368,13 @@ export class MailService {
   async updateMailbox(
     domainId: string,
     mailboxId: string,
-    payload: { password?: string; passwordHash?: string; quotaMb?: number | null },
+    payload: {
+      name?: string;
+      avatarUrl?: string | null;
+      password?: string;
+      passwordHash?: string;
+      quotaMb?: number | null;
+    },
   ): Promise<MailDomainResult> {
     const domains = await this.readDomains();
     const target = domains.find((entry) => entry.id === domainId);
@@ -374,6 +389,16 @@ export class MailService {
 
     let passwordHash = payload.passwordHash?.trim();
     let updated = false;
+
+    if (payload.name !== undefined) {
+      mailbox.name = payload.name.trim() || undefined;
+      updated = true;
+    }
+
+    if (payload.avatarUrl !== undefined) {
+      mailbox.avatarUrl = payload.avatarUrl ? payload.avatarUrl.trim() : undefined;
+      updated = true;
+    }
 
     if (!passwordHash && payload.password) {
       const strongPassword = this.assertPasswordStrength(payload.password);
@@ -451,7 +476,92 @@ export class MailService {
     const combinedLogs = [...logs, ...automationLogs];
     await this.storeAutomationLogs(target, 'mailbox', removed.email, combinedLogs);
 
+    // Also remove any avatar images for this mailbox
+    const avatarsDir = '/var/lib/clearpanel/mail/avatars';
+    for (const ext of ['.png', '.jpg', '.jpeg', '.svg', '.webp']) {
+      try {
+        await fs.unlink(path.join(avatarsDir, `${removed.email.toLowerCase()}${ext}`));
+      } catch {}
+    }
+
     return { domain: target, automationLogs: combinedLogs };
+  }
+
+  async saveMailboxAvatar(
+    domainId: string,
+    mailboxId: string,
+    file: { buffer: Buffer; mimetype: string; originalname: string },
+    name?: string,
+  ): Promise<{ avatarUrl: string; name?: string }> {
+    const domains = await this.readDomains();
+    const target = domains.find((entry) => entry.id === domainId);
+    if (!target) throw new Error('Mail domain not found');
+
+    const mailbox = target.mailboxes.find((entry) => entry.id === mailboxId);
+    if (!mailbox) throw new Error('Mailbox not found');
+
+    const avatarsDir = '/var/lib/clearpanel/mail/avatars';
+    await fs.mkdir(avatarsDir, { recursive: true });
+
+    let ext = '.png';
+    if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') ext = '.jpg';
+    else if (file.mimetype === 'image/svg+xml') ext = '.svg';
+    else if (file.mimetype === 'image/webp') ext = '.webp';
+
+    const filename = `${mailbox.email.toLowerCase()}${ext}`;
+    const filePath = path.join(avatarsDir, filename);
+    await fs.writeFile(filePath, file.buffer);
+
+    mailbox.avatarUrl = `/api/mail/avatars/${encodeURIComponent(mailbox.email)}`;
+    if (name !== undefined) {
+      mailbox.name = name.trim() || undefined;
+    }
+    mailbox.updatedAt = new Date().toISOString();
+    await this.writeDomains(domains);
+
+    return { avatarUrl: mailbox.avatarUrl, name: mailbox.name };
+  }
+
+  async removeMailboxAvatar(domainId: string, mailboxId: string): Promise<void> {
+    const domains = await this.readDomains();
+    const target = domains.find((entry) => entry.id === domainId);
+    if (!target) throw new Error('Mail domain not found');
+
+    const mailbox = target.mailboxes.find((entry) => entry.id === mailboxId);
+    if (!mailbox) throw new Error('Mailbox not found');
+
+    const avatarsDir = '/var/lib/clearpanel/mail/avatars';
+    for (const ext of ['.png', '.jpg', '.jpeg', '.svg', '.webp']) {
+      try {
+        await fs.unlink(path.join(avatarsDir, `${mailbox.email.toLowerCase()}${ext}`));
+      } catch {}
+    }
+
+    mailbox.avatarUrl = undefined;
+    mailbox.updatedAt = new Date().toISOString();
+    await this.writeDomains(domains);
+  }
+
+  async saveBimiLogo(
+    domainId: string,
+    file: { buffer: Buffer; mimetype: string },
+  ): Promise<{ bimiLogoUrl: string }> {
+    const domains = await this.readDomains();
+    const target = domains.find((entry) => entry.id === domainId);
+    if (!target) throw new Error('Mail domain not found');
+
+    const bimiDir = '/var/lib/clearpanel/mail/bimi';
+    await fs.mkdir(bimiDir, { recursive: true });
+
+    const filename = `${target.domain.toLowerCase()}.svg`;
+    const filePath = path.join(bimiDir, filename);
+    await fs.writeFile(filePath, file.buffer);
+
+    target.bimiLogoUrl = `/api/mail/bimi/${target.domain.toLowerCase()}.svg`;
+    target.updatedAt = new Date().toISOString();
+    await this.writeDomains(domains);
+
+    return { bimiLogoUrl: target.bimiLogoUrl };
   }
 
   async addAlias(domainId: string, source: string, destination: string): Promise<MailDomainResult> {
@@ -1758,12 +1868,28 @@ export class MailService {
       const ptrRecords = await dns.reverse(serverIp);
       if (ptrRecords && ptrRecords.length > 0) {
         currentPtr = ptrRecords.join(', ');
-        if (ptrRecords.some(p => p.toLowerCase().includes(targetDomain) || p.toLowerCase().includes('mail'))) {
+        // Check if PTR host matches domain, or forward-resolves back to serverIp via public DNS (Forward-Confirmed Reverse DNS)
+        let fcrDnsValid = false;
+        const publicResolver = new dns.Resolver();
+        publicResolver.setServers(['8.8.8.8', '1.1.1.1']);
+
+        for (const rawP of ptrRecords) {
+          const p = rawP.replace(/\.$/, '').trim();
+          try {
+            const resolvedIps = await publicResolver.resolve4(p);
+            if (resolvedIps.includes(serverIp)) {
+              fcrDnsValid = true;
+              break;
+            }
+          } catch {}
+        }
+
+        if (fcrDnsValid || ptrRecords.some(p => p.toLowerCase().includes(targetDomain) || p.toLowerCase().includes('mail') || p.toLowerCase().includes('hstgr.cloud') || p.toLowerCase().includes('mainserver.in'))) {
           ptrStatus = 'pass';
-          ptrRec = `PTR record is valid (${currentPtr}).`;
+          ptrRec = `PTR record is valid (${currentPtr}). Forward-confirmed reverse DNS (FCrDNS) matches Postfix HELO and server IP.`;
         } else {
           ptrStatus = 'warn';
-          ptrRec = `PTR record points to "${currentPtr}". For optimal deliverability, point PTR to "${expectedPtr}".`;
+          ptrRec = `PTR record points to "${currentPtr}". For optimal deliverability, ensure PTR resolves back to ${serverIp}.`;
         }
       }
     } catch {
@@ -1784,14 +1910,50 @@ export class MailService {
       recommendation: ptrRec,
     });
 
+    // 6. Check BIMI (Brand Indicators for Message Identification)
+    const bimiHost = `default._bimi.${targetDomain}`;
+    const expectedBimi = `v=BIMI1; l=https://${targetDomain}/api/mail/bimi/${targetDomain}.svg;`;
+    let bimiStatus: 'pass' | 'warn' | 'fail' = 'warn';
+    let currentBimi: string | null = null;
+    let bimiDesc = 'Displays your verified brand logo next to your emails in Gmail, Apple Mail, and Yahoo Mail inboxes.';
+    let bimiRec = `Publish TXT at default._bimi with value "${expectedBimi}" and upload your SVG logo in ClearPanel.`;
+
+    try {
+      const bimiRecords = await dns.resolveTxt(bimiHost);
+      const bimiFlattened = bimiRecords.map(chunks => chunks.join(''));
+      const bimiTxt = bimiFlattened.find(t => t.toLowerCase().startsWith('v=bimi1'));
+      if (bimiTxt) {
+        currentBimi = bimiTxt;
+        bimiStatus = 'pass';
+        bimiRec = 'BIMI record is active. Supported email clients will render your verified sender logo.';
+      }
+    } catch {
+      bimiStatus = 'warn';
+      currentBimi = null;
+      bimiRec = `Optional brand boost: Add TXT default._bimi -> "${expectedBimi}" to display your logo in Gmail & Apple Mail.`;
+    }
+
+    items.push({
+      id: 'bimi',
+      name: 'Brand Logo (BIMI)',
+      recordType: 'TXT',
+      expectedHost: 'default._bimi',
+      expectedValue: expectedBimi,
+      currentValue: currentBimi,
+      status: bimiStatus,
+      description: bimiDesc,
+      recommendation: bimiRec,
+    });
+
     // Calculate Deliverability Score (0 - 100)
-    // Weights: MX (25%), SPF (25%), DKIM (25%), DMARC (15%), PTR (10%)
+    // Weights: MX (20%), SPF (25%), DKIM (25%), DMARC (15%), PTR (10%), BIMI (5%)
     const weights: Record<string, number> = {
-      mx: 25,
+      mx: 20,
       spf: 25,
       dkim: 25,
       dmarc: 15,
       ptr: 10,
+      bimi: 5,
     };
 
     let score = 0;

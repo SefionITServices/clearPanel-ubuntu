@@ -1,6 +1,8 @@
 export interface Mailbox {
   id: string;
   email: string;
+  name?: string;
+  avatarUrl?: string;
   passwordHash: string;
   quotaMb?: number;
   active: boolean;
@@ -21,6 +23,7 @@ export interface MailDomain {
   domain: string;
   enabled: boolean;
   webmailUrl?: string;
+  bimiLogoUrl?: string;
   spamThreshold?: number;
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;
@@ -102,7 +105,7 @@ export interface DmarcReportSummary {
 // ---- Deliverability Health Wizard ----
 
 export interface DeliverabilityCheckItem {
-  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr';
+  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr' | 'bimi';
   name: string;
   recordType: string;
   expectedHost: string;

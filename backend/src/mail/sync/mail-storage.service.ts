@@ -554,6 +554,21 @@ export class MailStorageService {
     return { draftId };
   }
 
+  private async getMailboxProfile(email: string): Promise<{ name?: string; avatarUrl?: string } | null> {
+    try {
+      const raw = await fs.readFile(getDataFilePath('mail-domains.json'), 'utf8');
+      const domains = JSON.parse(raw);
+      const cleanEmail = email.toLowerCase().trim();
+      for (const d of domains) {
+        const mb = (d.mailboxes || []).find((m: any) => m.email.toLowerCase() === cleanEmail);
+        if (mb) {
+          return { name: mb.name, avatarUrl: mb.avatarUrl };
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // SMTP Outbound Delivery
   // ---------------------------------------------------------------------------
@@ -575,6 +590,14 @@ export class MailStorageService {
       this.initSmtp();
     }
 
+    const profile = await this.getMailboxProfile(fromEmail);
+    const displayName = profile?.name?.trim();
+    const formattedFrom = displayName ? `"${displayName}" <${fromEmail}>` : fromEmail;
+    const domain = fromEmail.split('@')[1] || 'mail';
+    const serverHost = process.env.PANEL_HOST || 'srv1119881.hstgr.cloud';
+    const avatarUrl = `https://${serverHost}/api/mail/avatars/${encodeURIComponent(fromEmail)}`;
+    const generatedMsgId = `<${randomUUID()}@${domain}>`;
+
     const mailAttachments: any[] = [];
     if (payload.attachments && payload.attachments.length > 0) {
       for (const att of payload.attachments) {
@@ -589,28 +612,36 @@ export class MailStorageService {
     }
 
     const mailOptions: nodemailer.SendMailOptions = {
-      from: fromEmail,
+      from: formattedFrom,
+      sender: fromEmail,
       to: payload.to.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       cc: payload.cc?.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       bcc: payload.bcc?.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
       subject: payload.subject,
       text: payload.bodyText,
       html: payload.bodyHtml,
+      messageId: generatedMsgId,
+      headers: {
+        'X-Mailer': 'ClearPanel ClearMail',
+        'X-Avatar-URL': avatarUrl,
+        'X-Image-URL': avatarUrl,
+        'Auto-Submitted': 'no',
+      },
       inReplyTo: payload.replyToMessageId,
       references: payload.replyToMessageId ? [payload.replyToMessageId] : undefined,
       attachments: mailAttachments,
     };
 
-    let sentId: string = randomUUID();
+    let sentId: string = generatedMsgId.replace(/[<>]/g, '');
     try {
       const info = await this.smtpTransporter!.sendMail(mailOptions);
-      sentId = info.messageId || sentId;
-      this.logger.log(`Dispatched real SMTP email from ${fromEmail} (ID: ${sentId})`);
+      sentId = (info.messageId || sentId).replace(/[<>]/g, '');
+      this.logger.log(`Dispatched real SMTP email from ${formattedFrom} (ID: ${sentId})`);
     } catch (err: any) {
       this.logger.warn(`SMTP send warning (local relay): ${err.message}. Saving to Sent folder.`);
     }
 
-    await this.saveSentMessage(fromEmail, payload, sentId);
+    await this.saveSentMessage(fromEmail, formattedFrom, payload, sentId);
 
     // Clean up temporary composer upload files
     if (payload.attachments) {
@@ -626,7 +657,7 @@ export class MailStorageService {
     return { messageId: sentId };
   }
 
-  private async saveSentMessage(fromEmail: string, payload: any, messageId: string) {
+  private async saveSentMessage(fromEmail: string, formattedFrom: string, payload: any, messageId: string) {
     try {
       const maildir = await this.getEffectiveMaildir(fromEmail);
       const sentDir = path.join(maildir, '.Sent', 'cur');
@@ -636,12 +667,14 @@ export class MailStorageService {
       const filePath = path.join(sentDir, fileName);
 
       const rawContent = [
-        `From: ${fromEmail}`,
-        `To: ${payload.to.map((t: any) => t.email).join(', ')}`,
+        `From: ${formattedFrom}`,
+        `To: ${payload.to.map((t: any) => (t.name ? `"${t.name}" <${t.email}>` : t.email)).join(', ')}`,
         `Subject: ${payload.subject}`,
         `Date: ${new Date().toUTCString()}`,
         `Message-ID: <${messageId}>`,
+        'MIME-Version: 1.0',
         'Content-Type: text/html; charset=utf-8',
+        'X-Mailer: ClearPanel ClearMail',
         '',
         payload.bodyHtml || payload.bodyText || '',
       ].join('\r\n');

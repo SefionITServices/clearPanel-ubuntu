@@ -364,8 +364,16 @@ class _ConversationViewState extends State<ConversationView> {
                   CircleAvatar(
                     radius: 20,
                     backgroundColor: Colors.blueGrey.shade100,
+                    foregroundImage: NetworkImage(
+                      (msg.from.avatarUrl != null && msg.from.avatarUrl!.isNotEmpty)
+                          ? msg.from.avatarUrl!
+                          : '/api/mail/avatars/${Uri.encodeComponent(msg.from.email)}',
+                    ),
+                    onForegroundImageError: (_, __) {},
                     child: Text(
-                      msg.from.name.isNotEmpty ? msg.from.name[0].toUpperCase() : '?',
+                      msg.from.name.isNotEmpty
+                          ? msg.from.name[0].toUpperCase()
+                          : (msg.from.email.isNotEmpty ? msg.from.email[0].toUpperCase() : '?'),
                       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
                     ),
                   ),

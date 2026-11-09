@@ -271,6 +271,10 @@ class _GmailHeaderState extends State<GmailHeader> {
             child: CircleAvatar(
               radius: 17,
               backgroundColor: GmailColors.googleBlue,
+              foregroundImage: widget.state.currentMailbox.isNotEmpty
+                  ? NetworkImage('/api/mail/avatars/${Uri.encodeComponent(widget.state.currentMailbox)}')
+                  : null,
+              onForegroundImageError: (_, __) {},
               child: Text(
                 widget.state.currentMailbox.isNotEmpty
                     ? widget.state.currentMailbox[0].toUpperCase()

@@ -10,6 +10,8 @@ export interface AutomationLog {
 export interface MailboxSummary {
   id: string;
   email: string;
+  name?: string;
+  avatarUrl?: string;
   quotaMb?: number;
   active: boolean;
   createdAt: string;
@@ -29,6 +31,7 @@ export interface MailDomain {
   domain: string;
   enabled: boolean;
   webmailUrl?: string;
+  bimiLogoUrl?: string;
   spamThreshold?: number;
   greylistingEnabled?: boolean;
   greylistingDelaySeconds?: number;
@@ -82,12 +85,16 @@ interface DomainLogResponse {
 
 export interface CreateMailboxPayload {
   email: string;
+  name?: string;
+  avatarUrl?: string;
   password?: string;
   passwordHash?: string;
   quotaMb?: number;
 }
 
 export interface UpdateMailboxPayload {
+  name?: string;
+  avatarUrl?: string | null;
   password?: string;
   passwordHash?: string;
   quotaMb?: number | null;
@@ -319,7 +326,7 @@ export interface DmarcReportSummary {
 }
 
 export interface DeliverabilityCheckItem {
-  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr';
+  id: 'mx' | 'spf' | 'dkim' | 'dmarc' | 'ptr' | 'bimi';
   name: string;
   recordType: string;
   expectedHost: string;
@@ -431,6 +438,43 @@ export const mailAPI = {
     return fetchJSON<MailDomainResult>(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}`, {
       method: 'DELETE',
     });
+  },
+
+  async uploadMailboxAvatar(domainId: string, mailboxId: string, file: File, name?: string): Promise<{ avatarUrl: string; name?: string }> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    if (name) formData.append('name', name);
+    const res = await fetch(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/avatar`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to upload avatar' }));
+      throw new Error(err.message || 'Failed to upload avatar');
+    }
+    return res.json();
+  },
+
+  async removeMailboxAvatar(domainId: string, mailboxId: string): Promise<void> {
+    await fetchJSON(`${API_BASE}/domains/${domainId}/mailboxes/${mailboxId}/avatar`, {
+      method: 'DELETE',
+    });
+  },
+
+  async uploadBimiLogo(domainId: string, file: File): Promise<{ bimiLogoUrl: string }> {
+    const formData = new FormData();
+    formData.append('logo', file);
+    const res = await fetch(`${API_BASE}/domains/${domainId}/bimi-logo`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to upload BIMI logo' }));
+      throw new Error(err.message || 'Failed to upload BIMI logo');
+    }
+    return res.json();
   },
 
   async addAlias(domainId: string, payload: CreateAliasPayload): Promise<MailDomainResult> {
