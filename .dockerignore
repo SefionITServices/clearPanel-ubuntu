@@ -1,0 +1,18 @@
+node_modules
+**/node_modules
+.git
+.gitignore
+.vscode
+.idea
+*.log
+*.tmp
+.DS_Store
+
+# Flutter mobile/desktop temporary build artifacts (preserve build/web)
+apps/clearmail_flutter/.dart_tool
+apps/clearmail_flutter/build/app
+apps/clearmail_flutter/build/ios
+apps/clearmail_flutter/build/linux
+apps/clearmail_flutter/build/macos
+apps/clearmail_flutter/build/windows
+

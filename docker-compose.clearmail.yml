@@ -1,0 +1,17 @@
+services:
+  clearmail:
+    build:
+      context: ./apps/clearmail_flutter
+      dockerfile: Dockerfile
+    image: clearmail:latest
+    container_name: clearmail-web
+    restart: unless-stopped
+    ports:
+      - "7510:7510"
+    environment:
+      # ClearPanel backend running on Port 3334
+      - CLEARPANEL_URL=http://host.docker.internal:3334
+    extra_hosts:
+      # Allows the Docker container on Linux/Windows to reach the host port 3334
+      - "host.docker.internal:host-gateway"
+

@@ -188,6 +188,16 @@ export default function EmailPage() {
     url: string;
   }[] = [
     {
+      id: 'clearmail',
+      label: 'ClearMail (Business Webmail)',
+      description:
+        'Lightning-fast Gmail clone with real-time push sync, conversation threading, SPF/DKIM verification shield, and optimistic send.',
+      icon: <EmailIcon sx={{ fontSize: 32 }} />,
+      color: '#EA4335',
+      installed: true,
+      url: '/clearmail/',
+    },
+    {
       id: 'roundcube',
       label: 'Roundcube',
       description:

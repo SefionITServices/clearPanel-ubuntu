@@ -1,0 +1,31 @@
+services:
+  clearpanel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clearpanel:latest
+    container_name: clearpanel
+    restart: unless-stopped
+    ports:
+      - "7510:7510"
+    environment:
+      - PORT=7510
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - SESSION_SECRET=clearpanel_live_secret_key_7510
+    volumes:
+      - clearpanel_data:/app/data
+      - clearpanel_mail:/etc/clearpanel
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7510/api/mail/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  clearpanel_data:
+    name: clearpanel_data
+  clearpanel_mail:
+    name: clearpanel_mail
+

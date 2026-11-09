@@ -1,0 +1,16 @@
+services:
+  clearmail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clearmail:latest
+    container_name: clearmail-web
+    restart: unless-stopped
+    ports:
+      - "7510:7510"
+    environment:
+      # ClearPanel backend running on Port 3334
+      - CLEARPANEL_URL=http://host.docker.internal:3334
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+

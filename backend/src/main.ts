@@ -81,8 +81,16 @@ async function bootstrap() {
   // Compress all responses (gzip/brotli) — major speed improvement
   app.use(compression());
 
+  // Enable CORS for webmail clients (ClearMail) and API consumers across domains/ports
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api', {
     exclude: [
+      'clearmail/(.*)',
+      'clearmail',
       'mail/autoconfig/(.*)',
       '.well-known/autoconfig/(.*)',
       'autoconfig/(.*)',
@@ -96,15 +104,26 @@ async function bootstrap() {
     ],
   });
 
-  // Serve static frontend files in production with cache headers
-  if (config.get<string>('NODE_ENV') === 'production') {
-    app.useStaticAssets(join(__dirname, '..', 'public'), {
-      maxAge: '7d',           // cache static assets for 7 days
-      immutable: true,        // hashed filenames never change
-      etag: true,
-      lastModified: true,
+  // Serve static frontend files (including ClearMail web client) with cache headers
+  const isProd = config.get<string>('NODE_ENV') === 'production';
+  app.useStaticAssets(join(__dirname, '..', 'public'), {
+    maxAge: isProd ? '7d' : 0,
+    immutable: isProd,
+    etag: true,
+    lastModified: true,
+  });
+  app.setBaseViewsDir(join(__dirname, '..', 'public'));
+
+  // Direct mount for ClearMail Flutter Web Client
+  const clearmailPath = join(__dirname, '..', '..', 'apps', 'clearmail_flutter', 'build', 'web');
+  try {
+    app.useStaticAssets(clearmailPath, {
+      prefix: '/clearmail/',
+      maxAge: isProd ? '7d' : 0,
+      immutable: isProd,
     });
-    app.setBaseViewsDir(join(__dirname, '..', 'public'));
+  } catch {
+    Logger.warn('ClearMail web build directory not mounted', 'Bootstrap');
   }
 
   const port = config.get<number>('PORT') || 3000;
