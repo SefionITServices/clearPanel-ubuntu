@@ -3,16 +3,23 @@ import 'package:google_fonts/google_fonts.dart';
 
 class GmailColors {
   // Primary Gmail Accents
-  static const Color googleRed = Color(0xFFD93025);
+  static const Color googleRed = Color(0xFFEA4335);
   static const Color googleBlue = Color(0xFF1A73E8);
-  static const Color googleYellow = Color(0xFFF4B400);
-  static const Color googleGreen = Color(0xFF1E8E3E);
+  static const Color googleYellow = Color(0xFFFBBC04);
+  static const Color googleGreen = Color(0xFF34A853);
 
-  // Backgrounds & Surfaces
+  // Backgrounds & Surfaces (Light)
   static const Color scaffoldBackground = Color(0xFFF6F8FC);
   static const Color surfaceWhite = Color(0xFFFFFFFF);
   static const Color searchBarBg = Color(0xFFEAF1FB);
   static const Color searchBarBorder = Colors.transparent;
+
+  // Backgrounds & Surfaces (Dark)
+  static const Color darkScaffoldBg = Color(0xFF191A1C);
+  static const Color darkSurface = Color(0xFF202124);
+  static const Color darkSearchBarBg = Color(0xFF303134);
+  static const Color darkText = Color(0xFFE8EAED);
+  static const Color darkSnippet = Color(0xFF9AA0A6);
 
   // Sidebar
   static const Color sidebarActivePill = Color(0xFFD3E3FD);
@@ -43,8 +50,10 @@ class GmailTheme {
     final base = ThemeData.light(useMaterial3: true);
 
     return base.copyWith(
+      brightness: Brightness.light,
       scaffoldBackgroundColor: GmailColors.scaffoldBackground,
       colorScheme: ColorScheme.fromSeed(
+        brightness: Brightness.light,
         seedColor: GmailColors.googleBlue,
         primary: GmailColors.googleBlue,
         surface: GmailColors.surfaceWhite,
@@ -66,5 +75,34 @@ class GmailTheme {
       ),
     );
   }
-}
 
+  static ThemeData get darkTheme {
+    final base = ThemeData.dark(useMaterial3: true);
+
+    return base.copyWith(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: GmailColors.darkScaffoldBg,
+      colorScheme: ColorScheme.fromSeed(
+        brightness: Brightness.dark,
+        seedColor: GmailColors.googleBlue,
+        primary: const Color(0xFF8AB4F8),
+        surface: GmailColors.darkSurface,
+      ),
+      textTheme: GoogleFonts.robotoTextTheme(base.textTheme).copyWith(
+        titleMedium: GoogleFonts.roboto(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: GmailColors.darkText,
+        ),
+        bodyMedium: GoogleFonts.roboto(
+          fontSize: 13,
+          color: GmailColors.darkText,
+        ),
+        bodySmall: GoogleFonts.roboto(
+          fontSize: 12,
+          color: GmailColors.darkSnippet,
+        ),
+      ),
+    );
+  }
+}

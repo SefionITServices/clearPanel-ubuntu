@@ -205,6 +205,27 @@ class _GmailHeaderState extends State<GmailHeader> {
           ),
           const SizedBox(width: 12),
 
+          // Split-View Toggle
+          IconButton(
+            icon: Icon(
+              widget.state.isSplitView ? Icons.vertical_split : Icons.vertical_split_outlined,
+              color: widget.state.isSplitView ? GmailColors.googleBlue : GmailColors.textSnippet,
+            ),
+            tooltip: widget.state.isSplitView ? 'Exit Split-View' : 'Split-View (Dual Pane)',
+            onPressed: widget.state.toggleSplitView,
+          ),
+
+          // Dark Mode Toggle
+          IconButton(
+            icon: Icon(
+              widget.state.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              color: GmailColors.textSnippet,
+            ),
+            tooltip: widget.state.isDarkMode ? 'Light mode' : 'Dark mode',
+            onPressed: widget.state.toggleDarkMode,
+          ),
+          const SizedBox(width: 4),
+
           // Settings
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: GmailColors.textSnippet),

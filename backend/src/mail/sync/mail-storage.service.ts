@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { simpleParser, ParsedMail } from 'mailparser';
@@ -21,13 +21,14 @@ const execAsync = promisify(exec);
 export class MailStorageService {
   private readonly logger = new Logger(MailStorageService.name);
   private smtpTransporter: nodemailer.Transporter | null = null;
+  private readonly uploadDir = '/tmp/clearmail-uploads';
 
   constructor() {
     this.initSmtp();
+    this.initUploadDir();
   }
 
   private initSmtp() {
-    // Connect to local Postfix on Port 25
     this.smtpTransporter = nodemailer.createTransport({
       host: '127.0.0.1',
       port: 25,
@@ -39,17 +40,25 @@ export class MailStorageService {
     });
   }
 
+  private async initUploadDir() {
+    try {
+      await fs.mkdir(this.uploadDir, { recursive: true });
+    } catch {}
+  }
+
   // ---------------------------------------------------------------------------
-  // Maildir Path Resolution
+  // Path Resolution
   // ---------------------------------------------------------------------------
 
   getMaildirRoot(mailboxEmail: string): string {
     const parts = mailboxEmail.trim().toLowerCase().split('@');
     const userPart = parts[0] || 'user';
     const domain = parts[1] || 'domain';
+    return path.join('/var/mail/vhosts', domain, userPart);
+  }
 
-    const prodPath = path.join('/var/mail/vhosts', domain, userPart);
-    return prodPath;
+  getMboxInboxPath(mailboxEmail: string): string {
+    return path.join('/var/mail', mailboxEmail.trim().toLowerCase());
   }
 
   async getEffectiveMaildir(mailboxEmail: string): Promise<string> {
@@ -58,7 +67,6 @@ export class MailStorageService {
       await fs.access(prodPath);
       return prodPath;
     } catch {
-      // In development or when /var/mail/vhosts is not available, use local data dir
       const parts = mailboxEmail.trim().toLowerCase().split('@');
       const devPath = getDataFilePath(path.join('vmail', parts[1] || 'domain', parts[0] || 'user'));
       await fs.mkdir(path.join(devPath, 'cur'), { recursive: true });
@@ -72,23 +80,19 @@ export class MailStorageService {
   }
 
   // ---------------------------------------------------------------------------
-  // Authentication (Dovecot passwd / doveadm / SSO)
+  // Authentication
   // ---------------------------------------------------------------------------
 
   async verifyCredentials(email: string, password: string): Promise<{ valid: boolean; email: string }> {
     const normalized = email.trim().toLowerCase();
 
-    // 1. Try doveadm auth test if available on Linux
     try {
       const { stdout } = await execAsync(`doveadm auth test ${JSON.stringify(normalized)} ${JSON.stringify(password)}`);
       if (stdout.includes('auth successful') || stdout.includes('passdb:')) {
         return { valid: true, email: normalized };
       }
-    } catch {
-      // doveadm auth test not available or failed
-    }
+    } catch {}
 
-    // 2. Try checking /etc/clearpanel/mail/dovecot-users
     try {
       const content = await fs.readFile('/etc/clearpanel/mail/dovecot-users', 'utf8');
       const lines = content.split('\n');
@@ -97,20 +101,15 @@ export class MailStorageService {
         if (parts[0] && parts[0].trim().toLowerCase() === normalized) {
           const passHash = parts[1]?.trim();
           if (passHash) {
-            // Check for plain text
             if (passHash.startsWith('{PLAIN}')) {
               if (passHash.replace('{PLAIN}', '') === password) {
                 return { valid: true, email: normalized };
               }
             }
-            // Test using doveadm pw -t
             try {
               await execAsync(`doveadm pw -t ${JSON.stringify(passHash)} -p ${JSON.stringify(password)}`);
               return { valid: true, email: normalized };
-            } catch {
-              // ignore
-            }
-            // Verify using openssl passwd -6
+            } catch {}
             try {
               const rawHash = passHash.replace(/^\{[A-Z0-9-]+\}/i, '');
               const saltMatch = rawHash.match(/^\$6\$([^$]+)\$/);
@@ -121,17 +120,12 @@ export class MailStorageService {
                   return { valid: true, email: normalized };
                 }
               }
-            } catch {
-              // ignore
-            }
+            } catch {}
           }
         }
       }
-    } catch {
-      // file not readable or on Windows
-    }
+    } catch {}
 
-    // 3. Fallback for development/testing: accept admin@clearpanel.local with default or admin pass
     if (normalized.endsWith('@clearpanel.local') || normalized === 'admin@clearpanel.local') {
       return { valid: true, email: normalized };
     }
@@ -140,39 +134,40 @@ export class MailStorageService {
   }
 
   // ---------------------------------------------------------------------------
-  // Read Real Messages from Maildir
+  // Read Messages from Maildir and Mbox
   // ---------------------------------------------------------------------------
 
   async readFolderMessages(mailboxEmail: string, folder: MailFolder): Promise<EmailMessage[]> {
+    const messages: EmailMessage[] = [];
     const maildir = await this.getEffectiveMaildir(mailboxEmail);
-    const targetDirs: string[] = [];
+    const mboxInbox = this.getMboxInboxPath(mailboxEmail);
 
+    // 1. Check Maildir subdirectories
+    const maildirDirs: string[] = [];
     switch (folder) {
       case 'inbox':
-        targetDirs.push(path.join(maildir, 'new'), path.join(maildir, 'cur'));
+        maildirDirs.push(path.join(maildir, 'new'), path.join(maildir, 'cur'));
         break;
       case 'sent':
-        targetDirs.push(path.join(maildir, '.Sent', 'cur'), path.join(maildir, '.Sent', 'new'));
+        maildirDirs.push(path.join(maildir, '.Sent', 'cur'), path.join(maildir, '.Sent', 'new'));
         break;
       case 'drafts':
-        targetDirs.push(path.join(maildir, '.Drafts', 'cur'), path.join(maildir, '.Drafts', 'new'));
+        maildirDirs.push(path.join(maildir, '.Drafts', 'cur'), path.join(maildir, '.Drafts', 'new'));
         break;
       case 'trash':
-        targetDirs.push(path.join(maildir, '.Trash', 'cur'), path.join(maildir, '.Trash', 'new'));
+        maildirDirs.push(path.join(maildir, '.Trash', 'cur'), path.join(maildir, '.Trash', 'new'));
         break;
       case 'spam':
-        targetDirs.push(path.join(maildir, '.Junk', 'cur'), path.join(maildir, '.Junk', 'new'));
+        maildirDirs.push(path.join(maildir, '.Junk', 'cur'), path.join(maildir, '.Junk', 'new'));
         break;
       case 'archive':
-        targetDirs.push(path.join(maildir, '.Archive', 'cur'), path.join(maildir, '.Archive', 'new'));
+        maildirDirs.push(path.join(maildir, '.Archive', 'cur'), path.join(maildir, '.Archive', 'new'));
         break;
       default:
-        targetDirs.push(path.join(maildir, 'cur'));
+        maildirDirs.push(path.join(maildir, 'cur'));
     }
 
-    const messages: EmailMessage[] = [];
-
-    for (const dir of targetDirs) {
+    for (const dir of maildirDirs) {
       try {
         const files = await fs.readdir(dir);
         for (const file of files) {
@@ -185,33 +180,117 @@ export class MailStorageService {
             const buffer = await fs.readFile(filePath);
             const parsed = await simpleParser(buffer);
 
-            // Parse Maildir flags from filename e.g. 173111.xyz:2,S
             const isSeen = file.includes(':2,') ? file.split(':2,')[1].includes('S') : dir.endsWith('cur');
             const isFlagged = file.includes(':2,') ? file.split(':2,')[1].includes('F') : false;
 
-            const msg = this.convertParsedMail(parsed, file, mailboxEmail, folder, isSeen, isFlagged, stat.size, stat.mtime);
+            const msg = this.convertParsedMail(
+              parsed,
+              file,
+              mailboxEmail,
+              folder,
+              isSeen,
+              isFlagged,
+              stat.size,
+              stat.mtime,
+              filePath,
+            );
             messages.push(msg);
           } catch (err: any) {
-            this.logger.warn(`Could not parse maildir file ${filePath}: ${err.message}`);
+            this.logger.warn(`Could not parse Maildir message ${filePath}: ${err.message}`);
           }
         }
-      } catch {
-        // Directory doesn't exist yet, ignore
-      }
+      } catch {}
+    }
+
+    // 2. Check Dovecot mbox storage files
+    const mboxFiles: { path: string; folder: MailFolder }[] = [];
+    if (folder === 'inbox') {
+      mboxFiles.push({ path: mboxInbox, folder: 'inbox' });
+    } else if (folder === 'sent') {
+      mboxFiles.push({ path: path.join(maildir, 'mail', 'Sent'), folder: 'sent' });
+    } else if (folder === 'trash') {
+      mboxFiles.push({ path: path.join(maildir, 'mail', 'Trash'), folder: 'trash' });
+    } else if (folder === 'drafts') {
+      mboxFiles.push({ path: path.join(maildir, 'mail', 'Drafts'), folder: 'drafts' });
+    } else if (folder === 'spam') {
+      mboxFiles.push({ path: path.join(maildir, 'mail', 'Junk'), folder: 'spam' });
+    }
+
+    for (const item of mboxFiles) {
+      try {
+        const stat = await fs.stat(item.path);
+        if (stat.isFile() && stat.size > 0) {
+          const rawMbox = await fs.readFile(item.path, 'utf8');
+          const chunks = this.splitMbox(rawMbox);
+
+          for (let idx = 0; idx < chunks.length; idx++) {
+            const chunk = chunks[idx];
+            if (!chunk.trim()) continue;
+            try {
+              const buffer = Buffer.from(chunk, 'utf8');
+              const parsed = await simpleParser(buffer);
+              const mboxMsgId = `mbox_${idx}_${this.hashString(parsed.messageId || chunk.slice(0, 80))}`;
+
+              // Determine flags if Status: or X-Status: headers exist
+              const statusHeader = (parsed.headers.get('status') as string) || '';
+              const xStatusHeader = (parsed.headers.get('x-status') as string) || '';
+              const isSeen = statusHeader.includes('R') || statusHeader.includes('O') || item.folder === 'sent';
+              const isFlagged = xStatusHeader.includes('F');
+
+              const msg = this.convertParsedMail(
+                parsed,
+                mboxMsgId,
+                mailboxEmail,
+                item.folder,
+                isSeen,
+                isFlagged,
+                buffer.length,
+                stat.mtime,
+                item.path,
+                idx,
+              );
+              messages.push(msg);
+            } catch (err: any) {
+              this.logger.warn(`Could not parse mbox chunk ${idx} from ${item.path}: ${err.message}`);
+            }
+          }
+        }
+      } catch {}
     }
 
     return messages;
   }
 
+  private splitMbox(content: string): string[] {
+    const lines = content.split(/\r?\n/);
+    const messages: string[] = [];
+    let current: string[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith('From ') && current.length > 0) {
+        messages.push(current.join('\n'));
+        current = [];
+      } else {
+        current.push(line);
+      }
+    }
+    if (current.length > 0 && current.some((l) => l.trim().length > 0)) {
+      messages.push(current.join('\n'));
+    }
+    return messages;
+  }
+
   private convertParsedMail(
     parsed: ParsedMail,
-    filename: string,
+    fallbackId: string,
     mailboxEmail: string,
     folder: MailFolder,
     isSeen: boolean,
     isFlagged: boolean,
     fileSize: number,
     fileMtime: Date,
+    filePath?: string,
+    fileOffset?: number,
   ): EmailMessage {
     const fromAddr: EmailAddress = parsed.from?.value[0]
       ? { name: parsed.from.value[0].name || '', email: parsed.from.value[0].address || '' }
@@ -243,7 +322,6 @@ export class MailStorageService {
       contentId: att.cid,
     }));
 
-    // Security & Deliverability Headers
     const authResults = (parsed.headers.get('authentication-results') as string) || '';
     const dkimHeader = (parsed.headers.get('dkim-signature') as string) || '';
     const spfHeader = (parsed.headers.get('received-spf') as string) || '';
@@ -257,11 +335,11 @@ export class MailStorageService {
     };
 
     const dateIso = parsed.date ? parsed.date.toISOString() : fileMtime.toISOString();
-    const id = parsed.messageId ? this.sanitizeId(parsed.messageId) : this.sanitizeId(filename);
+    const id = parsed.messageId ? this.sanitizeId(parsed.messageId) : this.sanitizeId(fallbackId);
 
     return {
       id,
-      threadId: '', // Computed by MailGatewayService threading logic
+      threadId: '',
       mailboxEmail,
       messageIdHeader: parsed.messageId,
       inReplyTo: typeof parsed.inReplyTo === 'string' ? parsed.inReplyTo : undefined,
@@ -283,15 +361,194 @@ export class MailStorageService {
       security,
       date: dateIso,
       size: fileSize,
+      filePath,
+      fileOffset,
     };
   }
 
-  private sanitizeId(id: string): string {
-    return id.replace(/[<>:"/\\|?*]/g, '_');
+  // ---------------------------------------------------------------------------
+  // Physical Flag Updating & File Moving
+  // ---------------------------------------------------------------------------
+
+  async updateMessagePhysicalFlags(
+    msg: EmailMessage,
+    updates: {
+      markAsRead?: boolean;
+      isStarred?: boolean;
+      targetFolder?: MailFolder;
+    },
+  ): Promise<void> {
+    if (!msg.filePath) return;
+
+    // Maildir file renaming
+    if (msg.filePath.includes('/cur/') || msg.filePath.includes('/new/')) {
+      try {
+        const dir = path.dirname(msg.filePath);
+        const filename = path.basename(msg.filePath);
+
+        let baseName = filename;
+        let flags = '';
+        if (filename.includes(':2,')) {
+          const parts = filename.split(':2,');
+          baseName = parts[0];
+          flags = parts[1] || '';
+        }
+
+        let flagsSet = new Set(flags.split(''));
+        if (updates.markAsRead === true) flagsSet.add('S');
+        if (updates.markAsRead === false) flagsSet.delete('S');
+        if (updates.isStarred === true) flagsSet.add('F');
+        if (updates.isStarred === false) flagsSet.delete('F');
+
+        const newFlags = Array.from(flagsSet).sort().join('');
+        const newFilename = `${baseName}:2,${newFlags}`;
+
+        let targetDir = dir;
+        if (updates.targetFolder) {
+          const maildir = await this.getEffectiveMaildir(msg.mailboxEmail);
+          switch (updates.targetFolder) {
+            case 'trash':
+              targetDir = path.join(maildir, '.Trash', 'cur');
+              break;
+            case 'archive':
+              targetDir = path.join(maildir, '.Archive', 'cur');
+              break;
+            case 'spam':
+              targetDir = path.join(maildir, '.Junk', 'cur');
+              break;
+            case 'inbox':
+              targetDir = path.join(maildir, 'cur');
+              break;
+          }
+          await fs.mkdir(targetDir, { recursive: true });
+        }
+
+        const newPath = path.join(targetDir, newFilename);
+        if (newPath !== msg.filePath) {
+          await fs.rename(msg.filePath, newPath);
+          msg.filePath = newPath;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not rename physical Maildir file ${msg.filePath}: ${err.message}`);
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // Send Real Outgoing Email (Postfix SMTP)
+  // Attachment Retrieval
+  // ---------------------------------------------------------------------------
+
+  async getAttachmentContent(
+    msg: EmailMessage,
+    attachmentId: string,
+  ): Promise<{ filename: string; mimeType: string; content: Buffer } | null> {
+    if (!msg.filePath) return null;
+
+    try {
+      let buffer: Buffer;
+      if (msg.fileOffset !== undefined) {
+        const rawMbox = await fs.readFile(msg.filePath, 'utf8');
+        const chunks = this.splitMbox(rawMbox);
+        if (msg.fileOffset >= chunks.length) return null;
+        buffer = Buffer.from(chunks[msg.fileOffset], 'utf8');
+      } else {
+        buffer = await fs.readFile(msg.filePath);
+      }
+
+      const parsed = await simpleParser(buffer);
+      for (let i = 0; i < (parsed.attachments || []).length; i++) {
+        const att = parsed.attachments[i];
+        if (
+          att.cid === attachmentId ||
+          att.filename === attachmentId ||
+          `att_${i}` === attachmentId ||
+          attachmentId.includes(`att_${i}`)
+        ) {
+          return {
+            filename: att.filename || `attachment_${i}`,
+            mimeType: att.contentType || 'application/octet-stream',
+            content: att.content,
+          };
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Error loading attachment content: ${err.message}`);
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Attachment Upload Handling (Composer)
+  // ---------------------------------------------------------------------------
+
+  async saveUploadedFile(file: {
+    originalname: string;
+    mimetype: string;
+    size: number;
+    buffer?: Buffer;
+    path?: string;
+  }): Promise<{ id: string; filename: string; mimeType: string; size: number; tempPath: string }> {
+    const id = randomUUID();
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tempPath = path.join(this.uploadDir, `${id}_${safeName}`);
+
+    if (file.buffer) {
+      await fs.writeFile(tempPath, file.buffer);
+    } else if (file.path) {
+      await fs.copyFile(file.path, tempPath);
+    }
+
+    return {
+      id,
+      filename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      tempPath,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Draft Management
+  // ---------------------------------------------------------------------------
+
+  async saveDraft(
+    mailboxEmail: string,
+    draft: {
+      id?: string;
+      to?: EmailAddress[];
+      cc?: EmailAddress[];
+      bcc?: EmailAddress[];
+      subject?: string;
+      bodyText?: string;
+      bodyHtml?: string;
+    },
+  ): Promise<{ draftId: string }> {
+    const maildir = await this.getEffectiveMaildir(mailboxEmail);
+    const draftsDir = path.join(maildir, '.Drafts', 'cur');
+    await fs.mkdir(draftsDir, { recursive: true });
+
+    const draftId = draft.id || `draft_${Date.now()}_${randomUUID()}`;
+    const fileName = `${Date.now()}.${draftId}:2,DS`;
+    const filePath = path.join(draftsDir, fileName);
+
+    const raw = [
+      `From: ${mailboxEmail}`,
+      `To: ${(draft.to || []).map((t) => (t.name ? `"${t.name}" <${t.email}>` : t.email)).join(', ')}`,
+      `Subject: ${draft.subject || '(No Subject)'}`,
+      `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${draftId}@clearmail.local>`,
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      draft.bodyHtml || draft.bodyText || '',
+    ].join('\r\n');
+
+    await fs.writeFile(filePath, raw, 'utf8');
+    return { draftId };
+  }
+
+  // ---------------------------------------------------------------------------
+  // SMTP Outbound Delivery
   // ---------------------------------------------------------------------------
 
   async sendRealSmtp(
@@ -311,6 +568,19 @@ export class MailStorageService {
       this.initSmtp();
     }
 
+    const mailAttachments: any[] = [];
+    if (payload.attachments && payload.attachments.length > 0) {
+      for (const att of payload.attachments) {
+        if (att.tempPath) {
+          mailAttachments.push({
+            filename: att.filename,
+            path: att.tempPath,
+            contentType: att.mimeType,
+          });
+        }
+      }
+    }
+
     const mailOptions: nodemailer.SendMailOptions = {
       from: fromEmail,
       to: payload.to.map((a) => (a.name ? `"${a.name}" <${a.email}>` : a.email)).join(', '),
@@ -321,6 +591,7 @@ export class MailStorageService {
       html: payload.bodyHtml,
       inReplyTo: payload.replyToMessageId,
       references: payload.replyToMessageId ? [payload.replyToMessageId] : undefined,
+      attachments: mailAttachments,
     };
 
     let sentId: string = randomUUID();
@@ -332,8 +603,18 @@ export class MailStorageService {
       this.logger.warn(`SMTP send warning (local relay): ${err.message}. Saving to Sent folder.`);
     }
 
-    // Save copy to .Sent Maildir
     await this.saveSentMessage(fromEmail, payload, sentId);
+
+    // Clean up temporary composer upload files
+    if (payload.attachments) {
+      for (const att of payload.attachments) {
+        if (att.tempPath) {
+          try {
+            await fs.unlink(att.tempPath);
+          } catch {}
+        }
+      }
+    }
 
     return { messageId: sentId };
   }
@@ -359,8 +640,24 @@ export class MailStorageService {
       ].join('\r\n');
 
       await fs.writeFile(filePath, rawContent, 'utf8');
+
+      // Also append to mbox Sent if present
+      const mboxSent = path.join(maildir, 'mail', 'Sent');
+      try {
+        await fs.access(path.dirname(mboxSent));
+        const mboxHeader = `From ${fromEmail}  ${new Date().toUTCString()}\n`;
+        await fs.appendFile(mboxSent, `\n${mboxHeader}${rawContent}\n`, 'utf8');
+      } catch {}
     } catch (err: any) {
-      this.logger.error(`Failed to write sent message to Maildir: ${err.message}`);
+      this.logger.error(`Failed to write sent message: ${err.message}`);
     }
+  }
+
+  private sanitizeId(id: string): string {
+    return id.replace(/[<>:"/\\|?*]/g, '_');
+  }
+
+  private hashString(str: string): string {
+    return createHash('sha256').update(str).digest('hex').substring(0, 16);
   }
 }

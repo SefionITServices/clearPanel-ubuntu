@@ -110,7 +110,7 @@ export class MailSsoService {
     if (explicit) {
       url = `${explicit.replace(/\/+$/, '')}/?sso_token=${encodeURIComponent(token)}`;
     } else {
-      url = `/?sso_token=${encodeURIComponent(token)}`;
+      url = `/clearmail/?sso_token=${encodeURIComponent(token)}`;
     }
 
     this.logger.log(`ClearMail SSO token issued for ${normalized}`);

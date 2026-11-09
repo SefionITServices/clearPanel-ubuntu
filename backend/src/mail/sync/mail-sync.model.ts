@@ -48,6 +48,8 @@ export interface EmailMessage {
   headers?: Record<string, string>;
   date: string;
   size: number;
+  filePath?: string;
+  fileOffset?: number;
 }
 
 export interface EmailThread {

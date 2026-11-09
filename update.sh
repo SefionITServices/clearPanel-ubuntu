@@ -322,8 +322,13 @@ bash "$INSTALL_DIR/scripts/setup-ftp.sh"
 # 2. Setup Directories & Permissions
 mkdir -p /var/lib/clearpanel/mail/domains /var/lib/clearpanel/mail/mailboxes /var/lib/clearpanel/mail/policies /etc/clearpanel/mail /var/mail/vhosts
 id -u vmail >/dev/null 2>&1 || useradd -u 5000 -s /usr/sbin/nologin -d /var/mail/vhosts -m vmail 2>/dev/null || true
+usermod -a -G vmail clearpanel 2>/dev/null || true
 chown -R vmail:vmail /var/mail/vhosts 2>/dev/null || true
-chmod 770 /var/mail/vhosts 2>/dev/null || true
+chmod -R 770 /var/mail/vhosts 2>/dev/null || true
+if command -v setfacl >/dev/null 2>&1; then
+    setfacl -R -m u:clearpanel:rwX,g:vmail:rwX /var/mail/vhosts 2>/dev/null || true
+    setfacl -R -d -m u:clearpanel:rwX,g:vmail:rwX /var/mail/vhosts 2>/dev/null || true
+fi
 chown -R clearpanel:clearpanel /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
 chmod -R 775 /var/lib/clearpanel/mail /etc/clearpanel/mail 2>/dev/null || true
 

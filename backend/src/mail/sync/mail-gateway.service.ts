@@ -18,6 +18,7 @@ import { MailSsoService } from '../mail-sso.service';
 interface MailboxStore {
   threads: Map<string, EmailThread>;
   messages: Map<string, EmailMessage>;
+  lastSyncedAt?: number;
 }
 
 @Injectable()
@@ -26,6 +27,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   private readonly stores = new Map<string, MailboxStore>();
   private readonly pendingSends = new Map<string, PendingSendItem>();
   private dispatchInterval: NodeJS.Timeout | null = null;
+  private watchInterval: NodeJS.Timeout | null = null;
   private readonly storageDir = getDataFilePath('mail-sync');
 
   constructor(
@@ -38,21 +40,42 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     try {
       await fs.mkdir(this.storageDir, { recursive: true });
-    } catch {
-      // ignore
-    }
-    // Start background queue ticker for optimistic send dispatch
+    } catch {}
+
+    // 1. Process pending sends queue (Undo Send ticker)
     this.dispatchInterval = setInterval(() => {
       this.processPendingSends().catch((err) => {
         this.logger.error(`Error processing pending sends: ${err.message}`);
       });
     }, 1000);
+
+    // 2. Background Mailbox Watcher (Sync new messages from /var/mail and /var/mail/vhosts)
+    this.watchInterval = setInterval(() => {
+      this.checkActiveStoresForNewMail().catch(() => {});
+    }, 4000);
   }
 
   onModuleDestroy() {
     if (this.dispatchInterval) {
       clearInterval(this.dispatchInterval);
       this.dispatchInterval = null;
+    }
+    if (this.watchInterval) {
+      clearInterval(this.watchInterval);
+      this.watchInterval = null;
+    }
+  }
+
+  private async checkActiveStoresForNewMail() {
+    for (const [mailboxEmail, store] of this.stores.entries()) {
+      const prevCount = store.messages.size;
+      await this.syncFromMaildir(mailboxEmail, store);
+      if (store.messages.size > prevCount) {
+        this.gateway.emitToMailbox(mailboxEmail, 'mail:store_refreshed', {
+          mailboxEmail,
+          totalMessages: store.messages.size,
+        });
+      }
     }
   }
 
@@ -62,16 +85,11 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
   normalizeSubject(subject: string): string {
     if (!subject) return '(No Subject)';
-    // Strip Re:, Fwd:, [EXTERNAL], etc.
     return subject
       .replace(/^(\s*(re|fwd|fw|aw|antw|wg)\s*:\s*)+/i, '')
       .replace(/^\[(external|ext)\]\s*/i, '')
       .trim();
   }
-
-  // ---------------------------------------------------------------------------
-  // Store Management (Load / Save)
-  // ---------------------------------------------------------------------------
 
   // ---------------------------------------------------------------------------
   // Authentication
@@ -92,15 +110,26 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     return { token, email: verified.email };
   }
 
-  private async getStore(mailboxEmail: string): Promise<MailboxStore> {
+  // ---------------------------------------------------------------------------
+  // Store Management
+  // ---------------------------------------------------------------------------
+
+  async getStore(mailboxEmail: string): Promise<MailboxStore> {
     const normalized = mailboxEmail.trim().toLowerCase();
     if (this.stores.has(normalized)) {
-      return this.stores.get(normalized)!;
+      const existing = this.stores.get(normalized)!;
+      // Auto-sync if not synced in the last 10 seconds
+      if (!existing.lastSyncedAt || Date.now() - existing.lastSyncedAt > 10000) {
+        await this.syncFromMaildir(normalized, existing);
+        existing.lastSyncedAt = Date.now();
+      }
+      return existing;
     }
 
     const store: MailboxStore = {
       threads: new Map(),
       messages: new Map(),
+      lastSyncedAt: Date.now(),
     };
 
     const filePath = path.join(this.storageDir, `${this.sanitizeFilename(normalized)}.json`);
@@ -117,14 +146,12 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
           store.threads.set(th.id, th);
         }
       }
-    } catch {
-      // Not yet cached to JSON
-    }
+    } catch {}
 
-    // Ingest real messages from physical Maildir (/var/mail/vhosts)
+    // Ingest physical messages
     await this.syncFromMaildir(normalized, store);
 
-    // If store has 0 messages, seed the welcome message
+    // If still 0 messages, seed initial welcome message
     if (store.messages.size === 0) {
       this.seedInitialMessages(normalized, store);
     }
@@ -136,12 +163,13 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
   async syncFromMaildir(mailboxEmail: string, store: MailboxStore): Promise<void> {
     try {
-      const folders: MailFolder[] = ['inbox', 'sent', 'drafts', 'trash', 'spam'];
+      const folders: MailFolder[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'archive'];
+      let changes = 0;
+
       for (const folder of folders) {
         const realMsgs = await this.storageService.readFolderMessages(mailboxEmail, folder);
         for (const msg of realMsgs) {
           if (!store.messages.has(msg.id)) {
-            // Match or compute thread
             const normalizedSubject = this.normalizeSubject(msg.subject);
             let thread = Array.from(store.threads.values()).find(
               (t) =>
@@ -152,6 +180,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
             const threadId = thread ? thread.id : randomUUID();
             msg.threadId = threadId;
             store.messages.set(msg.id, msg);
+            changes++;
 
             if (thread) {
               thread.messageCount += 1;
@@ -163,6 +192,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
               if (!thread.participants.some((p) => p.email === msg.from.email)) {
                 thread.participants.push(msg.from);
               }
+              if (msg.hasAttachments) thread.hasAttachments = true;
             } else {
               store.threads.set(threadId, {
                 id: threadId,
@@ -178,11 +208,19 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
                 isStarred: msg.isStarred,
               });
             }
+          } else {
+            const existing = store.messages.get(msg.id)!;
+            existing.filePath = msg.filePath;
+            existing.fileOffset = msg.fileOffset;
           }
         }
       }
+
+      if (changes > 0) {
+        await this.saveStore(mailboxEmail, store);
+      }
     } catch (err: any) {
-      this.logger.warn(`Could not sync Maildir for ${mailboxEmail}: ${err.message}`);
+      this.logger.warn(`Could not sync storage for ${mailboxEmail}: ${err.message}`);
     }
   }
 
@@ -206,14 +244,13 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------------------
-  // Demo Seed Data (Google Workspace style initial inbox)
+  // Demo Seed Data
   // ---------------------------------------------------------------------------
 
   private seedInitialMessages(mailboxEmail: string, store: MailboxStore) {
     const now = Date.now();
-    const domain = mailboxEmail.split('@')[1] || 'company.com';
+    const domain = mailboxEmail.split('@')[1] || 'clearpanel.local';
 
-    // Thread 1: Welcome to Business Email
     const msg1Id = randomUUID();
     const th1Id = randomUUID();
     const msg1: EmailMessage = {
@@ -235,11 +272,11 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
             <ul style="margin-bottom: 0; padding-left: 20px;">
               <li><strong>SPF Record:</strong> Pass</li>
               <li><strong>DKIM 2048-bit Signature:</strong> Valid</li>
-              <li><strong>DMARC Alignment:</strong> 100% Quarantine/Reject Protected</li>
+              <li><strong>DMARC Alignment:</strong> 100% Protected</li>
               <li><strong>TLS 1.3:</strong> In-transit encryption enabled</li>
             </ul>
           </div>
-          <p>Enjoy lightning-fast email sync, conversation threading, and instant search.</p>
+          <p>Enjoy lightning-fast email sync, conversation threading, attachments, and real-time push.</p>
           <p style="color: #5f6368; font-size: 13px;">— The ClearPanel Team</p>
         </div>
       `,
@@ -272,104 +309,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       isStarred: true,
     };
 
-    // Thread 2: Conversation with 2 messages (threading test)
-    const th2Id = randomUUID();
-    const msg2aId = randomUUID();
-    const msg2bId = randomUUID();
-
-    const msg2a: EmailMessage = {
-      id: msg2aId,
-      threadId: th2Id,
-      mailboxEmail,
-      folder: 'inbox',
-      labels: ['Work'],
-      from: { name: 'Sarah Connor', email: `sarah@${domain}` },
-      to: [{ name: mailboxEmail.split('@')[0], email: mailboxEmail }],
-      subject: 'Q4 Product Roadmap & Delivery Schedule',
-      snippet: 'Hey team, here is the initial draft of the Q4 delivery milestones. Let me know if you need changes before...',
-      bodyHtml: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #202124;">
-          <p>Hi,</p>
-          <p>Here is the overview of our Q4 milestones. Please find attached the preliminary timeline.</p>
-          <p>Let's align on this during tomorrow's sync.</p>
-          <p>Best regards,<br>Sarah</p>
-        </div>
-      `,
-      bodyText: `Hi, here is the overview of our Q4 milestones. Let me know if any changes are needed.`,
-      isRead: true,
-      isStarred: false,
-      hasAttachments: true,
-      attachments: [
-        {
-          id: randomUUID(),
-          filename: 'Q4_Roadmap_Draft.pdf',
-          mimeType: 'application/pdf',
-          size: 245000,
-        },
-      ],
-      security: {
-        spf: 'pass',
-        dkim: 'pass',
-        dmarc: 'pass',
-        tlsVersion: 'TLSv1.3',
-      },
-      date: new Date(now - 1000 * 60 * 120).toISOString(),
-      size: 15420,
-    };
-
-    const msg2b: EmailMessage = {
-      id: msg2bId,
-      threadId: th2Id,
-      mailboxEmail,
-      folder: 'inbox',
-      labels: ['Work'],
-      from: { name: 'Alex Miller', email: `alex@${domain}` },
-      to: [
-        { name: 'Sarah Connor', email: `sarah@${domain}` },
-        { name: mailboxEmail.split('@')[0], email: mailboxEmail },
-      ],
-      subject: 'Re: Q4 Product Roadmap & Delivery Schedule',
-      snippet: 'Looks great! I reviewed slide 4 regarding the API sync engine and everything looks on track...',
-      bodyHtml: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #202124;">
-          <p>Looks great Sarah!</p>
-          <p>I reviewed slide 4 regarding the API sync engine and everything looks completely on track. Excited for the launch!</p>
-          <p>— Alex</p>
-        </div>
-      `,
-      bodyText: `Looks great! I reviewed slide 4 regarding the API sync engine and everything is on track.`,
-      isRead: false,
-      isStarred: false,
-      hasAttachments: false,
-      security: {
-        spf: 'pass',
-        dkim: 'pass',
-        dmarc: 'pass',
-        tlsVersion: 'TLSv1.3',
-      },
-      date: new Date(now - 1000 * 60 * 45).toISOString(),
-      size: 5120,
-    };
-
-    const th2: EmailThread = {
-      id: th2Id,
-      subject: 'Q4 Product Roadmap & Delivery Schedule',
-      snippet: msg2b.snippet,
-      lastMessageDate: msg2b.date,
-      messageCount: 2,
-      unreadCount: 1,
-      participants: [msg2a.from, msg2b.from],
-      folder: 'inbox',
-      labels: ['Work'],
-      hasAttachments: true,
-      isStarred: false,
-    };
-
     store.messages.set(msg1Id, msg1);
     store.threads.set(th1Id, th1);
-    store.messages.set(msg2aId, msg2a);
-    store.messages.set(msg2bId, msg2b);
-    store.threads.set(th2Id, th2);
   }
 
   // ---------------------------------------------------------------------------
@@ -400,7 +341,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       list = list.filter((t) => t.folder === folder);
     }
 
-    // Sort descending by lastMessageDate
     list.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime());
 
     const total = list.length;
@@ -421,7 +361,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     const thread = store.threads.get(threadId);
     if (!thread) return null;
 
-    // Attach all messages for this thread sorted chronologically
     const msgs = Array.from(store.messages.values())
       .filter((m) => m.threadId === threadId)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -452,29 +391,21 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     },
   ): Promise<{ pendingId: string; threadId: string; messageId: string; undoGraceSeconds: number }> {
     const store = await this.getStore(mailboxEmail);
-    const normalizedSubject = this.normalizeSubject(payload.subject);
-    const nowIso = new Date().toISOString();
-    const graceSeconds = Math.max(0, Math.min(60, payload.undoGraceSeconds ?? 10));
-
-    // Determine threadId: use existing if reply, or search by normalized subject, or create new
-    let threadId = payload.replyToThreadId;
-    if (!threadId) {
-      const existingThread = Array.from(store.threads.values()).find(
-        (t) => this.normalizeSubject(t.subject).toLowerCase() === normalizedSubject.toLowerCase(),
-      );
-      threadId = existingThread ? existingThread.id : randomUUID();
-    }
-
+    const graceSeconds = payload.undoGraceSeconds ?? 10;
     const messageId = randomUUID();
-    const snippet = (payload.bodyText || payload.bodyHtml || '')
-      .replace(/<[^>]*>?/gm, '')
-      .slice(0, 140)
-      .trim();
+    const threadId = payload.replyToThreadId || randomUUID();
+    const nowIso = new Date().toISOString();
 
     const fromAddress: EmailAddress = {
       name: mailboxEmail.split('@')[0],
       email: mailboxEmail,
     };
+
+    const snippet = (payload.bodyText || payload.bodyHtml || '')
+      .replace(/<[^>]*>?/gm, '')
+      .replace(/\s+/g, ' ')
+      .slice(0, 140)
+      .trim();
 
     const newMsg: EmailMessage = {
       id: messageId,
@@ -490,6 +421,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       snippet,
       bodyHtml: payload.bodyHtml,
       bodyText: payload.bodyText,
+      inReplyTo: payload.inReplyToMessageId,
       isRead: true,
       isStarred: false,
       hasAttachments: Boolean(payload.attachments && payload.attachments.length > 0),
@@ -498,10 +430,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       size: (payload.bodyHtml?.length || 0) + 1024,
     };
 
-    // Store in message store
     store.messages.set(messageId, newMsg);
 
-    // Update / create thread
     let thread = store.threads.get(threadId);
     if (thread) {
       thread.snippet = snippet;
@@ -530,7 +460,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
     await this.saveStore(mailboxEmail, store);
 
-    // Register into pending sends queue
     const pendingId = randomUUID();
     const sendAfter = Date.now() + graceSeconds * 1000;
 
@@ -543,7 +472,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       status: 'pending',
     });
 
-    // Notify connected WebSocket clients of optimistic sent email
     this.gateway.emitToMailbox(mailboxEmail, 'mail:optimistic_sent', {
       pendingId,
       threadId,
@@ -566,13 +494,12 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (pending.status !== 'pending') {
-      return false; // Already sending or sent
+      return false;
     }
 
     pending.status = 'cancelled';
     this.pendingSends.delete(pendingId);
 
-    // Move message to Drafts
     const store = await this.getStore(mailboxEmail);
     const msg = store.messages.get(pending.message.id);
     if (msg) {
@@ -596,7 +523,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       if (item.status === 'pending' && now >= item.sendAfter) {
         item.status = 'sending';
         try {
-          // Send real email via local Postfix SMTP
           await this.storageService.sendRealSmtp(item.mailboxEmail, {
             to: item.message.to,
             cc: item.message.cc,
@@ -668,12 +594,20 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
         thread.labels = thread.labels.filter((l) => !updates.removeLabels!.includes(l));
       }
 
-      // Update associated messages
       for (const msg of store.messages.values()) {
         if (msg.threadId === tid) {
           if (updates.folder !== undefined) msg.folder = updates.folder;
           if (updates.isStarred !== undefined) msg.isStarred = updates.isStarred;
           if (updates.markAsRead !== undefined) msg.isRead = updates.markAsRead;
+
+          // Sync physical flags to Maildir
+          this.storageService
+            .updateMessagePhysicalFlags(msg, {
+              markAsRead: updates.markAsRead,
+              isStarred: updates.isStarred,
+              targetFolder: updates.folder,
+            })
+            .catch(() => {});
         }
       }
       count++;
@@ -691,7 +625,52 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------------------
-  // Real-Time Inbound Delivery Webhook (Dovecot LMTP Hook)
+  // Attachments & Contacts
+  // ---------------------------------------------------------------------------
+
+  async getAttachment(
+    mailboxEmail: string,
+    messageId: string,
+    attachmentId: string,
+  ): Promise<{ filename: string; mimeType: string; content: Buffer } | null> {
+    const store = await this.getStore(mailboxEmail);
+    const msg = store.messages.get(messageId);
+    if (!msg) return null;
+    return this.storageService.getAttachmentContent(msg, attachmentId);
+  }
+
+  async saveUploadedAttachment(file: any) {
+    return this.storageService.saveUploadedFile(file);
+  }
+
+  async suggestContacts(
+    mailboxEmail: string,
+    query: string,
+  ): Promise<{ name: string; email: string }[]> {
+    const store = await this.getStore(mailboxEmail);
+    const q = (query || '').trim().toLowerCase();
+    const map = new Map<string, string>();
+
+    for (const t of store.threads.values()) {
+      for (const p of t.participants) {
+        if (p.email && p.email.toLowerCase() !== mailboxEmail.toLowerCase()) {
+          map.set(p.email.toLowerCase(), p.name || p.email.split('@')[0]);
+        }
+      }
+    }
+
+    const results: { name: string; email: string }[] = [];
+    for (const [email, name] of map.entries()) {
+      if (!q || email.includes(q) || name.toLowerCase().includes(q)) {
+        results.push({ name, email });
+      }
+    }
+
+    return results.slice(0, 15);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbound Webhook
   // ---------------------------------------------------------------------------
 
   async handleInboundDelivery(
@@ -711,7 +690,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     const normalizedSubject = this.normalizeSubject(incoming.subject);
     const nowIso = new Date().toISOString();
 
-    // Check if this belongs to an existing thread
     const existingThread = Array.from(store.threads.values()).find(
       (t) => this.normalizeSubject(t.subject).toLowerCase() === normalizedSubject.toLowerCase(),
     );
@@ -757,10 +735,11 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       existingThread.lastMessageDate = nowIso;
       existingThread.messageCount += 1;
       existingThread.unreadCount += 1;
-      existingThread.folder = 'inbox'; // Bump back to inbox if archived
+      existingThread.folder = 'inbox';
       if (!existingThread.participants.some((p) => p.email === incoming.from.email)) {
         existingThread.participants.push(incoming.from);
       }
+      if (newMsg.hasAttachments) existingThread.hasAttachments = true;
     } else {
       const newThread: EmailThread = {
         id: threadId,
@@ -780,7 +759,6 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
     await this.saveStore(mailboxEmail, store);
 
-    // Instant WebSocket Push!
     this.gateway.emitToMailbox(mailboxEmail, 'mail:new_incoming', {
       threadId,
       message: newMsg,
@@ -804,12 +782,10 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       return this.getThreads(mailboxEmail);
     }
 
-    // Parse filters e.g. from:, to:, has:attachment, is:unread, is:starred
     const hasAttachmentFilter = q.includes('has:attachment');
     const isUnreadFilter = q.includes('is:unread');
     const isStarredFilter = q.includes('is:starred');
-    
-    // Clean search text
+
     const cleanQuery = q
       .replace(/has:attachment/g, '')
       .replace(/is:unread/g, '')
@@ -828,14 +804,12 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      // Check subject or snippet
       const subjectMatch = thread.subject.toLowerCase().includes(cleanQuery);
       const snippetMatch = thread.snippet.toLowerCase().includes(cleanQuery);
       const participantMatch = thread.participants.some(
         (p) => p.name.toLowerCase().includes(cleanQuery) || p.email.toLowerCase().includes(cleanQuery),
       );
 
-      // Check message bodies
       let bodyMatch = false;
       if (!subjectMatch && !snippetMatch && !participantMatch) {
         for (const msg of store.messages.values()) {
@@ -901,9 +875,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       unreadCount,
       totalThreads: store.threads.size,
       usedBytes,
-      quotaBytes: 15 * 1024 * 1024 * 1024, // 15 GB default quota
+      quotaBytes: 15 * 1024 * 1024 * 1024,
       foldersCount,
     };
   }
 }
-

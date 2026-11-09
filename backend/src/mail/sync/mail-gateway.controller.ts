@@ -3,12 +3,18 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
+  Res,
+  UseInterceptors,
+  UploadedFile,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MailGatewayService } from './mail-gateway.service';
 import { MailFolder } from './mail-sync.model';
 
@@ -163,6 +169,62 @@ export class MailGatewayController {
     return this.mailGatewayService.getStats(mailbox);
   }
 
+  // ---------------------------------------------------------------------------
+  // Attachment Handling (Download & Upload)
+  // ---------------------------------------------------------------------------
+
+  @Get('attachments/:messageId/:attachmentId')
+  async downloadAttachment(
+    @Query('mailbox') mailbox: string,
+    @Param('messageId') messageId: string,
+    @Param('attachmentId') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    if (!mailbox) {
+      throw new BadRequestException('mailbox query parameter is required');
+    }
+    const att = await this.mailGatewayService.getAttachment(mailbox, messageId, attachmentId);
+    if (!att) {
+      throw new NotFoundException('Attachment not found');
+    }
+
+    res.setHeader('Content-Type', att.mimeType || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(att.filename)}"`,
+    );
+    res.setHeader('Content-Length', att.content.length);
+    res.end(att.content);
+  }
+
+  @Post('attachments/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAttachment(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('File is required in upload form');
+    }
+    return this.mailGatewayService.saveUploadedAttachment(file);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contacts Autocomplete
+  // ---------------------------------------------------------------------------
+
+  @Get('contacts/suggest')
+  async suggestContacts(
+    @Query('mailbox') mailbox: string,
+    @Query('q') query: string,
+  ) {
+    if (!mailbox) {
+      throw new BadRequestException('mailbox is required');
+    }
+    return this.mailGatewayService.suggestContacts(mailbox, query || '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbound Webhooks
+  // ---------------------------------------------------------------------------
+
   @Post('webhook/incoming')
   async handleIncomingWebhook(
     @Body()
@@ -200,7 +262,7 @@ export class MailGatewayController {
       throw new BadRequestException('mailboxEmail is required');
     }
 
-    const domain = body.mailboxEmail.split('@')[1] || 'company.com';
+    const domain = body.mailboxEmail.split('@')[1] || 'clearpanel.local';
     return this.mailGatewayService.handleInboundDelivery(body.mailboxEmail, {
       from: {
         name: body.fromName || 'Stripe Billing',
@@ -229,4 +291,3 @@ export class MailGatewayController {
     });
   }
 }
-

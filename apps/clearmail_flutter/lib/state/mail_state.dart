@@ -19,6 +19,8 @@ class MailState extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   bool _isRealtimeConnected = false;
+  bool _isDarkMode = false;
+  bool _isSplitView = false;
 
   List<EmailThread> _threads = [];
   EmailThread? _selectedThread;
@@ -49,6 +51,8 @@ class MailState extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isRealtimeConnected => _isRealtimeConnected;
+  bool get isDarkMode => _isDarkMode;
+  bool get isSplitView => _isSplitView;
   List<EmailThread> get threads => _threads;
   EmailThread? get selectedThread => _selectedThread;
   Set<String> get selectedThreadIds => _selectedThreadIds;
@@ -75,6 +79,8 @@ class MailState extends ChangeNotifier {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      _isDarkMode = prefs.getBool('clearmail_dark_mode') ?? false;
+      _isSplitView = prefs.getBool('clearmail_split_view') ?? false;
       final savedEmail = prefs.getString('clearmail_user_email');
       final savedToken = prefs.getString('clearmail_session_token');
 
@@ -315,6 +321,35 @@ class MailState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleDarkMode() async {
+    _isDarkMode = !_isDarkMode;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('clearmail_dark_mode', _isDarkMode);
+    } catch (_) {}
+  }
+
+  void toggleSplitView() async {
+    _isSplitView = !_isSplitView;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('clearmail_split_view', _isSplitView);
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, String>>> suggestContacts(String query) async {
+    return apiService.suggestContacts(mailbox: _currentMailbox, query: query);
+  }
+
+  Future<Map<String, dynamic>> uploadAttachment({
+    required String filename,
+    required List<int> bytes,
+  }) async {
+    return apiService.uploadAttachment(filename: filename, bytes: bytes);
+  }
+
   // ---------------------------------------------------------------------------
   // Selection
   // ---------------------------------------------------------------------------
@@ -404,6 +439,7 @@ class MailState extends ChangeNotifier {
     required String subject,
     String? bodyHtml,
     String? bodyText,
+    List<Map<String, dynamic>>? attachments,
     String? replyToThreadId,
     int undoGraceSeconds = 10,
   }) async {
@@ -414,6 +450,7 @@ class MailState extends ChangeNotifier {
       'subject': subject,
       'bodyHtml': bodyHtml,
       'bodyText': bodyText,
+      'attachments': attachments,
       'replyToThreadId': replyToThreadId,
     };
 
@@ -426,6 +463,7 @@ class MailState extends ChangeNotifier {
         subject: subject,
         bodyHtml: bodyHtml,
         bodyText: bodyText,
+        attachments: attachments,
         replyToThreadId: replyToThreadId,
         undoGraceSeconds: undoGraceSeconds,
       );

@@ -115,17 +115,19 @@ class MailApiService {
     required String subject,
     String? bodyHtml,
     String? bodyText,
+    List<Map<String, dynamic>>? attachments,
     String? replyToThreadId,
     int undoGraceSeconds = 10,
   }) async {
     final body = {
       'mailboxEmail': mailbox,
       'to': to,
-      if (cc != null) 'cc': cc,
-      if (bcc != null) 'bcc': bcc,
+      if (cc != null && cc.isNotEmpty) 'cc': cc,
+      if (bcc != null && bcc.isNotEmpty) 'bcc': bcc,
       'subject': subject,
       if (bodyHtml != null) 'bodyHtml': bodyHtml,
       if (bodyText != null) 'bodyText': bodyText,
+      if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
       if (replyToThreadId != null) 'replyToThreadId': replyToThreadId,
       'undoGraceSeconds': undoGraceSeconds,
     };
@@ -217,6 +219,57 @@ class MailApiService {
     } else {
       throw Exception('Failed to load mailbox stats');
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Attachments
+  // ---------------------------------------------------------------------------
+  String getAttachmentDownloadUrl({
+    required String mailbox,
+    required String messageId,
+    required String attachmentId,
+  }) {
+    return _uri('/mail/sync/attachments/$messageId/$attachmentId', {
+      'mailbox': mailbox,
+    }).toString();
+  }
+
+  Future<Map<String, dynamic>> uploadAttachment({
+    required String filename,
+    required List<int> bytes,
+  }) async {
+    final uri = _uri('/mail/sync/attachments/upload');
+    final request = http.MultipartRequest('POST', uri);
+    request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to upload attachment: ${response.body}');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contacts Autocomplete
+  // ---------------------------------------------------------------------------
+  Future<List<Map<String, String>>> suggestContacts({
+    required String mailbox,
+    required String query,
+  }) async {
+    final response = await http.get(_uri('/mail/sync/contacts/suggest', {
+      'mailbox': mailbox,
+      'q': query,
+    }));
+    if (response.statusCode == 200) {
+      final List list = json.decode(response.body);
+      return list.map((e) => {
+        'name': (e['name'] ?? '').toString(),
+        'email': (e['email'] ?? '').toString(),
+      }).toList();
+    }
+    return [];
   }
 
   // ---------------------------------------------------------------------------
