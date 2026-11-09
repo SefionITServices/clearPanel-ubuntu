@@ -195,64 +195,259 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     // Ingest physical messages from Maildir and mbox
     await this.syncFromMaildir(normalized, store);
 
+    // Clean up any historical duplicate messages or threads
+    this.deduplicateStore(store);
+
     await this.saveStore(normalized, store);
     this.stores.set(normalized, store);
     return store;
+  }
+
+  private deduplicateStore(store: MailboxStore): boolean {
+    let changed = false;
+    const cleanMsgId = (id?: string) => (id ? id.replace(/^<+|>+$/g, '').trim().toLowerCase() : '');
+
+    // 1. Deduplicate messages
+    const messages = Array.from(store.messages.values());
+    const toRemove = new Set<string>();
+
+    for (let i = 0; i < messages.length; i++) {
+      const m1 = messages[i];
+      if (toRemove.has(m1.id)) continue;
+
+      for (let j = i + 1; j < messages.length; j++) {
+        const m2 = messages[j];
+        if (toRemove.has(m2.id)) continue;
+
+        if (m1.folder !== m2.folder) continue;
+
+        let isDuplicate = false;
+
+        // Check A: Same messageIdHeader
+        if (m1.messageIdHeader && m2.messageIdHeader && cleanMsgId(m1.messageIdHeader) === cleanMsgId(m2.messageIdHeader)) {
+          isDuplicate = true;
+        }
+
+        // Check B: Sent folder matching (optimistic UUID + disk file sync)
+        if (!isDuplicate && m1.folder === 'sent') {
+          const sub1 = this.normalizeSubject(m1.subject).toLowerCase();
+          const sub2 = this.normalizeSubject(m2.subject).toLowerCase();
+          const to1 = m1.to?.[0]?.email?.toLowerCase() || '';
+          const to2 = m2.to?.[0]?.email?.toLowerCase() || '';
+          const timeDiff = Math.abs(new Date(m1.date).getTime() - new Date(m2.date).getTime());
+
+          if (sub1 === sub2 && to1 === to2 && timeDiff < 300000) {
+            isDuplicate = true;
+          }
+        }
+
+        if (isDuplicate) {
+          // Keep the message with filePath / fuller data
+          const keepM1 = Boolean(m1.filePath) || (!m2.filePath && Boolean(m1.messageIdHeader));
+          const survivor = keepM1 ? m1 : m2;
+          const victim = keepM1 ? m2 : m1;
+
+          survivor.filePath = survivor.filePath || victim.filePath;
+          survivor.fileOffset = survivor.fileOffset ?? victim.fileOffset;
+          survivor.messageIdHeader = survivor.messageIdHeader || victim.messageIdHeader;
+          survivor.bodyHtml = survivor.bodyHtml || victim.bodyHtml;
+          survivor.bodyText = survivor.bodyText || victim.bodyText;
+          survivor.security = survivor.security || victim.security;
+          survivor.attachments = (survivor.attachments && survivor.attachments.length > 0) ? survivor.attachments : victim.attachments;
+
+          toRemove.add(victim.id);
+          changed = true;
+        }
+      }
+    }
+
+    if (toRemove.size > 0) {
+      for (const victimId of toRemove) {
+        store.messages.delete(victimId);
+      }
+    }
+
+    // 2. Deduplicate and merge threads with identical normalized subjects, same folder and participants
+    const threads = Array.from(store.threads.values());
+    const threadsToRemove = new Set<string>();
+
+    for (let i = 0; i < threads.length; i++) {
+      const t1 = threads[i];
+      if (threadsToRemove.has(t1.id)) continue;
+
+      const normSub1 = this.normalizeSubject(t1.subject).toLowerCase();
+      if (!normSub1 || normSub1 === '(no subject)') continue;
+
+      for (let j = i + 1; j < threads.length; j++) {
+        const t2 = threads[j];
+        if (threadsToRemove.has(t2.id)) continue;
+        if (t1.folder !== t2.folder) continue;
+
+        const normSub2 = this.normalizeSubject(t2.subject).toLowerCase();
+        if (normSub1 === normSub2) {
+          const p1 = t1.participants.map((p) => p.email.toLowerCase()).sort().join(',');
+          const p2 = t2.participants.map((p) => p.email.toLowerCase()).sort().join(',');
+          if (p1 === p2) {
+            for (const msg of store.messages.values()) {
+              if (msg.threadId === t2.id) {
+                msg.threadId = t1.id;
+              }
+            }
+            threadsToRemove.add(t2.id);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (threadsToRemove.size > 0) {
+      for (const thId of threadsToRemove) {
+        store.threads.delete(thId);
+      }
+    }
+
+    // 3. Recalculate messageCount, unreadCount, and lastMessageDate for all threads
+    for (const [threadId, thread] of store.threads.entries()) {
+      const threadMsgs = Array.from(store.messages.values())
+        .filter((m) => m.threadId === threadId)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      if (threadMsgs.length === 0) {
+        store.threads.delete(threadId);
+        changed = true;
+      } else {
+        const prevCount = thread.messageCount;
+        thread.messageCount = threadMsgs.length;
+        thread.unreadCount = threadMsgs.filter((m) => !m.isRead).length;
+        const latest = threadMsgs[threadMsgs.length - 1];
+        thread.lastMessageDate = latest.date;
+        thread.snippet = latest.snippet || thread.snippet;
+        if (thread.messageCount !== prevCount) {
+          changed = true;
+        }
+      }
+    }
+
+    return changed;
   }
 
   async syncFromMaildir(mailboxEmail: string, store: MailboxStore): Promise<void> {
     try {
       const folders: MailFolder[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'archive'];
       let changes = 0;
+      const cleanMsgId = (id?: string) => (id ? id.replace(/^<+|>+$/g, '').trim().toLowerCase() : '');
 
       for (const folder of folders) {
         const realMsgs = await this.storageService.readFolderMessages(mailboxEmail, folder);
         for (const msg of realMsgs) {
-          if (!store.messages.has(msg.id)) {
-            const normalizedSubject = this.normalizeSubject(msg.subject);
-            let thread = Array.from(store.threads.values()).find(
-              (t) =>
-                this.normalizeSubject(t.subject).toLowerCase() === normalizedSubject.toLowerCase() ||
-                (msg.inReplyTo && t.messages?.some((m) => m.messageIdHeader === msg.inReplyTo)),
+          // Check if this physical message is already in store.messages
+          let existing = store.messages.get(msg.id);
+          if (!existing && msg.messageIdHeader) {
+            const targetId = cleanMsgId(msg.messageIdHeader);
+            existing = Array.from(store.messages.values()).find(
+              (m) => cleanMsgId(m.messageIdHeader) === targetId,
             );
+          }
 
-            const threadId = thread ? thread.id : randomUUID();
-            msg.threadId = threadId;
-            store.messages.set(msg.id, msg);
-            changes++;
+          if (!existing && folder === 'sent') {
+            const normSub = this.normalizeSubject(msg.subject).toLowerCase();
+            const targetTo = msg.to?.[0]?.email?.toLowerCase() || '';
+            const msgTime = new Date(msg.date).getTime();
 
-            if (thread) {
-              thread.messageCount += 1;
-              if (!msg.isRead) thread.unreadCount += 1;
-              if (new Date(msg.date).getTime() > new Date(thread.lastMessageDate).getTime()) {
-                thread.lastMessageDate = msg.date;
-                thread.snippet = msg.snippet;
-              }
-              if (!thread.participants.some((p) => p.email === msg.from.email)) {
-                thread.participants.push(msg.from);
-              }
-              if (msg.hasAttachments) thread.hasAttachments = true;
-            } else {
-              store.threads.set(threadId, {
-                id: threadId,
-                subject: msg.subject,
-                snippet: msg.snippet,
-                lastMessageDate: msg.date,
-                messageCount: 1,
-                unreadCount: msg.isRead ? 0 : 1,
-                participants: [msg.from],
-                folder: msg.folder,
-                labels: msg.labels,
-                hasAttachments: msg.hasAttachments,
-                isStarred: msg.isStarred,
-              });
+            existing = Array.from(store.messages.values()).find((m) => {
+              if (m.folder !== 'sent') return false;
+              if (this.normalizeSubject(m.subject).toLowerCase() !== normSub) return false;
+              const mTo = m.to?.[0]?.email?.toLowerCase() || '';
+              if (mTo !== targetTo) return false;
+              const timeDiff = Math.abs(new Date(m.date).getTime() - msgTime);
+              return timeDiff < 300000;
+            });
+          }
+
+          if (existing) {
+            // Already tracked, update physical properties
+            existing.filePath = msg.filePath || existing.filePath;
+            existing.fileOffset = msg.fileOffset ?? existing.fileOffset;
+            if (!existing.messageIdHeader && msg.messageIdHeader) {
+              existing.messageIdHeader = msg.messageIdHeader;
             }
+            if (!existing.bodyHtml && msg.bodyHtml) {
+              existing.bodyHtml = msg.bodyHtml;
+            }
+            if (!existing.bodyText && msg.bodyText) {
+              existing.bodyText = msg.bodyText;
+            }
+            if (msg.security) {
+              existing.security = msg.security;
+            }
+            continue;
+          }
+
+          // Truly new message from disk
+          const normalizedSubject = this.normalizeSubject(msg.subject);
+          const isGeneric = !normalizedSubject || normalizedSubject.toLowerCase() === '(no subject)';
+
+          let thread: EmailThread | undefined;
+          if (msg.inReplyTo) {
+            const cleanInReplyTo = cleanMsgId(msg.inReplyTo);
+            thread = Array.from(store.threads.values()).find((t) =>
+              Array.from(store.messages.values()).some(
+                (m) => m.threadId === t.id && cleanMsgId(m.messageIdHeader) === cleanInReplyTo,
+              ),
+            );
+          }
+
+          if (!thread && !isGeneric) {
+            thread = Array.from(store.threads.values()).find((t) => {
+              if (this.normalizeSubject(t.subject).toLowerCase() !== normalizedSubject.toLowerCase()) {
+                return false;
+              }
+              const msgSender = msg.from?.email?.toLowerCase();
+              const msgRecipients = (msg.to || []).map((x) => x.email.toLowerCase());
+              const threadParticipants = t.participants.map((p) => p.email.toLowerCase());
+              return (
+                (msgSender && threadParticipants.includes(msgSender)) ||
+                msgRecipients.some((r) => threadParticipants.includes(r))
+              );
+            });
+          }
+
+          const threadId = thread ? thread.id : randomUUID();
+          msg.threadId = threadId;
+          store.messages.set(msg.id, msg);
+          changes++;
+
+          if (thread) {
+            thread.messageCount += 1;
+            if (!msg.isRead) thread.unreadCount += 1;
+            if (new Date(msg.date).getTime() > new Date(thread.lastMessageDate).getTime()) {
+              thread.lastMessageDate = msg.date;
+              thread.snippet = msg.snippet;
+            }
+            if (!thread.participants.some((p) => p.email === msg.from.email)) {
+              thread.participants.push(msg.from);
+            }
+            if (msg.hasAttachments) thread.hasAttachments = true;
           } else {
-            const existing = store.messages.get(msg.id)!;
-            existing.filePath = msg.filePath;
-            existing.fileOffset = msg.fileOffset;
+            store.threads.set(threadId, {
+              id: threadId,
+              subject: msg.subject,
+              snippet: msg.snippet,
+              lastMessageDate: msg.date,
+              messageCount: 1,
+              unreadCount: msg.isRead ? 0 : 1,
+              participants: [msg.from],
+              folder: msg.folder,
+              labels: msg.labels,
+              hasAttachments: msg.hasAttachments,
+              isStarred: msg.isStarred,
+            });
           }
         }
+      }
+
+      if (this.deduplicateStore(store)) {
+        changes++;
       }
 
       if (changes > 0) {
@@ -364,6 +559,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     const messageId = randomUUID();
     const threadId = payload.replyToThreadId || randomUUID();
     const nowIso = new Date().toISOString();
+    const domain = mailboxEmail.split('@')[1] || 'mail';
+    const messageIdHeader = `<${randomUUID()}@${domain}>`;
 
     const fromAddress: EmailAddress = {
       name: mailboxEmail.split('@')[0],
@@ -380,6 +577,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       id: messageId,
       threadId,
       mailboxEmail,
+      messageIdHeader,
       folder: 'sent',
       labels: [],
       from: fromAddress,
@@ -492,7 +690,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       if (item.status === 'pending' && now >= item.sendAfter) {
         item.status = 'sending';
         try {
-          await this.storageService.sendRealSmtp(item.mailboxEmail, {
+          const sentResult = await this.storageService.sendRealSmtp(item.mailboxEmail, {
             to: item.message.to,
             cc: item.message.cc,
             bcc: item.message.bcc,
@@ -501,10 +699,20 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
             bodyText: item.message.bodyText,
             attachments: item.message.attachments,
             replyToMessageId: item.message.inReplyTo,
+            messageIdHeader: item.message.messageIdHeader,
           });
 
           item.status = 'sent';
           this.logger.log(`Dispatched real SMTP email ${item.message.id} successfully.`);
+
+          // Link physical file and final messageIdHeader to stored message
+          const store = await this.getStore(item.mailboxEmail);
+          const storedMsg = store.messages.get(item.message.id);
+          if (storedMsg && sentResult) {
+            if (sentResult.filePath) storedMsg.filePath = sentResult.filePath;
+            if (sentResult.messageIdHeader) storedMsg.messageIdHeader = sentResult.messageIdHeader;
+            await this.saveStore(item.mailboxEmail, store);
+          }
 
           this.gateway.emitToMailbox(item.mailboxEmail, 'mail:send_completed', {
             pendingId: id,

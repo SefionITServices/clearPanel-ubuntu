@@ -42,6 +42,15 @@ class _ThreadItemRowState extends State<ThreadItemRow> {
   }
 
   String _getParticipantsText() {
+    if (widget.thread.folder == 'sent') {
+      final recipients = widget.thread.participants
+          .where((p) => p.email.toLowerCase() != widget.state.currentMailbox.toLowerCase())
+          .toList();
+      if (recipients.isNotEmpty) {
+        return 'To: ${recipients.map((p) => p.name.isNotEmpty ? p.name : p.email).join(', ')}';
+      }
+      return 'To: ${widget.thread.participants.map((p) => p.name.isNotEmpty ? p.name : p.email).join(', ')}';
+    }
     if (widget.thread.participants.isEmpty) return 'Me';
     return widget.thread.participants.map((p) => p.name.isNotEmpty ? p.name : p.email).join(', ');
   }

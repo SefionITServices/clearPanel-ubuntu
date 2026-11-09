@@ -17,10 +17,20 @@ class ThreadListView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 768;
+    final filteredThreads = (state.currentFolder == 'inbox')
+        ? state.threads.where((t) {
+            if (state.currentCategory == 'primary') {
+              return !t.labels.contains('promotions') &&
+                  !t.labels.contains('social') &&
+                  !t.labels.contains('updates');
+            }
+            return t.labels.contains(state.currentCategory);
+          }).toList()
+        : state.threads;
 
     return Container(
       decoration: BoxDecoration(
-        color: GmailColors.surfaceWhite,
+        color: state.isDarkMode ? GmailColors.darkSurface : GmailColors.surfaceWhite,
         borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(16),
       ),
       margin: isMobile ? EdgeInsets.zero : const EdgeInsets.only(right: 16, bottom: 16),
@@ -36,16 +46,16 @@ class ThreadListView extends StatelessWidget {
 
           // Thread List Content
           Expanded(
-            child: state.isLoading && state.threads.isEmpty
+            child: state.isLoading && filteredThreads.isEmpty
                 ? const Center(child: CircularProgressIndicator())
-                : state.threads.isEmpty
-                    ? _buildEmptyState()
+                : filteredThreads.isEmpty
+                    ? _buildEmptyState(isMobile: isMobile)
                     : RefreshIndicator(
                         onRefresh: () => state.loadThreads(),
                         child: ListView.builder(
-                          itemCount: state.threads.length,
+                          itemCount: filteredThreads.length,
                           itemBuilder: (ctx, index) {
-                            final thread = state.threads[index];
+                            final thread = filteredThreads[index];
                             final isSelected = state.selectedThreadIds.contains(thread.id);
                             return ThreadItemRow(
                               thread: thread,
@@ -163,39 +173,42 @@ class ThreadListView extends StatelessWidget {
 
   Widget _buildCategoryTabs({bool isMobile = false}) {
     if (isMobile) {
-      return SizedBox(
-        height: 44,
-        child: SingleChildScrollView(
+      return Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: state.isDarkMode ? GmailColors.darkSurface : GmailColors.surfaceWhite,
+          border: const Border(bottom: BorderSide(color: GmailColors.threadBorder, width: 0.8)),
+        ),
+        child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              _buildCategoryTab(
-                id: 'primary',
-                title: 'Primary',
-                icon: Icons.inbox,
-                activeColor: GmailColors.googleRed,
-              ),
-              _buildCategoryTab(
-                id: 'promotions',
-                title: 'Promotions',
-                icon: Icons.local_offer_outlined,
-                activeColor: GmailColors.googleGreen,
-              ),
-              _buildCategoryTab(
-                id: 'social',
-                title: 'Social',
-                icon: Icons.people_outline,
-                activeColor: GmailColors.googleBlue,
-              ),
-              _buildCategoryTab(
-                id: 'updates',
-                title: 'Updates',
-                icon: Icons.info_outline,
-                activeColor: GmailColors.googleYellow,
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          physics: const BouncingScrollPhysics(),
+          children: [
+            _buildMobileCategoryChip(
+              id: 'primary',
+              title: 'Primary',
+              icon: Icons.inbox,
+              activeColor: GmailColors.googleRed,
+            ),
+            _buildMobileCategoryChip(
+              id: 'promotions',
+              title: 'Promotions',
+              icon: Icons.local_offer_outlined,
+              activeColor: GmailColors.googleGreen,
+            ),
+            _buildMobileCategoryChip(
+              id: 'social',
+              title: 'Social',
+              icon: Icons.people_outline,
+              activeColor: GmailColors.googleBlue,
+            ),
+            _buildMobileCategoryChip(
+              id: 'updates',
+              title: 'Updates',
+              icon: Icons.info_outline,
+              activeColor: GmailColors.googleYellow,
+            ),
+          ],
         ),
       );
     }
@@ -203,25 +216,25 @@ class ThreadListView extends StatelessWidget {
       height: 48,
       child: Row(
         children: [
-          _buildCategoryTab(
+          _buildDesktopCategoryTab(
             id: 'primary',
             title: 'Primary',
             icon: Icons.inbox,
             activeColor: GmailColors.googleRed,
           ),
-          _buildCategoryTab(
+          _buildDesktopCategoryTab(
             id: 'promotions',
             title: 'Promotions',
             icon: Icons.local_offer_outlined,
             activeColor: GmailColors.googleGreen,
           ),
-          _buildCategoryTab(
+          _buildDesktopCategoryTab(
             id: 'social',
             title: 'Social',
             icon: Icons.people_outline,
             activeColor: GmailColors.googleBlue,
           ),
-          _buildCategoryTab(
+          _buildDesktopCategoryTab(
             id: 'updates',
             title: 'Updates',
             icon: Icons.info_outline,
@@ -232,7 +245,60 @@ class ThreadListView extends StatelessWidget {
     );
   }
 
-  Widget _buildCategoryTab({
+  Widget _buildMobileCategoryChip({
+    required String id,
+    required String title,
+    required IconData icon,
+    required Color activeColor,
+  }) {
+    final isActive = state.currentCategory == id;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => state.setCategory(id),
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? activeColor.withOpacity(0.14)
+                  : (state.isDarkMode ? GmailColors.darkSearchBarBg : const Color(0xFFF1F3F4)),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isActive ? activeColor : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 16,
+                  color: isActive ? activeColor : (state.isDarkMode ? GmailColors.darkSnippet : GmailColors.textSnippet),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                    color: isActive ? activeColor : (state.isDarkMode ? GmailColors.darkText : GmailColors.textDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopCategoryTab({
     required String id,
     required String title,
     required IconData icon,
@@ -276,23 +342,41 @@ class ThreadListView extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState({bool isMobile = false}) {
+    final folderName = state.currentFolder.isNotEmpty
+        ? state.currentFolder[0].toUpperCase() + state.currentFolder.substring(1)
+        : 'Inbox';
+    final isCategoryEmpty = state.currentFolder == 'inbox' && state.currentCategory != 'primary';
+    final title = isCategoryEmpty
+        ? 'No emails in ${state.currentCategory[0].toUpperCase()}${state.currentCategory.substring(1)}'
+        : 'Your $folderName is empty';
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text(
-            'Your inbox is empty',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: GmailColors.textSnippet),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enjoy your day! Tap "Simulate Inbound" to test incoming business emails.',
-            style: TextStyle(fontSize: 13, color: GmailColors.textMuted),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              state.currentFolder == 'sent' ? Icons.send_outlined : Icons.inbox_outlined,
+              size: isMobile ? 48 : 64,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: GmailColors.textSnippet),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.currentFolder == 'sent'
+                  ? 'Emails you send from ClearMail will appear here.'
+                  : 'Enjoy your clean inbox! Tap "Simulate Inbound" to test incoming business emails.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: GmailColors.textMuted),
+            ),
+          ],
+        ),
       ),
     );
   }

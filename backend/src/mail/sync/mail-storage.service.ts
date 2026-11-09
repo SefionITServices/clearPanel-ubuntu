@@ -597,8 +597,9 @@ export class MailStorageService {
       bodyText?: string;
       attachments?: any[];
       replyToMessageId?: string;
+      messageIdHeader?: string;
     },
-  ): Promise<{ messageId: string }> {
+  ): Promise<{ messageId: string; messageIdHeader: string; filePath?: string; fileName?: string }> {
     if (!this.smtpTransporter) {
       this.initSmtp();
     }
@@ -609,7 +610,8 @@ export class MailStorageService {
     const domain = fromEmail.split('@')[1] || 'mail';
     const serverHost = process.env.PANEL_HOST || 'panel.mainserver.in';
     const avatarUrl = `https://${serverHost}/api/mail/avatars/${encodeURIComponent(fromEmail)}`;
-    const generatedMsgId = `<${randomUUID()}@${domain}>`;
+    const cleanInitialId = payload.messageIdHeader ? payload.messageIdHeader.replace(/^<+|>+$/g, '').trim() : `${randomUUID()}@${domain}`;
+    const generatedMsgId = `<${cleanInitialId}>`;
 
     const mailAttachments: any[] = [];
     if (payload.attachments && payload.attachments.length > 0) {
@@ -659,16 +661,16 @@ export class MailStorageService {
       attachments: mailAttachments,
     };
 
-    let sentId: string = generatedMsgId.replace(/[<>]/g, '');
+    let sentId: string = generatedMsgId.replace(/^<+|>+$/g, '');
     try {
       const info = await this.smtpTransporter!.sendMail(mailOptions);
-      sentId = (info.messageId || sentId).replace(/[<>]/g, '');
+      sentId = (info.messageId || sentId).replace(/^<+|>+$/g, '');
       this.logger.log(`Dispatched real SMTP email from ${formattedFrom} (ID: ${sentId})`);
     } catch (err: any) {
       this.logger.warn(`SMTP send warning (local relay): ${err.message}. Saving to Sent folder.`);
     }
 
-    await this.saveSentMessage(fromEmail, formattedFrom, payload, sentId);
+    const sentResult = await this.saveSentMessage(fromEmail, formattedFrom, payload, sentId);
 
     // Clean up temporary composer upload files
     if (payload.attachments) {
@@ -681,10 +683,22 @@ export class MailStorageService {
       }
     }
 
-    return { messageId: sentId };
+    return {
+      messageId: sentId,
+      messageIdHeader: sentResult.messageIdHeader,
+      filePath: sentResult.filePath,
+      fileName: sentResult.fileName,
+    };
   }
 
-  private async saveSentMessage(fromEmail: string, formattedFrom: string, payload: any, messageId: string) {
+  private async saveSentMessage(
+    fromEmail: string,
+    formattedFrom: string,
+    payload: any,
+    messageId: string,
+  ): Promise<{ filePath: string; fileName: string; messageIdHeader: string }> {
+    const cleanId = messageId.replace(/^<+|>+$/g, '').trim();
+    const messageIdHeader = `<${cleanId}>`;
     try {
       const maildir = await this.getEffectiveMaildir(fromEmail);
       const sentDir = path.join(maildir, '.Sent', 'cur');
@@ -698,7 +712,7 @@ export class MailStorageService {
         `To: ${payload.to.map((t: any) => (t.name ? `"${t.name}" <${t.email}>` : t.email)).join(', ')}`,
         `Subject: ${payload.subject}`,
         `Date: ${new Date().toUTCString()}`,
-        `Message-ID: <${messageId}>`,
+        `Message-ID: ${messageIdHeader}`,
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=utf-8',
         'X-Mailer: ClearPanel ClearMail',
@@ -715,8 +729,11 @@ export class MailStorageService {
         const mboxHeader = `From ${fromEmail}  ${new Date().toUTCString()}\n`;
         await fs.appendFile(mboxSent, `\n${mboxHeader}${rawContent}\n`, 'utf8');
       } catch {}
+
+      return { filePath, fileName, messageIdHeader };
     } catch (err: any) {
       this.logger.error(`Failed to write sent message: ${err.message}`);
+      return { filePath: '', fileName: '', messageIdHeader };
     }
   }
 
