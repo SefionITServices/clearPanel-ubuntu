@@ -29,3 +29,4 @@ release/dist/
 .pm2/
 .ssh/
 .gitconfig
+snap/

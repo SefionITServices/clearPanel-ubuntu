@@ -352,11 +352,19 @@ cmd_restart() {
     fi
 }
 
+cmd_domain() {
+    require_root "domain"
+    node "$BASE/bin/clearpanel-domain.js" "$@"
+}
+
 cmd_help() {
     banner
     echo -e "${BOLD}Usage:${NC}  clearpanel <command> [options]"
     echo ""
     echo -e "${BOLD}Commands:${NC}"
+    echo "  domain [sub]        Manage domains and redirects"
+    echo "                      e.g. clearpanel domain add redirect <domain> <destination>"
+    echo "                      e.g. clearpanel domain redirect list"
     echo "  status              Show panel status, version, and license info"
     echo "  version             Show version number"
     echo "  update              Update ClearPanel to the latest version"
@@ -368,6 +376,8 @@ cmd_help() {
     echo "  help                Show this help message"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
+    echo "  sudo clearpanel domain add redirect example.com https://target.com"
+    echo "  sudo clearpanel domain redirect list"
     echo "  sudo clearpanel update"
     echo "  sudo clearpanel license activate ABCD-1234-EFGH-5678"
     echo "  clearpanel status"
@@ -381,6 +391,8 @@ COMMAND="${1:-help}"
 shift 2>/dev/null || true
 
 case "$COMMAND" in
+    domain)     cmd_domain "$@" ;;
+    redirect)   cmd_domain redirect "$@" ;;
     status)     cmd_status ;;
     version)    cmd_version ;;
     update)     cmd_update ;;

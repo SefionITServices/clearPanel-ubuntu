@@ -34,6 +34,12 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  FormControl,
+  InputLabel,
+  Select,
+  FormControlLabel,
+  Switch,
+  Tooltip,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import SearchIcon from '@mui/icons-material/Search';
@@ -53,6 +59,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { DashboardLayout } from '../layouts/dashboard/layout';
 import { domainsApi } from '../api/domains';
+import { redirectsApi } from '../api/redirects';
 import { nodeAppsApi, AppDef } from '../api/node-apps';
 import { dockerApi } from '../api/docker';
 
@@ -94,6 +101,38 @@ export default function DomainsListView() {
   const [editContainerId, setEditContainerId] = React.useState<string | null>(null);
   const [editContainerPort, setEditContainerPort] = React.useState('');
 
+  // Redirects state
+  const [redirects, setRedirects] = React.useState<any[]>([]);
+  const [redirectsLoading, setRedirectsLoading] = React.useState(false);
+  const [redirectDomainFilter, setRedirectDomainFilter] = React.useState('');
+  const [redirectSearch, setRedirectSearch] = React.useState('');
+
+  // Add Redirect dialog state
+  const [addRedirectOpen, setAddRedirectOpen] = React.useState(false);
+  const [redirectDomain, setRedirectDomain] = React.useState('');
+  const [redirectFrom, setRedirectFrom] = React.useState('/');
+  const [redirectTo, setRedirectTo] = React.useState('');
+  const [redirectType, setRedirectType] = React.useState<'301' | '302'>('301');
+  const [redirectWildcard, setRedirectWildcard] = React.useState(false);
+  const [redirectSaving, setRedirectSaving] = React.useState(false);
+
+  // Delete Redirect dialog state
+  const [deleteRedirectTarget, setDeleteRedirectTarget] = React.useState<any | null>(null);
+  const [deleteRedirectOpen, setDeleteRedirectOpen] = React.useState(false);
+  const [deletingRedirectId, setDeletingRedirectId] = React.useState<string | null>(null);
+
+  const loadRedirects = React.useCallback(async (filter?: string) => {
+    setRedirectsLoading(true);
+    try {
+      const data = await redirectsApi.list(filter || undefined);
+      setRedirects(data.redirects || []);
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Failed to load redirects', severity: 'error' });
+    } finally {
+      setRedirectsLoading(false);
+    }
+  }, []);
+
   const loadDomains = async () => {
     setLoading(true);
     try {
@@ -112,6 +151,63 @@ export default function DomainsListView() {
   };
 
   React.useEffect(() => { loadDomains(); }, []);
+
+  React.useEffect(() => {
+    if (activeTab === 1) {
+      loadRedirects(redirectDomainFilter);
+    }
+  }, [activeTab, redirectDomainFilter, loadRedirects]);
+
+  const handleOpenAddRedirect = (prefillDomain?: string) => {
+    setRedirectDomain(prefillDomain || (domains.length > 0 ? domains[0].name : ''));
+    setRedirectFrom('/');
+    setRedirectTo('');
+    setRedirectType('301');
+    setRedirectWildcard(false);
+    setAddRedirectOpen(true);
+  };
+
+  const handleCreateRedirect = async () => {
+    if (!redirectDomain || !redirectTo.trim()) return;
+    setRedirectSaving(true);
+    try {
+      await redirectsApi.create({
+        domain: redirectDomain,
+        from: redirectFrom.trim() || '/',
+        to: redirectTo.trim(),
+        type: redirectType,
+        wildcard: redirectWildcard,
+      });
+      setSnack({ open: true, message: `Redirect created for ${redirectDomain}`, severity: 'success' });
+      setAddRedirectOpen(false);
+      await loadRedirects(redirectDomainFilter);
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Failed to create redirect', severity: 'error' });
+    } finally {
+      setRedirectSaving(false);
+    }
+  };
+
+  const askDeleteRedirect = (redirect: any) => {
+    setDeleteRedirectTarget(redirect);
+    setDeleteRedirectOpen(true);
+  };
+
+  const doDeleteRedirect = async () => {
+    if (!deleteRedirectTarget) return;
+    setDeletingRedirectId(deleteRedirectTarget.id);
+    try {
+      await redirectsApi.remove(deleteRedirectTarget.id);
+      setSnack({ open: true, message: 'Redirect removed', severity: 'success' });
+      setDeleteRedirectOpen(false);
+      setDeleteRedirectTarget(null);
+      await loadRedirects(redirectDomainFilter);
+    } catch (e: any) {
+      setSnack({ open: true, message: e.message || 'Failed to remove redirect', severity: 'error' });
+    } finally {
+      setDeletingRedirectId(null);
+    }
+  };
 
   const askDelete = (row: any) => {
     setTarget(row);
@@ -644,19 +740,170 @@ function parseHostPortFromPortsString(ports: string): number | null {
 
           {/* Redirects Tab */}
           {activeTab === 1 && (
-            <Box sx={{ p: 3 }}>
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <ImportExportIcon sx={{ fontSize: 64, color: '#bdbdbd', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary" gutterBottom>
-                  No redirects configured
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  Create redirects to forward traffic from one domain to another
-                </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} sx={{ textTransform: 'none' }}>
-                  Add Redirect
-                </Button>
+            <Box>
+              {/* Toolbar */}
+              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <TextField
+                    placeholder="Search redirects..."
+                    value={redirectSearch}
+                    onChange={(e) => setRedirectSearch(e.target.value)}
+                    size="small"
+                    sx={{ width: 240 }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                  <FormControl size="small" sx={{ minWidth: 200 }}>
+                    <InputLabel>Filter by domain</InputLabel>
+                    <Select
+                      value={redirectDomainFilter}
+                      label="Filter by domain"
+                      onChange={(e) => setRedirectDomainFilter(e.target.value)}
+                    >
+                      <MenuItem value="">All Domains</MenuItem>
+                      {domains.map((d) => (
+                        <MenuItem key={d.id} value={d.name}>{d.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<RefreshIcon />}
+                    onClick={() => loadRedirects(redirectDomainFilter)}
+                    disabled={redirectsLoading}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Refresh
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={() => handleOpenAddRedirect()}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Add Redirect
+                  </Button>
+                </Stack>
               </Box>
+
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Domain</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Source Path</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Redirect To</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Wildcard</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Created</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {redirectsLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                          <CircularProgress size={32} />
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Loading redirects...</Typography>
+                        </TableCell>
+                      </TableRow>
+                    ) : (() => {
+                      const filteredRedirects = redirects.filter((r) => {
+                        const q = redirectSearch.toLowerCase().trim();
+                        if (!q) return true;
+                        return (
+                          r.domain?.toLowerCase().includes(q) ||
+                          r.from?.toLowerCase().includes(q) ||
+                          r.to?.toLowerCase().includes(q)
+                        );
+                      });
+
+                      if (filteredRedirects.length === 0) {
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                              <ImportExportIcon sx={{ fontSize: 48, color: '#bdbdbd', mb: 1 }} />
+                              <Typography variant="h6" color="text.secondary" gutterBottom>
+                                {redirectSearch ? 'No redirects match your search' : 'No redirects configured'}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                {redirectSearch ? 'Try clearing your search term' : 'Create redirects to forward traffic from one domain or URL path to another'}
+                              </Typography>
+                              {!redirectSearch && (
+                                <Button
+                                  variant="contained"
+                                  startIcon={<AddIcon />}
+                                  onClick={() => handleOpenAddRedirect()}
+                                  sx={{ textTransform: 'none' }}
+                                >
+                                  Add Redirect
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      return filteredRedirects.map((r) => (
+                        <TableRow key={r.id} hover>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <LanguageIcon sx={{ color: '#4285F4', fontSize: 18 }} />
+                              <Typography variant="body2" fontWeight={500}>{r.domain}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace', bgcolor: 'grey.100', px: 1, py: 0.25, borderRadius: 1, width: 'fit-content' }}>
+                              {r.from}
+                            </Typography>
+                          </TableCell>
+                          <TableCell sx={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Tooltip title={r.to}>
+                              <Typography variant="body2" sx={{ color: 'primary.main', textDecoration: 'none' }} component="a" href={r.to} target="_blank" rel="noopener noreferrer">
+                                {r.to}
+                              </Typography>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={r.type === '301' ? '301 Permanent' : '302 Temporary'}
+                              size="small"
+                              color={r.type === '301' ? 'primary' : 'default'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={r.wildcard ? 'Wildcard' : 'Exact'}
+                              size="small"
+                              color={r.wildcard ? 'info' : 'default'}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="Delete Redirect">
+                              <IconButton size="small" color="error" onClick={() => askDeleteRedirect(r)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ));
+                    })()}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </Box>
           )}
 
@@ -731,7 +978,11 @@ function parseHostPortFromPortsString(ports: string): number | null {
             <LockIcon sx={{ mr: 1.5, fontSize: 20 }} />
             SSL/TLS
           </MenuItem>
-          <MenuItem onClick={() => handleMenuClose()}>
+          <MenuItem onClick={() => {
+            const domainName = menuDomain?.name || '';
+            handleMenuClose();
+            handleOpenAddRedirect(domainName);
+          }}>
             <ImportExportIcon sx={{ mr: 1.5, fontSize: 20 }} />
             Add Redirect
           </MenuItem>
@@ -975,6 +1226,107 @@ function parseHostPortFromPortsString(ports: string): number | null {
             <Button color="error" variant="contained" onClick={doDelete} disabled={!!deletingId} sx={{ textTransform: 'none' }}>
               {deletingId ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
               Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Add Redirect Dialog */}
+        <Dialog open={addRedirectOpen} onClose={() => setAddRedirectOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 600 }}>Add Domain Redirect</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2.5} sx={{ mt: 1 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Domain</InputLabel>
+                <Select
+                  value={redirectDomain}
+                  label="Domain"
+                  onChange={(e) => setRedirectDomain(e.target.value)}
+                >
+                  {domains.map((d) => (
+                    <MenuItem key={d.id} value={d.name}>{d.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                label="Source Path"
+                placeholder="/"
+                value={redirectFrom}
+                onChange={(e) => setRedirectFrom(e.target.value)}
+                size="small"
+                fullWidth
+                helperText="Path to redirect from (use / for the entire domain, or /old-path)"
+              />
+
+              <TextField
+                label="Redirect To (Destination URL)"
+                placeholder="https://example.com/new-path"
+                value={redirectTo}
+                onChange={(e) => setRedirectTo(e.target.value)}
+                size="small"
+                fullWidth
+                helperText="Target destination URL (e.g. https://destination.com)"
+              />
+
+              <FormControl fullWidth size="small">
+                <InputLabel>Redirect Type</InputLabel>
+                <Select
+                  value={redirectType}
+                  label="Redirect Type"
+                  onChange={(e) => setRedirectType(e.target.value as any)}
+                >
+                  <MenuItem value="301">301 — Permanent (Recommended for SEO)</MenuItem>
+                  <MenuItem value="302">302 — Temporary</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={redirectWildcard}
+                    onChange={(e) => setRedirectWildcard(e.target.checked)}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" fontWeight={500}>Wildcard Redirect</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Matches all sub-paths and appends the requested URI to the destination
+                    </Typography>
+                  </Box>
+                }
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setAddRedirectOpen(false)} sx={{ textTransform: 'none' }}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              disabled={!redirectDomain || !redirectTo.trim() || redirectSaving}
+              onClick={handleCreateRedirect}
+              sx={{ textTransform: 'none' }}
+            >
+              {redirectSaving ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+              {redirectSaving ? 'Configuring…' : 'Add Redirect'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Redirect Confirmation */}
+        <Dialog open={deleteRedirectOpen} onClose={() => setDeleteRedirectOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 600 }}>Remove Redirect</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              Are you sure you want to remove the redirect from <strong>{deleteRedirectTarget?.domain}{deleteRedirectTarget?.from}</strong> to <strong>{deleteRedirectTarget?.to}</strong>?
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setDeleteRedirectOpen(false)} sx={{ textTransform: 'none' }}>Cancel</Button>
+            <Button color="error" variant="contained" onClick={doDeleteRedirect} disabled={!!deletingRedirectId} sx={{ textTransform: 'none' }}>
+              {deletingRedirectId ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+              Remove
             </Button>
           </DialogActions>
         </Dialog>

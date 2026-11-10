@@ -4,9 +4,9 @@ export class CreateRedirectDto {
   @IsString() @IsNotEmpty()
   domain!: string;
 
-  /** Source path, e.g. /old-page  or  old-domain.com */
-  @IsString() @IsNotEmpty()
-  from!: string;
+  /** Source path, e.g. /old-page or leave empty for root / */
+  @IsString() @IsOptional()
+  from?: string;
 
   /** Destination URL */
   @IsString() @IsNotEmpty()

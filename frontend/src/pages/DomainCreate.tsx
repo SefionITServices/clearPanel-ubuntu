@@ -42,6 +42,7 @@ import { domainsApi } from '../api/domains';
 import { serverApi } from '../api/server';
 import { webserverApi } from '../api/webserver';
 import { gitApi } from '../api/git';
+import { redirectsApi } from '../api/redirects';
 
 // Backend defaults to ~/public_html/{domain} if no path provided.
 // We dynamically discover the primary domain to offer an accurate shared-path option.
@@ -81,6 +82,10 @@ export default function DomainCreatePage() {
   const [gitRepoUrl, setGitRepoUrl] = useState('');
   const [gitToken, setGitToken] = useState('');
   const [gitUser, setGitUser] = useState('');
+  const [enableRedirect, setEnableRedirect] = useState(false);
+  const [redirectTarget, setRedirectTarget] = useState('');
+  const [redirectType, setRedirectType] = useState<'301' | '302'>('301');
+  const [redirectWildcard, setRedirectWildcard] = useState(true);
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -249,6 +254,21 @@ export default function DomainCreatePage() {
         }
       }
 
+      // Configure redirect if enabled
+      if (enableRedirect && redirectTarget.trim()) {
+        try {
+          await redirectsApi.create({
+            domain: finalDomainName,
+            from: '/',
+            to: redirectTarget.trim(),
+            type: redirectType,
+            wildcard: redirectWildcard,
+          });
+        } catch (e) {
+          console.warn('Redirect setup failed (non-fatal):', e);
+        }
+      }
+
       if (createAnother) {
         setCreatedDomain(finalDomainName);
         setDomain('');
@@ -264,6 +284,10 @@ export default function DomainCreatePage() {
         setGitRepoUrl('');
         setGitToken('');
         setGitUser('');
+        setEnableRedirect(false);
+        setRedirectTarget('');
+        setRedirectType('301');
+        setRedirectWildcard(true);
       } else {
         setCreatedDomain(finalDomainName);
       }
@@ -524,6 +548,56 @@ export default function DomainCreatePage() {
                     )}
                   </Box>
 
+                  {/* Subdomain Redirect */}
+                  <Box>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={enableRedirect}
+                          onChange={(e) => setEnableRedirect(e.target.checked)}
+                          disabled={submitting}
+                        />
+                      }
+                      label={<Typography variant="body2" fontWeight={500}>Redirect subdomain traffic to an external URL (optional)</Typography>}
+                    />
+                    {enableRedirect && (
+                      <Stack spacing={1.5} sx={{ mt: 1, pl: 3.5 }}>
+                        <TextField
+                          label="Redirect Destination URL"
+                          placeholder="https://example.com"
+                          value={redirectTarget}
+                          onChange={(e) => setRedirectTarget(e.target.value)}
+                          disabled={submitting}
+                          size="small"
+                          fullWidth
+                          helperText="All requests to this subdomain will forward to this URL"
+                        />
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <FormControl size="small" sx={{ minWidth: 160 }}>
+                            <Select
+                              value={redirectType}
+                              onChange={(e) => setRedirectType(e.target.value as any)}
+                              disabled={submitting}
+                            >
+                              <MuiMenuItem value="301">301 — Permanent</MuiMenuItem>
+                              <MuiMenuItem value="302">302 — Temporary</MuiMenuItem>
+                            </Select>
+                          </FormControl>
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={redirectWildcard}
+                                onChange={(e) => setRedirectWildcard(e.target.checked)}
+                                disabled={submitting}
+                              />
+                            }
+                            label={<Typography variant="caption">Wildcard (preserve full URI path)</Typography>}
+                          />
+                        </Stack>
+                      </Stack>
+                    )}
+                  </Box>
+
                   <Divider />
 
                   <Stack direction="row" spacing={2}>
@@ -772,6 +846,56 @@ export default function DomainCreatePage() {
                           disabled={submitting}
                           size="small"
                           sx={{ flex: 1 }}
+                        />
+                      </Stack>
+                    </Stack>
+                  )}
+                </Box>
+
+                {/* Domain Redirect */}
+                <Box>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={enableRedirect}
+                        onChange={(e) => setEnableRedirect(e.target.checked)}
+                        disabled={submitting}
+                      />
+                    }
+                    label={<Typography variant="body2" fontWeight={500}>Redirect domain traffic to an external URL (optional)</Typography>}
+                  />
+                  {enableRedirect && (
+                    <Stack spacing={1.5} sx={{ mt: 1, pl: 3.5 }}>
+                      <TextField
+                        label="Redirect Destination URL"
+                        placeholder="https://example.com"
+                        value={redirectTarget}
+                        onChange={(e) => setRedirectTarget(e.target.value)}
+                        disabled={submitting}
+                        size="small"
+                        fullWidth
+                        helperText="All requests to this domain will automatically forward to this URL"
+                      />
+                      <Stack direction="row" spacing={2} alignItems="center">
+                        <FormControl size="small" sx={{ minWidth: 160 }}>
+                          <Select
+                            value={redirectType}
+                            onChange={(e) => setRedirectType(e.target.value as any)}
+                            disabled={submitting}
+                          >
+                            <MuiMenuItem value="301">301 — Permanent</MuiMenuItem>
+                            <MuiMenuItem value="302">302 — Temporary</MuiMenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={redirectWildcard}
+                              onChange={(e) => setRedirectWildcard(e.target.checked)}
+                              disabled={submitting}
+                            />
+                          }
+                          label={<Typography variant="caption">Wildcard (preserve full URI path)</Typography>}
                         />
                       </Stack>
                     </Stack>

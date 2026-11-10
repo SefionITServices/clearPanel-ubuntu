@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -40,51 +40,99 @@ export class RedirectsService {
 
   async list(domain?: string): Promise<Redirect[]> {
     const all = await this.readAll();
-    return domain ? all.filter((r) => r.domain === domain) : all;
+    return domain ? all.filter((r) => r.domain.toLowerCase() === domain.toLowerCase()) : all;
   }
 
   async create(dto: CreateRedirectDto): Promise<{ success: boolean; redirect: Redirect }> {
     const all = await this.readAll();
+    const rawFrom = dto.from?.trim() || '/';
+    const fromPath = rawFrom.startsWith('/') ? rawFrom : `/${rawFrom}`;
+    const targetUrl = dto.to.trim();
+    const normalizedDomain = dto.domain.trim().toLowerCase();
+
+    // Check for existing redirect on the same domain and source path
+    const existingIdx = all.findIndex(
+      (r) => r.domain.toLowerCase() === normalizedDomain && r.from === fromPath,
+    );
+
     const redirect: Redirect = {
-      id: randomUUID(),
-      domain: dto.domain,
-      from: dto.from.startsWith('/') ? dto.from : `/${dto.from}`,
-      to: dto.to,
+      id: existingIdx >= 0 ? all[existingIdx].id : randomUUID(),
+      domain: normalizedDomain,
+      from: fromPath,
+      to: targetUrl,
       type: dto.type,
       wildcard: dto.wildcard ?? false,
       createdAt: new Date().toISOString(),
     };
-    all.push(redirect);
+
+    if (existingIdx >= 0) {
+      all[existingIdx] = redirect;
+    } else {
+      all.push(redirect);
+    }
+
     await this.writeAll(all);
-    await this.syncNginx(dto.domain, all);
+    await this.syncNginx(normalizedDomain, all);
     return { success: true, redirect };
   }
 
   async remove(id: string): Promise<{ success: boolean; message: string }> {
     const all = await this.readAll();
-    const idx = all.findIndex((r) => r.id === id);
-    if (idx === -1) return { success: false, message: 'Redirect not found' };
+    const cleanId = id.trim().toLowerCase();
+    const idx = all.findIndex(
+      (r) => r.id === id || r.id.toLowerCase().startsWith(cleanId) || r.domain.toLowerCase() === cleanId,
+    );
+    if (idx === -1) {
+      throw new NotFoundException(`Redirect "${id}" not found`);
+    }
     const { domain } = all[idx];
     all.splice(idx, 1);
     await this.writeAll(all);
     await this.syncNginx(domain, all);
-    return { success: true, message: 'Redirect removed' };
+    return { success: true, message: `Redirect for ${domain} removed` };
   }
 
-  private async syncNginx(domain: string, all: Redirect[]): Promise<void> {
-    const domainRedirects = all.filter((r) => r.domain === domain);
+  async syncNginx(domain: string, all?: Redirect[]): Promise<void> {
+    const items = all || (await this.readAll());
+    const domainRedirects = items.filter((r) => r.domain.toLowerCase() === domain.toLowerCase());
     const lines: string[] = [];
 
     for (const r of domainRedirects) {
-      const escapedFrom = r.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const target = r.to.trim();
+      const targetNoTrailingSlash = target.replace(/\/+$/, '');
+      const hasQuery = target.includes('?');
+
       if (r.wildcard) {
-        lines.push(`location ^~ ${r.from} {`);
-        lines.push(`    return ${r.type} ${r.to}$request_uri;`);
-        lines.push(`}`);
+        if (r.from === '/' || r.from === '') {
+          // Whole domain wildcard redirect:
+          // Use regex location ~ ^/ so it doesn't conflict with existing prefix location /
+          const dest = hasQuery ? target : `${targetNoTrailingSlash}$request_uri`;
+          lines.push(`location ~ ^/ {`);
+          lines.push(`    return ${r.type} ${dest};`);
+          lines.push(`}`);
+        } else {
+          // Subpath wildcard redirect
+          const dest = hasQuery ? target : `${targetNoTrailingSlash}$request_uri`;
+          lines.push(`location ^~ ${r.from} {`);
+          lines.push(`    return ${r.type} ${dest};`);
+          lines.push(`}`);
+        }
       } else {
-        lines.push(`location = ${r.from} {`);
-        lines.push(`    return ${r.type} ${r.to};`);
-        lines.push(`}`);
+        if (r.from === '/' || r.from === '') {
+          // Exact root / homepage redirect
+          lines.push(`location = / {`);
+          lines.push(`    return ${r.type} ${target};`);
+          lines.push(`}`);
+        } else {
+          // Exact path redirect (handle both with and without trailing slash)
+          const normalized = r.from.replace(/\/+$/, '');
+          lines.push(`location = ${normalized} {`);
+          lines.push(`    return ${r.type} ${target};`);
+          lines.push(`}`);
+          lines.push(`location = ${normalized}/ {`);
+          lines.push(`    return ${r.type} ${target};`);
+          lines.push(`}`);
+        }
       }
     }
 
@@ -93,6 +141,7 @@ export class RedirectsService {
       await reloadNginx();
     } catch (e: any) {
       this.logger.warn(`Failed to sync redirects nginx config for ${domain}: ${e.message}`);
+      throw e;
     }
   }
 }
