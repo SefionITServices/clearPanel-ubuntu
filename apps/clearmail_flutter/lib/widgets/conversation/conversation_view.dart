@@ -10,7 +10,14 @@ class ConversationView extends StatefulWidget {
   final EmailThread thread;
   final MailState state;
   final VoidCallback onBack;
-  final Function(String replyToThreadId, String subject, {List<Map<String, String>>? to, List<Map<String, String>>? cc}) onReply;
+  final Function(
+    String replyToThreadId,
+    String subject, {
+    List<Map<String, String>>? to,
+    List<Map<String, String>>? cc,
+    String? body,
+    String? inReplyToMessageId,
+  }) onReply;
 
   const ConversationView({
     super.key,
@@ -31,6 +38,32 @@ class _ConversationViewState extends State<ConversationView> {
 
   String _formatFullDate(DateTime dt) {
     return DateFormat('EEE, MMM d, y, h:mm a').format(dt);
+  }
+
+  String _formatReplySubject(String subject) {
+    final clean = subject.replaceFirst(RegExp(r'^(\s*(re|fwd|fw|aw|antw|wg)\s*:\s*)+', caseSensitive: false), '').trim();
+    return 'Re: ${clean.isEmpty ? "(No Subject)" : clean}';
+  }
+
+  String _formatForwardSubject(String subject) {
+    final clean = subject.replaceFirst(RegExp(r'^(\s*(re|fwd|fw|aw|antw|wg)\s*:\s*)+', caseSensitive: false), '').trim();
+    return 'Fwd: ${clean.isEmpty ? "(No Subject)" : clean}';
+  }
+
+  String _buildQuotedBody(EmailMessage msg) {
+    final dateStr = DateFormat('EEE, MMM d, yyyy \'at\' h:mm a').format(msg.date);
+    final senderStr = msg.from.name.isNotEmpty ? '${msg.from.name} <${msg.from.email}>' : msg.from.email;
+    final text = msg.bodyHtml != null ? _cleanHtmlPreserveLayout(msg.bodyHtml!) : (msg.bodyText ?? msg.snippet);
+    final quoted = text.split('\n').map((line) => '> $line').join('\n');
+    return '\n\nOn $dateStr, $senderStr wrote:\n$quoted';
+  }
+
+  String _buildForwardBody(EmailMessage msg) {
+    final dateStr = DateFormat('EEE, MMM d, yyyy \'at\' h:mm a').format(msg.date);
+    final senderStr = msg.from.name.isNotEmpty ? '${msg.from.name} <${msg.from.email}>' : msg.from.email;
+    final toStr = msg.to.map((t) => t.name.isNotEmpty ? '${t.name} <${t.email}>' : t.email).join(', ');
+    final text = msg.bodyHtml != null ? _cleanHtmlPreserveLayout(msg.bodyHtml!) : (msg.bodyText ?? msg.snippet);
+    return '\n\n---------- Forwarded message ---------\nFrom: $senderStr\nDate: $dateStr\nSubject: ${msg.subject}\nTo: $toStr\n\n$text';
   }
 
   void _downloadAttachment(EmailAttachment att, String messageId) {
@@ -136,7 +169,7 @@ class _ConversationViewState extends State<ConversationView> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
-                await widget.state.openThread(thread);
+                await widget.state.refresh();
               },
               color: GmailColors.googleBlue,
               backgroundColor: Colors.white,
@@ -260,11 +293,26 @@ class _ConversationViewState extends State<ConversationView> {
                     children: [
                       OutlinedButton.icon(
                         onPressed: () {
-                          final from = messages.isNotEmpty ? messages.last.from : null;
+                          final lastMsg = messages.isNotEmpty ? messages.last : null;
+                          List<Map<String, String>>? to;
+                          if (lastMsg != null) {
+                            if (lastMsg.from.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()) {
+                              to = [{'name': lastMsg.from.name, 'email': lastMsg.from.email}];
+                            } else {
+                              final other = widget.thread.participants.where((p) => p.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()).toList();
+                              if (other.isNotEmpty) {
+                                to = [{'name': other.first.name, 'email': other.first.email}];
+                              } else if (lastMsg.to.isNotEmpty) {
+                                to = [{'name': lastMsg.to.first.name, 'email': lastMsg.to.first.email}];
+                              }
+                            }
+                          }
                           widget.onReply(
                             thread.id,
-                            'Re: ${thread.subject}',
-                            to: from != null ? [{'name': from.name, 'email': from.email}] : null,
+                            _formatReplySubject(thread.subject),
+                            to: to,
+                            body: lastMsg != null ? _buildQuotedBody(lastMsg) : null,
+                            inReplyToMessageId: lastMsg?.id,
                           );
                         },
                         icon: const Icon(Icons.reply, size: 18),
@@ -279,15 +327,42 @@ class _ConversationViewState extends State<ConversationView> {
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
                         onPressed: () {
-                          final allParticipants = thread.participants
-                              .where((p) => p.email.toLowerCase() != widget.state.currentMailbox.toLowerCase())
-                              .map((p) => {'name': p.name, 'email': p.email})
-                              .toList();
+                          final lastMsg = messages.isNotEmpty ? messages.last : null;
+                          List<Map<String, String>>? to;
+                          if (lastMsg != null) {
+                            if (lastMsg.from.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()) {
+                              to = [{'name': lastMsg.from.name, 'email': lastMsg.from.email}];
+                            } else {
+                              final other = widget.thread.participants.where((p) => p.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()).toList();
+                              if (other.isNotEmpty) {
+                                to = [{'name': other.first.name, 'email': other.first.email}];
+                              }
+                            }
+                          }
+                          final toEmail = to?.isNotEmpty == true ? to!.first['email']?.toLowerCase() : null;
+                          final myEmail = widget.state.currentMailbox.toLowerCase();
+                          final ccMap = <String, Map<String, String>>{};
+                          for (final p in widget.thread.participants) {
+                            final e = p.email.toLowerCase();
+                            if (e != myEmail && e != toEmail) {
+                              ccMap[e] = {'name': p.name, 'email': p.email};
+                            }
+                          }
+                          if (lastMsg != null) {
+                            for (final r in [...lastMsg.to, ...(lastMsg.cc ?? [])]) {
+                              final e = r.email.toLowerCase();
+                              if (e != myEmail && e != toEmail) {
+                                ccMap[e] = {'name': r.name, 'email': r.email};
+                              }
+                            }
+                          }
                           widget.onReply(
                             thread.id,
-                            'Re: ${thread.subject}',
-                            to: allParticipants.isNotEmpty ? [allParticipants.first] : null,
-                            cc: allParticipants.length > 1 ? allParticipants.sublist(1) : null,
+                            _formatReplySubject(thread.subject),
+                            to: to,
+                            cc: ccMap.isNotEmpty ? ccMap.values.toList() : null,
+                            body: lastMsg != null ? _buildQuotedBody(lastMsg) : null,
+                            inReplyToMessageId: lastMsg?.id,
                           );
                         },
                         icon: const Icon(Icons.reply_all, size: 18),
@@ -302,9 +377,12 @@ class _ConversationViewState extends State<ConversationView> {
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
                         onPressed: () {
+                          final lastMsg = messages.isNotEmpty ? messages.last : null;
                           widget.onReply(
                             thread.id,
-                            'Fwd: ${thread.subject}',
+                            _formatForwardSubject(thread.subject),
+                            body: lastMsg != null ? _buildForwardBody(lastMsg) : null,
+                            inReplyToMessageId: lastMsg?.id,
                           );
                         },
                         icon: const Icon(Icons.forward, size: 18),
@@ -378,6 +456,11 @@ class _ConversationViewState extends State<ConversationView> {
               ),
               tooltip: 'Star',
               onPressed: () => widget.state.toggleStar(widget.thread),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh',
+              onPressed: widget.state.refresh,
             ),
             IconButton(
               icon: Icon(
@@ -483,6 +566,25 @@ class _ConversationViewState extends State<ConversationView> {
                                   Text(
                                     DateFormat('MMM d, h:mm a').format(msg.date),
                                     style: const TextStyle(fontSize: 11, color: GmailColors.textSnippet),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.reply, size: 16),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    tooltip: 'Reply to this message',
+                                    onPressed: () {
+                                      final to = msg.from.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()
+                                          ? [{'name': msg.from.name, 'email': msg.from.email}]
+                                          : null;
+                                      widget.onReply(
+                                        widget.thread.id,
+                                        _formatReplySubject(widget.thread.subject),
+                                        to: to,
+                                        body: _buildQuotedBody(msg),
+                                        inReplyToMessageId: msg.id,
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -595,6 +697,24 @@ class _ConversationViewState extends State<ConversationView> {
                         Text(
                           _formatFullDate(msg.date),
                           style: const TextStyle(fontSize: 12, color: GmailColors.textSnippet),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.reply, size: 18),
+                          tooltip: 'Reply to this message',
+                          splashRadius: 18,
+                          onPressed: () {
+                            final to = msg.from.email.toLowerCase() != widget.state.currentMailbox.toLowerCase()
+                                ? [{'name': msg.from.name, 'email': msg.from.email}]
+                                : null;
+                            widget.onReply(
+                              widget.thread.id,
+                              _formatReplySubject(widget.thread.subject),
+                              to: to,
+                              body: _buildQuotedBody(msg),
+                              inReplyToMessageId: msg.id,
+                            );
+                          },
                         ),
                       ],
                     ),

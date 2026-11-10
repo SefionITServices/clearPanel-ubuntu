@@ -7,8 +7,9 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { MailGatewayService } from './mail-gateway.service';
 
 @WebSocketGateway({
   cors: {
@@ -21,6 +22,11 @@ export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server!: Server;
 
   private readonly logger = new Logger(MailGateway.name);
+
+  constructor(
+    @Inject(forwardRef(() => MailGatewayService))
+    private readonly mailGatewayService: MailGatewayService,
+  ) {}
 
   handleConnection(client: Socket) {
     this.logger.debug(`Client connected: ${client.id}`);
@@ -41,6 +47,7 @@ export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const room = `mailbox:${payload.mailboxEmail.trim().toLowerCase()}`;
     client.join(room);
     this.logger.log(`Client ${client.id} joined room ${room}`);
+    this.mailGatewayService.getStore(payload.mailboxEmail).catch(() => {});
     return { status: 'ok', room };
   }
 

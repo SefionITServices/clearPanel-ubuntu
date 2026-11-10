@@ -38,6 +38,14 @@ export class MailGatewayController {
     return this.mailGatewayService.authenticateSso(body.ssoToken);
   }
 
+  @Post('refresh')
+  async refreshMailbox(@Body('mailbox') mailbox: string) {
+    if (!mailbox) {
+      throw new BadRequestException('mailbox is required');
+    }
+    return this.mailGatewayService.forceRefreshMailbox(mailbox);
+  }
+
   @Get('threads')
   async listThreads(
     @Query('mailbox') mailbox: string,

@@ -7,9 +7,11 @@ import '../../theme/gmail_theme.dart';
 class ComposeDialog extends StatefulWidget {
   final MailState state;
   final String? initialTo;
+  final String? initialCc;
   final String? initialSubject;
   final String? initialBody;
   final String? replyToThreadId;
+  final String? inReplyToMessageId;
   final Function({
     required List<Map<String, String>> to,
     List<Map<String, String>>? cc,
@@ -18,6 +20,7 @@ class ComposeDialog extends StatefulWidget {
     required String bodyText,
     List<Map<String, dynamic>>? attachments,
     String? replyToThreadId,
+    String? inReplyToMessageId,
   }) onSend;
   final VoidCallback onClose;
 
@@ -25,9 +28,11 @@ class ComposeDialog extends StatefulWidget {
     super.key,
     required this.state,
     this.initialTo,
+    this.initialCc,
     this.initialSubject,
     this.initialBody,
     this.replyToThreadId,
+    this.inReplyToMessageId,
     required this.onSend,
     required this.onClose,
   });
@@ -57,10 +62,16 @@ class _ComposeDialogState extends State<ComposeDialog> {
   void initState() {
     super.initState();
     _toController = TextEditingController(text: widget.initialTo ?? '');
-    _ccController = TextEditingController();
+    _ccController = TextEditingController(text: widget.initialCc ?? '');
     _bccController = TextEditingController();
     _subjectController = TextEditingController(text: widget.initialSubject ?? '');
     _bodyController = TextEditingController(text: widget.initialBody ?? '');
+    if ((widget.initialCc ?? '').isNotEmpty) {
+      _showCc = true;
+    }
+    if ((widget.initialBody ?? '').isNotEmpty) {
+      _bodyController.selection = const TextSelection.collapsed(offset: 0);
+    }
 
     _toController.addListener(_onRecipientChanged);
   }
@@ -201,6 +212,7 @@ class _ComposeDialogState extends State<ComposeDialog> {
       bodyText: _bodyController.text,
       attachments: _attachments.isNotEmpty ? _attachments : null,
       replyToThreadId: widget.replyToThreadId,
+      inReplyToMessageId: widget.inReplyToMessageId,
     );
   }
 

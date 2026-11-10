@@ -11,6 +11,7 @@ class MailSocketService {
   Function(EmailMessage message, String threadId)? onNewIncoming;
   Function(Map<String, dynamic> data)? onOptimisticSent;
   Function(Map<String, dynamic> data)? onThreadsUpdated;
+  Function(Map<String, dynamic> data)? onStoreRefreshed;
   Function(bool connected)? onConnectionChange;
 
   MailSocketService({String? serverUrl})
@@ -68,6 +69,13 @@ class MailSocketService {
         debugPrint('Real-time event: mail:threads_updated');
         if (data is Map<String, dynamic>) {
           onThreadsUpdated?.call(data);
+        }
+      });
+
+      _socket!.on('mail:store_refreshed', (data) {
+        debugPrint('Real-time event: mail:store_refreshed');
+        if (data is Map<String, dynamic>) {
+          onStoreRefreshed?.call(data);
         }
       });
     } catch (e) {

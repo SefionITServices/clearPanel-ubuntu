@@ -145,9 +145,11 @@ class _ClearMailHomeState extends State<ClearMailHome> {
 
   // Compose initial data
   String? _composeTo;
+  String? _composeCc;
   String? _composeSubject;
   String? _composeBody;
   String? _composeReplyThreadId;
+  String? _composeInReplyToMessageId;
 
   final FocusNode _keyboardFocusNode = FocusNode();
 
@@ -164,12 +166,15 @@ class _ClearMailHomeState extends State<ClearMailHome> {
     String? subject,
     String? body,
     String? replyThreadId,
+    String? inReplyToMessageId,
   }) {
     setState(() {
       _composeTo = to ?? (toList != null ? toList.map((e) => e['email']).join(', ') : null);
+      _composeCc = ccList != null ? ccList.map((e) => e['email']).join(', ') : null;
       _composeSubject = subject;
       _composeBody = body;
       _composeReplyThreadId = replyThreadId;
+      _composeInReplyToMessageId = inReplyToMessageId;
       _isComposeOpen = true;
     });
   }
@@ -178,9 +183,11 @@ class _ClearMailHomeState extends State<ClearMailHome> {
     setState(() {
       _isComposeOpen = false;
       _composeTo = null;
+      _composeCc = null;
       _composeSubject = null;
       _composeBody = null;
       _composeReplyThreadId = null;
+      _composeInReplyToMessageId = null;
     });
   }
 
@@ -310,9 +317,11 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                       child: ComposeDialog(
                         state: _mailState,
                         initialTo: _composeTo,
+                        initialCc: _composeCc,
                         initialSubject: _composeSubject,
                         initialBody: _composeBody,
                         replyToThreadId: _composeReplyThreadId,
+                        inReplyToMessageId: _composeInReplyToMessageId,
                         onClose: _closeCompose,
                         onSend: ({
                           required to,
@@ -322,6 +331,7 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                           required bodyText,
                           attachments,
                           replyToThreadId,
+                          inReplyToMessageId,
                         }) {
                           _closeCompose();
                           _mailState.sendEmail(
@@ -332,6 +342,7 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                             bodyText: bodyText,
                             attachments: attachments,
                             replyToThreadId: replyToThreadId,
+                            inReplyToMessageId: inReplyToMessageId,
                             undoGraceSeconds: 10,
                           );
                         },
@@ -343,9 +354,11 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                       child: ComposeDialog(
                         state: _mailState,
                         initialTo: _composeTo,
+                        initialCc: _composeCc,
                         initialSubject: _composeSubject,
                         initialBody: _composeBody,
                         replyToThreadId: _composeReplyThreadId,
+                        inReplyToMessageId: _composeInReplyToMessageId,
                         onClose: _closeCompose,
                         onSend: ({
                           required to,
@@ -355,6 +368,7 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                           required bodyText,
                           attachments,
                           replyToThreadId,
+                          inReplyToMessageId,
                         }) {
                           _closeCompose();
                           _mailState.sendEmail(
@@ -365,6 +379,7 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                             bodyText: bodyText,
                             attachments: attachments,
                             replyToThreadId: replyToThreadId,
+                            inReplyToMessageId: inReplyToMessageId,
                             undoGraceSeconds: 10,
                           );
                         },
@@ -448,12 +463,14 @@ class _ClearMailHomeState extends State<ClearMailHome> {
             thread: _mailState.selectedThread!,
             state: _mailState,
             onBack: _mailState.closeThread,
-            onReply: (threadId, subject, {to, cc}) {
+            onReply: (threadId, subject, {to, cc, body, inReplyToMessageId}) {
               _openCompose(
                 subject: subject,
                 replyThreadId: threadId,
+                inReplyToMessageId: inReplyToMessageId,
                 toList: to,
                 ccList: cc,
+                body: body,
               );
             },
           )
@@ -480,12 +497,14 @@ class _ClearMailHomeState extends State<ClearMailHome> {
                   thread: _mailState.selectedThread!,
                   state: _mailState,
                   onBack: _mailState.closeThread,
-                  onReply: (threadId, subject, {to, cc}) {
+                  onReply: (threadId, subject, {to, cc, body, inReplyToMessageId}) {
                     _openCompose(
                       subject: subject,
                       replyThreadId: threadId,
+                      inReplyToMessageId: inReplyToMessageId,
                       toList: to,
                       ccList: cc,
+                      body: body,
                     );
                   },
                 )

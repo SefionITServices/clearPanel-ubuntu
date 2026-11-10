@@ -117,6 +117,7 @@ class MailApiService {
     String? bodyText,
     List<Map<String, dynamic>>? attachments,
     String? replyToThreadId,
+    String? inReplyToMessageId,
     int undoGraceSeconds = 10,
   }) async {
     final body = {
@@ -129,6 +130,7 @@ class MailApiService {
       if (bodyText != null) 'bodyText': bodyText,
       if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
       if (replyToThreadId != null) 'replyToThreadId': replyToThreadId,
+      if (inReplyToMessageId != null) 'inReplyToMessageId': inReplyToMessageId,
       'undoGraceSeconds': undoGraceSeconds,
     };
 
@@ -142,6 +144,23 @@ class MailApiService {
       return json.decode(response.body);
     } else {
       throw Exception('Failed to send email: ${response.body}');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Force Refresh Mailbox (Syncs Maildir and returns updated stats)
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> refreshMailbox(String mailbox) async {
+    final response = await http.post(
+      _uri('/mail/sync/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'mailbox': mailbox}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to refresh mailbox: ${response.body}');
     }
   }
 

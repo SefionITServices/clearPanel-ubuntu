@@ -112,15 +112,34 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
 
   private async checkActiveStoresForNewMail() {
     for (const [mailboxEmail, store] of this.stores.entries()) {
-      const prevCount = store.messages.size;
-      await this.syncFromMaildir(mailboxEmail, store);
-      if (store.messages.size > prevCount) {
+      const res = await this.syncFromMaildir(mailboxEmail, store);
+      if (res.changed) {
         this.gateway.emitToMailbox(mailboxEmail, 'mail:store_refreshed', {
           mailboxEmail,
           totalMessages: store.messages.size,
+          totalThreads: store.threads.size,
         });
       }
     }
+  }
+
+  async forceRefreshMailbox(mailboxEmail: string): Promise<{ success: boolean; mailboxEmail: string; totalMessages: number; totalThreads: number }> {
+    const normalized = mailboxEmail.trim().toLowerCase();
+    const store = await this.getStore(normalized);
+    const res = await this.syncFromMaildir(normalized, store);
+    store.lastSyncedAt = Date.now();
+    await this.saveStore(normalized, store);
+    this.gateway.emitToMailbox(normalized, 'mail:store_refreshed', {
+      mailboxEmail: normalized,
+      totalMessages: store.messages.size,
+      totalThreads: store.threads.size,
+    });
+    return {
+      success: true,
+      mailboxEmail: normalized,
+      totalMessages: store.messages.size,
+      totalThreads: store.threads.size,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -331,7 +350,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
     return changed;
   }
 
-  async syncFromMaildir(mailboxEmail: string, store: MailboxStore): Promise<void> {
+  async syncFromMaildir(mailboxEmail: string, store: MailboxStore): Promise<{ changed: boolean; addedCount: number }> {
     try {
       const folders: MailFolder[] = ['inbox', 'sent', 'drafts', 'trash', 'spam', 'archive'];
       let changes = 0;
@@ -428,6 +447,9 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
               thread.participants.push(msg.from);
             }
             if (msg.hasAttachments) thread.hasAttachments = true;
+            if (msg.folder === 'inbox' && thread.folder !== 'trash' && thread.folder !== 'spam') {
+              thread.folder = 'inbox';
+            }
           } else {
             store.threads.set(threadId, {
               id: threadId,
@@ -453,8 +475,10 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       if (changes > 0) {
         await this.saveStore(mailboxEmail, store);
       }
+      return { changed: changes > 0, addedCount: changes };
     } catch (err: any) {
       this.logger.warn(`Could not sync storage for ${mailboxEmail}: ${err.message}`);
+      return { changed: false, addedCount: 0 };
     }
   }
 
@@ -501,6 +525,18 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       list = list.filter((t) => t.isStarred);
     } else if (options.label) {
       list = list.filter((t) => t.labels.includes(options.label!));
+    } else if (folder === 'inbox') {
+      list = list.filter((t) => {
+        if (t.folder === 'trash' || t.folder === 'spam' || t.folder === 'archive') return false;
+        if (t.folder === 'inbox') return true;
+        return Array.from(store.messages.values()).some((m) => m.threadId === t.id && m.folder === 'inbox');
+      });
+    } else if (folder === 'sent') {
+      list = list.filter((t) => {
+        if (t.folder === 'trash' || t.folder === 'spam') return false;
+        if (t.folder === 'sent') return true;
+        return Array.from(store.messages.values()).some((m) => m.threadId === t.id && m.folder === 'sent');
+      });
     } else {
       list = list.filter((t) => t.folder === folder);
     }
@@ -573,6 +609,24 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       .slice(0, 140)
       .trim();
 
+    let inReplyToHeader: string | undefined = payload.inReplyToMessageId;
+    let references: string[] | undefined = undefined;
+
+    if (payload.inReplyToMessageId) {
+      const cleanTarget = payload.inReplyToMessageId.replace(/^<+|>+$/g, '').trim().toLowerCase();
+      const parentMsg = store.messages.get(payload.inReplyToMessageId) ||
+        Array.from(store.messages.values()).find(
+          (m) => m.id === payload.inReplyToMessageId || (m.messageIdHeader && m.messageIdHeader.replace(/^<+|>+$/g, '').trim().toLowerCase() === cleanTarget),
+        );
+      if (parentMsg && parentMsg.messageIdHeader) {
+        inReplyToHeader = parentMsg.messageIdHeader;
+        references = [...(parentMsg.references || []), parentMsg.messageIdHeader];
+      } else if (payload.inReplyToMessageId) {
+        inReplyToHeader = payload.inReplyToMessageId.startsWith('<') ? payload.inReplyToMessageId : `<${payload.inReplyToMessageId}>`;
+        references = [inReplyToHeader];
+      }
+    }
+
     const newMsg: EmailMessage = {
       id: messageId,
       threadId,
@@ -588,7 +642,8 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       snippet,
       bodyHtml: payload.bodyHtml,
       bodyText: payload.bodyText,
-      inReplyTo: payload.inReplyToMessageId,
+      inReplyTo: inReplyToHeader,
+      references,
       isRead: true,
       isStarred: false,
       hasAttachments: Boolean(payload.attachments && payload.attachments.length > 0),
@@ -604,7 +659,9 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       thread.snippet = snippet;
       thread.lastMessageDate = nowIso;
       thread.messageCount += 1;
-      thread.folder = 'sent';
+      if (!thread.folder || thread.folder === 'drafts') {
+        thread.folder = 'sent';
+      }
       if (!thread.participants.some((p) => p.email === fromAddress.email)) {
         thread.participants.push(fromAddress);
       }
@@ -699,6 +756,7 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
             bodyText: item.message.bodyText,
             attachments: item.message.attachments,
             replyToMessageId: item.message.inReplyTo,
+            references: item.message.references,
             messageIdHeader: item.message.messageIdHeader,
           });
 
@@ -1033,13 +1091,39 @@ export class MailGatewayService implements OnModuleInit, OnModuleDestroy {
       archive: 0,
     };
 
+    const allMessages = Array.from(store.messages.values());
+
     for (const t of store.threads.values()) {
       if (t.unreadCount > 0) unreadCount += t.unreadCount;
-      if (t.folder in foldersCount) {
-        foldersCount[t.folder]++;
+      if (t.isStarred) foldersCount.starred++;
+
+      if (t.folder === 'trash') {
+        foldersCount.trash++;
+        continue;
       }
-      if (t.isStarred) {
-        foldersCount.starred++;
+      if (t.folder === 'spam') {
+        foldersCount.spam++;
+        continue;
+      }
+      if (t.folder === 'drafts') {
+        foldersCount.drafts++;
+        continue;
+      }
+
+      // Check inbox presence
+      const hasInbox = t.folder === 'inbox' || allMessages.some((m) => m.threadId === t.id && m.folder === 'inbox');
+      if (hasInbox && t.folder !== 'archive') {
+        foldersCount.inbox++;
+      }
+
+      // Check sent presence
+      const hasSent = t.folder === 'sent' || allMessages.some((m) => m.threadId === t.id && m.folder === 'sent');
+      if (hasSent) {
+        foldersCount.sent++;
+      }
+
+      if (t.folder === 'archive') {
+        foldersCount.archive++;
       }
     }
 

@@ -47,7 +47,7 @@ class ThreadListView extends StatelessWidget {
           // Thread List Content
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () => state.loadThreads(),
+              onRefresh: state.refresh,
               color: GmailColors.googleBlue,
               backgroundColor: Colors.white,
               displacement: 40,
@@ -181,7 +181,7 @@ class ThreadListView extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.refresh, size: 20),
               tooltip: 'Refresh',
-              onPressed: state.loadThreads,
+              onPressed: state.refresh,
             ),
             IconButton(
               icon: const Icon(Icons.more_vert, size: 20),

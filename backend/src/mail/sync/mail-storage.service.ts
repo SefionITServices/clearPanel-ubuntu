@@ -650,6 +650,7 @@ export class MailStorageService {
       bodyText?: string;
       attachments?: any[];
       replyToMessageId?: string;
+      references?: string[];
       messageIdHeader?: string;
     },
   ): Promise<{ messageId: string; messageIdHeader: string; filePath?: string; fileName?: string }> {
@@ -710,7 +711,9 @@ export class MailStorageService {
         'Auto-Submitted': 'no',
       },
       inReplyTo: payload.replyToMessageId,
-      references: payload.replyToMessageId ? [payload.replyToMessageId] : undefined,
+      references: payload.references && payload.references.length > 0
+        ? payload.references
+        : (payload.replyToMessageId ? [payload.replyToMessageId] : undefined),
       attachments: mailAttachments,
     };
 
@@ -760,18 +763,32 @@ export class MailStorageService {
       const fileName = `${Date.now()}.${randomUUID()}:2,S`;
       const filePath = path.join(sentDir, fileName);
 
-      const rawContent = [
+      const headers = [
         `From: ${formattedFrom}`,
         `To: ${payload.to.map((t: any) => (t.name ? `"${t.name}" <${t.email}>` : t.email)).join(', ')}`,
         `Subject: ${payload.subject}`,
         `Date: ${new Date().toUTCString()}`,
         `Message-ID: ${messageIdHeader}`,
+      ];
+
+      if (payload.replyToMessageId) {
+        headers.push(`In-Reply-To: ${payload.replyToMessageId}`);
+      }
+      if (payload.references && payload.references.length > 0) {
+        headers.push(`References: ${payload.references.join(' ')}`);
+      } else if (payload.replyToMessageId) {
+        headers.push(`References: ${payload.replyToMessageId}`);
+      }
+
+      headers.push(
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=utf-8',
         'X-Mailer: ClearPanel ClearMail',
         '',
         payload.bodyHtml || payload.bodyText || '',
-      ].join('\r\n');
+      );
+
+      const rawContent = headers.join('\r\n');
 
       await fs.writeFile(filePath, rawContent, 'utf8');
 

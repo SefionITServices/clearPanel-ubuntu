@@ -293,6 +293,22 @@ class MailState extends ChangeNotifier {
       notifyListeners();
     };
 
+    socketService.onStoreRefreshed = (data) {
+      loadThreads();
+      loadStats();
+      if (_selectedThread != null) {
+        apiService.fetchThreadDetails(mailbox: _currentMailbox, threadId: _selectedThread!.id).then((updated) {
+          _selectedThread = updated;
+          notifyListeners();
+        }).catchError((_) {});
+      }
+    };
+
+    socketService.onThreadsUpdated = (data) {
+      loadThreads();
+      loadStats();
+    };
+
     if (_currentMailbox.isNotEmpty) {
       socketService.connect(_currentMailbox);
     }
@@ -360,6 +376,34 @@ class MailState extends ChangeNotifier {
       _stats = await apiService.fetchStats(mailbox: _currentMailbox);
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<void> refresh() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await apiService.refreshMailbox(_currentMailbox);
+    } catch (e) {
+      debugPrint('Forced refresh error: $e');
+    }
+
+    try {
+      await Future.wait([
+        loadThreads(),
+        loadStats(),
+        if (_selectedThread != null)
+          apiService.fetchThreadDetails(mailbox: _currentMailbox, threadId: _selectedThread!.id).then((updated) {
+            _selectedThread = updated;
+          }).catchError((_) {}),
+      ]);
+    } catch (e) {
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> openThread(EmailThread thread) async {
@@ -521,6 +565,7 @@ class MailState extends ChangeNotifier {
     String? bodyText,
     List<Map<String, dynamic>>? attachments,
     String? replyToThreadId,
+    String? inReplyToMessageId,
     int undoGraceSeconds = 10,
   }) async {
     _lastSentDraft = {
@@ -532,6 +577,7 @@ class MailState extends ChangeNotifier {
       'bodyText': bodyText,
       'attachments': attachments,
       'replyToThreadId': replyToThreadId,
+      'inReplyToMessageId': inReplyToMessageId,
     };
 
     try {
@@ -545,6 +591,7 @@ class MailState extends ChangeNotifier {
         bodyText: bodyText,
         attachments: attachments,
         replyToThreadId: replyToThreadId,
+        inReplyToMessageId: inReplyToMessageId,
         undoGraceSeconds: undoGraceSeconds,
       );
 
@@ -566,8 +613,17 @@ class MailState extends ChangeNotifier {
       });
 
       // Reload sent or current folder
-      loadThreads();
-      loadStats();
+      await loadThreads();
+      await loadStats();
+
+      // If user has the replied thread open, immediately refresh the messages in view!
+      if (_selectedThread != null && _selectedThread!.id == replyToThreadId) {
+        try {
+          final updated = await apiService.fetchThreadDetails(mailbox: _currentMailbox, threadId: replyToThreadId!);
+          _selectedThread = updated;
+          notifyListeners();
+        } catch (_) {}
+      }
     } catch (e) {
       _errorMessage = 'Failed to send: $e';
       notifyListeners();
