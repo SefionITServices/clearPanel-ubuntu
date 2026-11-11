@@ -180,7 +180,7 @@ success "Nginx, BIND9, Certbot, ProFTPD"
 step "Configuring firewall (UFW)..."
 
 ufw --force enable > /dev/null 2>&1 || add_warn "UFW failed to enable"
-for port in OpenSSH 80/tcp 443/tcp 3334/tcp 53/tcp 53/udp 25/tcp 587/tcp 993/tcp 143/tcp 4190/tcp 21/tcp 49152:65534/tcp; do
+for port in OpenSSH 80/tcp 443/tcp 3334/tcp 53/tcp 53/udp 25/tcp 465/tcp 587/tcp 993/tcp 143/tcp 4190/tcp 21/tcp 49152:65534/tcp; do
     ufw allow "$port" > /dev/null 2>&1 || true
 done
 success "Firewall active — SSH, HTTP/S, DNS, mail, FTP, panel ports open"
@@ -512,6 +512,9 @@ if [ -f "$INSTALL_DIR/scripts/email/install-stack.sh" ]; then
     MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/install-stack.sh" 2>&1 | tail -10 && \
         success "Mail stack installed" || \
         add_warn "Mail stack had issues — can retry from the panel later"
+    # Ensure Dovecot virtual auth and mail location precedence
+    sed -i 's/^!include auth-system.conf.ext/#&/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
+    sed -i 's|^mail_location =.*|#&|' /etc/dovecot/conf.d/10-mail.conf 2>/dev/null || true
 else
     add_warn "Mail install script not found — skipping"
 fi

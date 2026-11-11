@@ -48,8 +48,7 @@ cat << POLICIES > "/var/lib/clearpanel/mail/policies/${DOMAIN}.json"
 }
 POLICIES
 
-# 6. Rebuild maps & reload Postfix
-postmap /etc/clearpanel/mail/vdomains 2>/dev/null || true
+# 6. Reload Postfix and Dovecot
 systemctl reload postfix 2>/dev/null || true
 systemctl reload dovecot 2>/dev/null || true
 

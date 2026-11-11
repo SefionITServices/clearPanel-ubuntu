@@ -55,6 +55,12 @@ if command -v apt-get &> /dev/null; then
     ufw allow 53/udp
     ufw allow 21/tcp
     ufw allow 49152:65534/tcp
+    ufw allow 25/tcp
+    ufw allow 465/tcp
+    ufw allow 587/tcp
+    ufw allow 143/tcp
+    ufw allow 993/tcp
+    ufw allow 4190/tcp
 else
     echo -e "${RED}This script is designed for Ubuntu/Zorin OS systems only${NC}"
     echo -e "${RED}Please use the AlmaLinux version for RHEL-based systems${NC}"
@@ -329,11 +335,12 @@ MAIL_MODE=production bash "$INSTALL_DIR/scripts/email/setup-dmarc.sh" 2>/dev/nul
 # Open mail ports in UFW
 echo -e "${YELLOW}🔓 Opening mail firewall ports...${NC}"
 ufw allow 25/tcp    # SMTP
+ufw allow 465/tcp   # SMTPS
 ufw allow 587/tcp   # Submission
 ufw allow 993/tcp   # IMAPS
 ufw allow 143/tcp   # IMAP
 ufw allow 4190/tcp  # ManageSieve
-echo -e "${GREEN}✓ Mail ports opened (25, 587, 993, 143, 4190)${NC}"
+echo -e "${GREEN}✓ Mail ports opened (25, 465, 587, 993, 143, 4190)${NC}"
 
 # Start clearPanel service
 echo -e "${YELLOW}🚀 Starting clearPanel service...${NC}"
@@ -434,6 +441,40 @@ fi
 # Ensure submission (587) has smtpd_relay_restrictions
 if grep -q "^submission inet" /etc/postfix/master.cf 2>/dev/null && ! grep -A 10 "^submission inet" /etc/postfix/master.cf | grep -q "smtpd_relay_restrictions"; then
     sed -i '/^[[:space:]]*-o smtpd_recipient_restrictions=permit_sasl_authenticated,reject/a \  -o smtpd_relay_restrictions=permit_sasl_authenticated,reject' /etc/postfix/master.cf 2>/dev/null || true
+fi
+
+# 3b. Dovecot PAM and mail_location fixes
+sed -i 's/^!include auth-system.conf.ext/#&/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
+sed -i 's|^mail_location =.*|#&|' /etc/dovecot/conf.d/10-mail.conf 2>/dev/null || true
+systemctl reload dovecot 2>/dev/null || true
+systemctl reload postfix 2>/dev/null || true
+
+# 3c. Fail2Ban mail jails (if fail2ban is present)
+mkdir -p /etc/fail2ban/jail.d 2>/dev/null || true
+if [ -d /etc/fail2ban/jail.d ]; then
+    cat >/etc/fail2ban/jail.d/clearpanel.local <<'F2B'
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+
+[proftpd]
+enabled = true
+port = ftp,ftp-data,ftps,ftps-data
+logpath = /var/log/proftpd/proftpd.log
+maxretry = 10
+
+[postfix]
+enabled = true
+port = smtp,465,submission
+logpath = /var/log/mail.log
+maxretry = 10
+
+[dovecot]
+enabled = true
+port = pop3,pop3s,imap,imaps,submission,465,sieve
+logpath = /var/log/mail.log
+maxretry = 10
+F2B
+    fail2ban-client reload 2>/dev/null || systemctl restart fail2ban 2>/dev/null || true
 fi
 
 # 4. Deploy Roundcube Nginx Virtual Host

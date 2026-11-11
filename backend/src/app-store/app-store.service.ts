@@ -537,7 +537,7 @@ export class AppStoreService {
       nodejs: () => this.installNodejs(),
       composer: () => this.installComposer(),
       memcached: () => this.installGenericApt('memcached', 'memcached', 'Memcached'),
-      fail2ban: () => this.installGenericApt('fail2ban', 'fail2ban', 'Fail2Ban'),
+      fail2ban: () => this.installFail2ban(),
       certbot: () => this.installCertbot(),
       'wp-cli': () => this.installWpCli(),
       pgadmin: () => this.installPgAdmin(),
@@ -1047,6 +1047,44 @@ location /pgadmin {
   }
 
   // ─── Generic APT install / uninstall ────────────────────────────────
+
+  private async installFail2ban(): Promise<{ success: boolean; message: string; logs?: string }> {
+    try {
+      const logs = await this.sudo(
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban',
+        120_000,
+      );
+      const jailConf = `[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+
+[proftpd]
+enabled = true
+port = ftp,ftp-data,ftps,ftps-data
+logpath = /var/log/proftpd/proftpd.log
+maxretry = 10
+
+[postfix]
+enabled = true
+port = smtp,465,submission
+logpath = /var/log/mail.log
+maxretry = 10
+
+[dovecot]
+enabled = true
+port = pop3,pop3s,imap,imaps,submission,465,sieve
+logpath = /var/log/mail.log
+maxretry = 10
+`;
+      await this.sudo('mkdir -p /etc/fail2ban/jail.d');
+      const b64 = Buffer.from(jailConf).toString('base64');
+      await this.sudo(`bash -c 'echo "${b64}" | base64 -d > /etc/fail2ban/jail.d/clearpanel.local'`);
+      try { await this.sudo('systemctl enable fail2ban'); } catch {}
+      try { await this.sudo('systemctl restart fail2ban'); } catch {}
+      return { success: true, message: 'Fail2Ban installed and configured successfully', logs };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
 
   private async installGenericApt(
     pkg: string,

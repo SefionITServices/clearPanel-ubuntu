@@ -7,30 +7,176 @@ if [ "$(id -u)" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
 
+MAIL_MODE="${MAIL_MODE:-production}"
+
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 if [ -z "$SERVER_IP" ]; then
-    SERVER_IP="72.61.7.15"
+    SERVER_IP="$(ip -4 addr show scope global 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1 || true)"
+fi
+if [ -z "$SERVER_IP" ]; then
+    SERVER_IP="127.0.0.1"
 fi
 
-# Ensure base paths
-mkdir -p /var/lib/clearpanel/mail/domains
-mkdir -p /var/lib/clearpanel/mail/mailboxes
-mkdir -p /var/lib/clearpanel/mail/policies
-mkdir -p /etc/clearpanel/mail
-mkdir -p /etc/opendkim/keys
-mkdir -p /var/mail/vhosts
+# Configuration paths
+MAIL_CONFIG_DIR="/etc/clearpanel/mail"
+VMAIL_HOME="/var/mail/vhosts"
+VMAIL_USER="vmail"
+VMAIL_GROUP="vmail"
+VMAIL_UID="${VMAIL_UID:-5000}"
+VMAIL_GID="${VMAIL_GID:-5000}"
 
-# Ensure map files exist with proper permissions
-touch /etc/clearpanel/mail/vdomains
-touch /etc/clearpanel/mail/vmailbox
-touch /etc/clearpanel/mail/valias
-touch /etc/clearpanel/mail/dovecot-users
-touch /etc/opendkim/key.table
-touch /etc/opendkim/signing.table
-touch /etc/opendkim/trusted.hosts
+POSTFIX_VDOMAINS="$MAIL_CONFIG_DIR/vdomains"
+POSTFIX_VMAILBOX="$MAIL_CONFIG_DIR/vmailbox"
+POSTFIX_VALIAS="$MAIL_CONFIG_DIR/valias"
+DOVECOT_USERS="$MAIL_CONFIG_DIR/dovecot-users"
+DOVECOT_PASSWD="$DOVECOT_USERS"
 
-chmod 644 /etc/clearpanel/mail/vdomains /etc/clearpanel/mail/vmailbox /etc/clearpanel/mail/valias /etc/clearpanel/mail/dovecot-users 2>/dev/null || true
-chgrp dovecot /etc/clearpanel/mail/dovecot-users 2>/dev/null || true
+STATE_ROOT="${MAIL_STATE_DIR:-/var/lib/clearpanel/mail}"
+DOMAINS_DIR="$STATE_ROOT/domains"
+MAILBOX_DIR="$STATE_ROOT/mailboxes"
+ALIASES_DIR="$STATE_ROOT/aliases"
+LOG_DIR="$STATE_ROOT/logs"
+POLICY_DIR="$STATE_ROOT/policies"
+
+OPENDKIM_KEYS_DIR="/etc/opendkim/keys"
+OPENDKIM_KEY_TABLE="/etc/opendkim/key.table"
+OPENDKIM_SIGNING_TABLE="/etc/opendkim/signing.table"
+OPENDKIM_TRUSTED_HOSTS="/etc/opendkim/trusted.hosts"
+DKIM_KEYS_DIR="$OPENDKIM_KEYS_DIR"
+DKIM_PUBLIC_DIR="$MAIL_CONFIG_DIR/dkim/public"
+
+RSPAMD_LOCAL_DIR="/etc/rspamd/local.d"
+RSPAMD_OVERRIDE_DIR="/etc/rspamd/override.d"
+
+ensure_state_root() {
+    mkdir -p "$STATE_ROOT" "$DOMAINS_DIR" "$MAILBOX_DIR" "$ALIASES_DIR" \
+        "$DKIM_KEYS_DIR" "$DKIM_PUBLIC_DIR" "$LOG_DIR" "$POLICY_DIR" \
+        "$MAIL_CONFIG_DIR" "$VMAIL_HOME" "$OPENDKIM_KEYS_DIR"
+
+    if ! id "$VMAIL_USER" &>/dev/null; then
+        groupadd -g "$VMAIL_GID" "$VMAIL_GROUP" 2>/dev/null || true
+        useradd -u "$VMAIL_UID" -g "$VMAIL_GID" -d "$VMAIL_HOME" -s /usr/sbin/nologin "$VMAIL_USER" 2>/dev/null || true
+    fi
+    chown -R "${VMAIL_USER}:${VMAIL_GROUP}" "$VMAIL_HOME" 2>/dev/null || true
+    chmod 770 "$VMAIL_HOME" 2>/dev/null || true
+
+    touch "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_USERS" \
+        "$OPENDKIM_KEY_TABLE" "$OPENDKIM_SIGNING_TABLE" "$OPENDKIM_TRUSTED_HOSTS" 2>/dev/null || true
+    chmod 644 "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_USERS" 2>/dev/null || true
+    chgrp dovecot "$DOVECOT_USERS" 2>/dev/null || true
+}
+
+ensure_state_root
+
+# Return success when first column contains the exact key.
+map_has_key() {
+    local key="$1"
+    local mapfile="$2"
+    [[ -f "$mapfile" ]] || return 1
+    awk -v key="$key" '$1 == key { found = 1; exit } END { exit found ? 0 : 1 }' "$mapfile"
+}
+
+# Remove rows where first column matches key exactly.
+remove_map_entry_by_key() {
+    local key="$1"
+    local mapfile="$2"
+    local tmpfile
+    [[ -f "$mapfile" ]] || return 0
+    tmpfile="$(mktemp)"
+    awk -v key="$key" '$1 != key { print }' "$mapfile" >"$tmpfile"
+    cat "$tmpfile" >"$mapfile"
+    rm -f "$tmpfile"
+}
+
+# Remove rows where first column ends with the provided suffix.
+remove_map_entries_by_key_suffix() {
+    local suffix="$1"
+    local mapfile="$2"
+    local tmpfile
+    [[ -f "$mapfile" ]] || return 0
+    tmpfile="$(mktemp)"
+    awk -v suffix="$suffix" '
+        {
+            key = $1
+            if (key != "" && length(key) >= length(suffix) &&
+                substr(key, length(key) - length(suffix) + 1) == suffix) {
+                next
+            }
+            print
+        }
+    ' "$mapfile" >"$tmpfile"
+    cat "$tmpfile" >"$mapfile"
+    rm -f "$tmpfile"
+}
+
+# Remove a single passwd-file user (first colon-separated field).
+remove_passwd_entry_by_user() {
+    local user="$1"
+    local passwd_file="$2"
+    local tmpfile
+    [[ -f "$passwd_file" ]] || return 0
+    tmpfile="$(mktemp)"
+    awk -F: -v user="$user" '$1 != user { print }' "$passwd_file" >"$tmpfile"
+    cat "$tmpfile" >"$passwd_file"
+    rm -f "$tmpfile"
+}
+
+# Remove all passwd-file users belonging to a domain.
+remove_passwd_entries_by_domain() {
+    local domain="$1"
+    local passwd_file="$2"
+    local suffix="@${domain}"
+    local tmpfile
+    [[ -f "$passwd_file" ]] || return 0
+    tmpfile="$(mktemp)"
+    awk -F: -v suffix="$suffix" '
+        {
+            user = $1
+            if (user != "" && length(user) >= length(suffix) &&
+                substr(user, length(user) - length(suffix) + 1) == suffix) {
+                next
+            }
+            print
+        }
+    ' "$passwd_file" >"$tmpfile"
+    cat "$tmpfile" >"$passwd_file"
+    rm -f "$tmpfile"
+}
+
+postmap_rebuild() {
+    local mapfile="$1"
+    if command -v postmap >/dev/null 2>&1; then
+        postmap "$mapfile" 2>/dev/null || true
+    fi
+}
+
+postfix_reload() {
+    if command -v postfix >/dev/null 2>&1; then
+        postfix reload 2>/dev/null || true
+    fi
+}
+
+dovecot_reload() {
+    if command -v doveadm >/dev/null 2>&1; then
+        doveadm reload 2>/dev/null || true
+    fi
+}
+
+rspamd_reload() {
+    if command -v rspamadm >/dev/null 2>&1; then
+        systemctl reload rspamd 2>/dev/null || true
+    fi
+}
+
+normalize_mailbox_local_part() {
+    local mailbox="$1"
+    local domain="$2"
+    if [[ "$mailbox" == *"@"* ]]; then
+        printf '%s\n' "${mailbox%@*}"
+    else
+        printf '%s\n' "$mailbox"
+    fi
+}
 
 generate_dkim_key() {
     local DOMAIN="$1"
@@ -274,14 +420,22 @@ sync_mail_ssl() {
 
     # Find primary certificate
     local PRIMARY_DOMAIN=""
-    for cand in "panel.mainserver.in" "mainserver.in" "safon.app" "sefion.ca"; do
-        if [ -f "/etc/letsencrypt/live/${cand}/fullchain.pem" ]; then
-            PRIMARY_DOMAIN="$cand"
-            break
-        fi
-    done
+    if [ -n "$TARGET_DOMAIN" ] && [ -f "/etc/letsencrypt/live/${TARGET_DOMAIN}/fullchain.pem" ]; then
+        PRIMARY_DOMAIN="$TARGET_DOMAIN"
+    fi
+    if [ -z "$PRIMARY_DOMAIN" ] && [ -n "$TARGET_DOMAIN" ] && [ -f "/etc/letsencrypt/live/mail.${TARGET_DOMAIN}/fullchain.pem" ]; then
+        PRIMARY_DOMAIN="mail.${TARGET_DOMAIN}"
+    fi
     if [ -z "$PRIMARY_DOMAIN" ]; then
-        PRIMARY_DOMAIN="$(ls -1 /etc/letsencrypt/live/ 2>/dev/null | grep -v 'README' | head -n 1 || true)"
+        for live_dir in /etc/letsencrypt/live/*; do
+            [ -d "$live_dir" ] || continue
+            local dname="$(basename "$live_dir")"
+            [ "$dname" = "README" ] && continue
+            if [ -f "${live_dir}/fullchain.pem" ]; then
+                PRIMARY_DOMAIN="$dname"
+                break
+            fi
+        done
     fi
 
     local DOVECOT_SSL_CONF="/etc/dovecot/conf.d/99-clearpanel-ssl.conf"

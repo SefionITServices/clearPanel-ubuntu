@@ -85,6 +85,8 @@ EOF
   # --- Create config directories ---
   mkdir -p "$MAIL_CONFIG_DIR" "$OPENDKIM_KEYS_DIR"
   touch "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_PASSWD"
+  chmod 644 "$POSTFIX_VDOMAINS" "$POSTFIX_VMAILBOX" "$POSTFIX_VALIAS" "$DOVECOT_PASSWD" 2>/dev/null || true
+  chgrp dovecot "$DOVECOT_PASSWD" 2>/dev/null || true
 
   # --- Configure Postfix ---
   postconf -e "myhostname = $HOSTNAME_VAL"
@@ -93,7 +95,7 @@ EOF
   postconf -e "inet_interfaces = all"
   postconf -e "inet_protocols = all"
   postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost"
-  postconf -e "virtual_mailbox_domains = hash:$POSTFIX_VDOMAINS"
+  postconf -e "virtual_mailbox_domains = $POSTFIX_VDOMAINS"
   postconf -e "virtual_mailbox_maps = hash:$POSTFIX_VMAILBOX"
   postconf -e "virtual_alias_maps = hash:$POSTFIX_VALIAS"
   postconf -e "virtual_mailbox_base = $VMAIL_HOME"
@@ -146,38 +148,30 @@ MASTER
   fi
 
   # Build initial hash maps
-  postmap "$POSTFIX_VDOMAINS" 2>/dev/null || true
   postmap "$POSTFIX_VMAILBOX" 2>/dev/null || true
   postmap "$POSTFIX_VALIAS" 2>/dev/null || true
   echo "[✓] Postfix configured"
 
   # --- Configure Dovecot ---
-  cat >/etc/dovecot/conf.d/10-clearpanel.conf <<DOVECOT
-# ClearPanel Dovecot configuration
-protocols = imap lmtp sieve
+  # Disable PAM in 10-auth.conf to prevent PAM auth failures and fail2ban bans for virtual users
+  sed -i 's/^!include auth-system.conf.ext/#&/' /etc/dovecot/conf.d/10-auth.conf 2>/dev/null || true
 
-mail_location = maildir:$VMAIL_HOME/%d/%n/Maildir
-mail_uid = ${VMAIL_UID}
-mail_gid = ${VMAIL_GID}
-first_valid_uid = ${VMAIL_UID}
-last_valid_uid = ${VMAIL_UID}
+  # Disable default mbox mail_location in 10-mail.conf so 10-clearpanel.conf takes precedence
+  sed -i 's|^mail_location =.*|#&|' /etc/dovecot/conf.d/10-mail.conf 2>/dev/null || true
+
+  # Deploy ClearPanel virtual user authentication config
+  cat >/etc/dovecot/conf.d/10-clearpanel-auth.conf <<'DOVEAUTH'
+auth_mechanisms = plain login
 
 passdb {
   driver = passwd-file
-  args = scheme=SHA512-CRYPT $DOVECOT_PASSWD
+  args = scheme=SHA512-CRYPT username_format=%u /etc/clearpanel/mail/dovecot-users
 }
 
 userdb {
-  driver = static
-  args = uid=${VMAIL_UID} gid=${VMAIL_GID} home=$VMAIL_HOME/%d/%n
-}
-
-service lmtp {
-  unix_listener /var/spool/postfix/private/dovecot-lmtp {
-    user = postfix
-    group = postfix
-    mode = 0600
-  }
+  driver = passwd-file
+  args = username_format=%u /etc/clearpanel/mail/dovecot-users
+  default_fields = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
 }
 
 service auth {
@@ -185,6 +179,30 @@ service auth {
     mode = 0660
     user = postfix
     group = postfix
+  }
+  unix_listener auth-userdb {
+    mode = 0660
+    user = vmail
+    group = vmail
+  }
+}
+DOVEAUTH
+
+  cat >/etc/dovecot/conf.d/10-clearpanel.conf <<DOVECOT
+# ClearPanel Dovecot configuration
+protocols = imap lmtp sieve
+
+mail_location = maildir:$VMAIL_HOME/%d/%n
+mail_uid = ${VMAIL_UID}
+mail_gid = ${VMAIL_GID}
+first_valid_uid = ${VMAIL_UID}
+last_valid_uid = ${VMAIL_UID}
+
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    user = postfix
+    group = postfix
+    mode = 0600
   }
 }
 
@@ -263,6 +281,46 @@ RSPAMD_AV
   systemctl enable --now clamav-daemon 2>/dev/null || true
   systemctl enable --now clamav-freshclam 2>/dev/null || true
   echo "[✓] All services enabled and started"
+
+  # --- Configure Fail2Ban mail jails (if fail2ban is present) ---
+  mkdir -p /etc/fail2ban/jail.d 2>/dev/null || true
+  if [ -d /etc/fail2ban/jail.d ]; then
+    cat >/etc/fail2ban/jail.d/clearpanel.local <<'F2B'
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+
+[proftpd]
+enabled = true
+port = ftp,ftp-data,ftps,ftps-data
+logpath = /var/log/proftpd/proftpd.log
+maxretry = 10
+
+[postfix]
+enabled = true
+port = smtp,465,submission
+logpath = /var/log/mail.log
+maxretry = 10
+
+[dovecot]
+enabled = true
+port = pop3,pop3s,imap,imaps,submission,465,sieve
+logpath = /var/log/mail.log
+maxretry = 10
+F2B
+    fail2ban-client reload 2>/dev/null || systemctl restart fail2ban 2>/dev/null || true
+    echo "[✓] Fail2Ban mail protection configured"
+  fi
+
+  # --- Open Firewall Ports for Mail ---
+  if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+    for p in 25/tcp 465/tcp 587/tcp 143/tcp 993/tcp 4190/tcp; do
+      ufw allow "$p" >/dev/null 2>&1 || true
+    done
+    echo "[✓] UFW firewall ports opened (25, 465, 587, 143, 993, 4190)"
+  fi
+
+  # --- Synchronize existing SSL certs ---
+  sync_mail_ssl "" 2>/dev/null || true
 
   cat >"$STACK_FILE" <<JSON
 {

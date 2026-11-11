@@ -23,7 +23,6 @@ sed -i "\|@${DOMAIN}|d" /etc/clearpanel/mail/dovecot-users || true
 sed -i "\|@${DOMAIN}|d" /etc/opendkim/signing.table || true
 sed -i "\|.${DOMAIN} |d" /etc/opendkim/key.table || true
 
-postmap /etc/clearpanel/mail/vdomains 2>/dev/null || true
 postmap /etc/clearpanel/mail/vmailbox 2>/dev/null || true
 
 systemctl reload postfix 2>/dev/null || true
