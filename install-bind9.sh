@@ -18,7 +18,10 @@ apt-get install -y bind9 bind9utils bind9-doc
 
 # Create zones directory
 mkdir -p /etc/bind/zones
-chown -R bind:bind /etc/bind/zones 2>/dev/null || chown -R root:root /etc/bind/zones
+chown -R root:bind /etc/bind/zones 2>/dev/null || chown -R bind:bind /etc/bind/zones 2>/dev/null || true
+chmod 2775 /etc/bind/zones
+chmod -R 664 /etc/bind/zones/* 2>/dev/null || true
+chgrp -R bind /etc/bind/zones/* 2>/dev/null || true
 
 # Configure firewall
 ufw allow 53/tcp

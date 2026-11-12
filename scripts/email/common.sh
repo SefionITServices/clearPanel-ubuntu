@@ -316,6 +316,10 @@ CONFEOF
         fi
     fi
 
+    # Ensure zone file permissions for bind and clearpanel service
+    chmod 664 "$ZONE_FILE" 2>/dev/null || true
+    chgrp bind "$ZONE_FILE" 2>/dev/null || true
+
     # Read DKIM public key
     local DKIM_PUB=""
     if [ -f "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt" ]; then

@@ -291,6 +291,8 @@ usermod -a -G systemd-journal,adm "$SERVICE_USER" 2>/dev/null || true
 chgrp -R bind /etc/bind/zones 2>/dev/null || true
 chown -R root:bind /etc/bind/zones 2>/dev/null || true
 chmod 2775 /etc/bind/zones
+chmod -R 664 /etc/bind/zones/* 2>/dev/null || true
+chgrp -R bind /etc/bind/zones/* 2>/dev/null || true
 
 # Also allow clearpanel (via bind group) to write to named.conf.local (for zone configuration)
 chgrp bind /etc/bind/named.conf.local 2>/dev/null || true

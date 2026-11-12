@@ -183,7 +183,7 @@ www     IN  CNAME   ${domain}.
 
       // Write zone file using Node.js fs (preferred). Requires clearpanel user to have bind group write access.
       try {
-        await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+        await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o664 });
       } catch (error: any) {
         if (error?.code === 'EACCES') {
           throw new Error(
@@ -195,11 +195,11 @@ www     IN  CNAME   ${domain}.
         throw error;
       }
       
-      // Try to set ownership (may fail if not root, but that's okay if permissions are set correctly)
+      // Ensure group permissions on zone file
       try {
-        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
+        await execAsync(`chmod 664 ${zoneFile} 2>/dev/null || true; chgrp bind ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
       } catch {
-        // Ignore chown errors - file permissions should be sufficient
+        // Ignore errors
       }
 
       // Add zone to named.conf.local
@@ -539,11 +539,11 @@ $TTL 86400
     }
 
     try {
-      await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o644 });
+      await fs.writeFile(zoneFile, zoneContent, { encoding: 'utf8', mode: 0o664 });
 
-      // Try to set ownership
+      // Ensure group permissions on zone file
       try {
-        await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
+        await execAsync(`chmod 664 ${zoneFile} 2>/dev/null || true; chgrp bind ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
       } catch { /* ignore */ }
 
       // Validate zone file with named-checkzone before reload

@@ -25,9 +25,10 @@ fi
 
 # Set permissions on zones directory
 mkdir -p /etc/bind/zones
-chown -R bind:bind /etc/bind/zones 2>/dev/null || chown -R root:root /etc/bind/zones
-chmod 775 /etc/bind/zones
-chmod g+s /etc/bind/zones
+chown -R root:bind /etc/bind/zones 2>/dev/null || chown -R bind:bind /etc/bind/zones 2>/dev/null || true
+chmod 2775 /etc/bind/zones
+chmod -R 664 /etc/bind/zones/* 2>/dev/null || true
+chgrp -R bind /etc/bind/zones/* 2>/dev/null || true
 echo "✓ Configured /etc/bind/zones permissions"
 
 # Set permissions on named.conf.local

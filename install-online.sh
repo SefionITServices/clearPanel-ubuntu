@@ -442,6 +442,8 @@ step "Configuring BIND9 DNS server..."
 mkdir -p /etc/bind/zones
 chown -R root:bind /etc/bind/zones 2>/dev/null || true
 chmod 2775 /etc/bind/zones
+chmod -R 664 /etc/bind/zones/* 2>/dev/null || true
+chgrp -R bind /etc/bind/zones/* 2>/dev/null || true
 chgrp bind /etc/bind/named.conf.local 2>/dev/null || true
 chmod 664 /etc/bind/named.conf.local 2>/dev/null || true
 
