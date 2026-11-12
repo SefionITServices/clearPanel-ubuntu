@@ -209,13 +209,17 @@ generate_dkim_key() {
     # Export clean, untruncated DNS TXT string using OpenSSL
     local DKIM_B64=""
     if [ -f "${KEY_DIR}/${SELECTOR}.private" ]; then
-        DKIM_B64="$(openssl rsa -in "${KEY_DIR}/${SELECTOR}.private" -pubout -outform DER 2>/dev/null | base64 -w 0 || true)"
+        DKIM_B64="$(openssl rsa -in "${KEY_DIR}/${SELECTOR}.private" -pubout -outform DER 2>/dev/null | base64 -w 0 2>/dev/null | tr -d ' \t\r\n"' || true)"
     fi
     if [ -z "$DKIM_B64" ] && [ -f "${KEY_DIR}/${SELECTOR}.txt" ]; then
-        DKIM_B64="$(grep -v '^;' "${KEY_DIR}/${SELECTOR}.txt" | tr -d ' \t\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
+        DKIM_B64="$(grep -v '^;' "${KEY_DIR}/${SELECTOR}.txt" | tr -d ' \t\r\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
     fi
-    echo "v=DKIM1; k=rsa; p=${DKIM_B64}" > "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
-    chmod 644 "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+    if [ -n "$DKIM_B64" ]; then
+        echo "v=DKIM1; k=rsa; p=${DKIM_B64}" > "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+        chmod 644 "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
+    else
+        echo "[DKIM] Warning: Failed to extract valid base64 public key for ${DOMAIN} (selector: ${SELECTOR})" >&2
+    fi
 
     systemctl reload opendkim 2>/dev/null || systemctl restart opendkim 2>/dev/null || true
     echo "${PUB_EXPORT_DIR}/${SELECTOR}.txt"
@@ -315,7 +319,7 @@ CONFEOF
     # Read DKIM public key
     local DKIM_PUB=""
     if [ -f "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt" ]; then
-        DKIM_PUB="$(cat "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt")"
+        DKIM_PUB="$(tr -d '\r\n' < "/etc/clearpanel/mail/dkim/public/${DOMAIN}/${DKIM_SELECTOR}.txt" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     fi
 
     echo "[DNS] Updating mail records in ${ZONE_FILE}..."
@@ -353,7 +357,7 @@ ${DOMAIN}.           IN  TXT     "v=spf1 mx a ip4:${SERVER_IP} ~all"
 _dmarc.${DOMAIN}.    IN  TXT     "v=DMARC1; p=none; rua=mailto:admin@${DOMAIN}; fo=1"
 RECIEVE
 
-    if [ -n "$DKIM_PUB" ]; then
+    if [ -n "$DKIM_PUB" ] && [[ "$DKIM_PUB" =~ p=[A-Za-z0-9+/]{20,} ]]; then
         # Format for BIND9: chunk into <=200 character strings inside parentheses to comply with RFC 1035 (255 byte max string)
         local DKIM_CHUNKS
         DKIM_CHUNKS="$(echo "$DKIM_PUB" | fold -w 200 | sed 's/.*/"&"/' | tr '\n' ' ')"
@@ -389,7 +393,10 @@ RECIEVE
 
     # Validate zone with named-checkzone
     if command -v named-checkzone >/dev/null 2>&1; then
-        named-checkzone "${DOMAIN}" "$ZONE_FILE" || true
+        if ! named-checkzone "${DOMAIN}" "$ZONE_FILE"; then
+            echo "[DNS] ERROR: Zone validation failed for ${DOMAIN} in ${ZONE_FILE}!" >&2
+            return 1
+        fi
     fi
 
     # Reload BIND9

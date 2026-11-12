@@ -23,10 +23,12 @@ generate_dkim_key "$DOMAIN" "$SELECTOR" >/dev/null
 
 RECORD_FILE="${PUB_EXPORT_DIR}/${SELECTOR}.txt"
 if [[ -f "$RECORD_FILE" ]]; then
-  RECORD="$(cat "$RECORD_FILE")"
-  printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN" >&2
-  printf '%s\n' "$RECORD"
-  exit 0
+  RECORD="$(tr -d '\r\n' < "$RECORD_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [[ -n "$RECORD" && "$RECORD" =~ p=[A-Za-z0-9+/]{20,} ]]; then
+    printf 'Rotated DKIM selector %s for %s\n' "$SELECTOR" "$DOMAIN" >&2
+    printf '%s\n' "$RECORD"
+    exit 0
+  fi
 fi
 
 echo "Failed to rotate DKIM for ${DOMAIN} selector ${SELECTOR}" >&2

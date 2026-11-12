@@ -143,7 +143,7 @@ export class MailService {
     const dkim = await this.automation.getDkimRecord(payload.domain, selector);
     if (dkim) {
       payload.dkimSelector = dkim.selector;
-      payload.dkimPublicKey = dkim.publicRecord;
+      payload.dkimPublicKey = dkim.publicRecord ? dkim.publicRecord.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim() : undefined;
       payload.dkimUpdatedAt = new Date().toISOString();
       logs.push({
         task: 'DKIM key generation',
@@ -821,7 +821,7 @@ export class MailService {
       records.push({
         type: 'TXT',
         name: `${dkimSelector}._domainkey`,
-        value: domain.dkimPublicKey,
+        value: domain.dkimPublicKey.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim(),
         ttl: 3600,
         description: 'DKIM public key',
       });
@@ -849,7 +849,7 @@ export class MailService {
 
     if (automationResult.result) {
       target.dkimSelector = automationResult.result.selector;
-      target.dkimPublicKey = automationResult.result.publicRecord;
+      target.dkimPublicKey = automationResult.result.publicRecord ? automationResult.result.publicRecord.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim() : undefined;
       target.dkimUpdatedAt = new Date().toISOString();
       await this.writeDomains(domains);
       persistLogs.push({

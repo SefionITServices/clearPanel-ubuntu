@@ -46,6 +46,7 @@ export function cleanRecordValue(type: string, value: string): string {
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1).trim();
     }
+    val = val.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim();
   }
   return val;
 }

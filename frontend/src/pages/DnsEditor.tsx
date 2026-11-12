@@ -117,6 +117,7 @@ export default function DnsEditorPage() {
         if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
           val = val.slice(1, -1).trim();
         }
+        val = val.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim();
         patch.value = val;
       }
     }
@@ -141,6 +142,7 @@ export default function DnsEditorPage() {
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1).trim();
       }
+      value = value.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim();
     }
 
     const payload: any = { type: form.type, name, value, ttl: form.ttl };

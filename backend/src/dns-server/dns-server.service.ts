@@ -205,6 +205,15 @@ www     IN  CNAME   ${domain}.
       // Add zone to named.conf.local
       await this.addZoneToConfig(domain, zoneFile);
 
+      // Validate zone file with named-checkzone before reload
+      try {
+        await execAsync(`named-checkzone ${domain} ${zoneFile}`, { timeout: 10_000 });
+      } catch (checkErr: any) {
+        const errorDetail = checkErr.stderr || checkErr.stdout || checkErr.message;
+        this.logger.error(`named-checkzone validation failed for ${domain}: ${errorDetail}`);
+        return { success: false, message: `Zone validation failed for ${domain}: ${errorDetail}` };
+      }
+
       // Reload BIND
       await this.reload();
 
@@ -501,6 +510,7 @@ $TTL 86400
           if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
             val = val.slice(1, -1).trim();
           }
+          val = val.replace(/\r\n/g, ' ').replace(/[\r\n]/g, ' ').trim();
           if (val.length > 255) {
             const chunks = val.match(/.{1,255}/g) || [val];
             const formatted = chunks.map(c => `"${c.replace(/"/g, '\\"')}"`).join(' ');
@@ -535,6 +545,15 @@ $TTL 86400
       try {
         await execAsync(`chown bind:bind ${zoneFile} 2>/dev/null || chown named:named ${zoneFile} 2>/dev/null || true`, { timeout: 10_000 });
       } catch { /* ignore */ }
+
+      // Validate zone file with named-checkzone before reload
+      try {
+        await execAsync(`named-checkzone ${domain} ${zoneFile}`, { timeout: 10_000 });
+      } catch (checkErr: any) {
+        const errorDetail = checkErr.stderr || checkErr.stdout || checkErr.message;
+        this.logger.error(`named-checkzone validation failed for ${domain}: ${errorDetail}`);
+        return { success: false, message: `Zone validation failed for ${domain}: ${errorDetail}` };
+      }
 
       await this.reload();
       this.logger.log(`BIND9 zone synced for ${domain} (${records.length} records)`);

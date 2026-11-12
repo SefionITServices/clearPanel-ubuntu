@@ -20,14 +20,17 @@ if [[ ! -f "$RECORD_FILE" ]]; then
 fi
 
 if [[ -f "$RECORD_FILE" ]]; then
-  cat "$RECORD_FILE"
-  exit 0
+  RECORD="$(tr -d '\r\n' < "$RECORD_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [[ -n "$RECORD" && "$RECORD" =~ p=[A-Za-z0-9+/]{20,} ]]; then
+    printf '%s\n' "$RECORD"
+    exit 0
+  fi
 fi
 
 # Fallback: parse /etc/opendkim/keys/${DOMAIN}/${SELECTOR}.txt
 KEY_TXT="/etc/opendkim/keys/${DOMAIN}/${SELECTOR}.txt"
 if [[ -f "$KEY_TXT" ]]; then
-  DKIM_B64="$(grep -v '^;' "$KEY_TXT" | tr -d ' \t\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
+  DKIM_B64="$(grep -v '^;' "$KEY_TXT" | tr -d ' \t\r\n"' | grep -o 'p=[^);]*' | cut -d= -f2 || true)"
   if [[ -n "$DKIM_B64" ]]; then
     printf 'v=DKIM1; k=rsa; p=%s\n' "$DKIM_B64"
     exit 0
