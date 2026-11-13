@@ -2,12 +2,14 @@ import { MailGatewayService } from '../src/mail/sync/mail-gateway.service';
 import { MailGateway } from '../src/mail/sync/mail-gateway.gateway';
 import { MailStorageService } from '../src/mail/sync/mail-storage.service';
 import { MailSsoService } from '../src/mail/mail-sso.service';
+import { MailService } from '../src/mail/mail.service';
 
 describe('MailGatewayService', () => {
   let service: MailGatewayService;
   let mockGateway: Partial<MailGateway>;
   let mockStorage: Partial<MailStorageService>;
   let mockSso: Partial<MailSsoService>;
+  let mockMailService: Partial<MailService>;
 
   beforeEach(async () => {
     mockGateway = {
@@ -21,11 +23,15 @@ describe('MailGatewayService', () => {
     mockSso = {
       verifyToken: jest.fn().mockReturnValue({ email: 'testuser@example.com' }),
     };
+    mockMailService = {
+      readDomains: jest.fn().mockResolvedValue([]),
+    };
 
     service = new MailGatewayService(
       mockGateway as MailGateway,
       mockStorage as MailStorageService,
       mockSso as MailSsoService,
+      mockMailService as MailService,
     );
     await service.onModuleInit();
   });

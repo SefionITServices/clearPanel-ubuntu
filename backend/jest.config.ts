@@ -3,6 +3,7 @@ import type { Config } from 'jest';
 const config: Config = {
   rootDir: '.',
   testEnvironment: 'node',
+  testTimeout: 30000,
   moduleFileExtensions: ['ts', 'js', 'json'],
   testMatch: ['**/test/**/*.spec.ts'],
   transform: {

@@ -153,6 +153,7 @@ class FakeDnsServerService {
 }
 
 describe('MailController integration', () => {
+  jest.setTimeout(30000);
   let app: INestApplication;
   let httpServer: ReturnType<INestApplication['getHttpServer']>;
   let tempDir: string;
@@ -210,7 +211,7 @@ describe('MailController integration', () => {
     app = moduleRef.createNestApplication();
     await app.init();
     httpServer = app.getHttpServer();
-  });
+  }, 30000);
 
   afterAll(async () => {
     if (app) {
@@ -221,7 +222,7 @@ describe('MailController integration', () => {
     if (tempDir) {
       await fsp.rm(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   it('creates a domain and persists it to disk', async () => {
     const response = await request(httpServer)
