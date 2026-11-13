@@ -15,8 +15,26 @@ describe('MailGatewayService', () => {
     mockGateway = {
       emitToMailbox: jest.fn(),
     };
+    const sampleMessage = {
+      id: 'sample-msg-1',
+      threadId: 'sample-thread-1',
+      folder: 'inbox' as const,
+      subject: 'Welcome to ClearMail',
+      snippet: 'Welcome to your new inbox...',
+      from: { name: 'Support', email: 'support@clearpanel.io' },
+      to: [{ name: 'Test User', email: 'testuser@example.com' }],
+      date: new Date().toISOString(),
+      isRead: false,
+      isStarred: false,
+      hasAttachments: false,
+      attachments: [],
+    };
+
     mockStorage = {
-      readFolderMessages: jest.fn().mockResolvedValue([]),
+      readFolderMessages: jest.fn().mockImplementation(async (_email, folder) => {
+        if (folder === 'inbox') return [sampleMessage as any];
+        return [];
+      }),
       sendRealSmtp: jest.fn().mockResolvedValue({ messageId: 'test-msg-id' }),
       verifyCredentials: jest.fn().mockResolvedValue({ valid: true, email: 'testuser@example.com' }),
     };
