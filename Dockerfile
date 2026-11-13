@@ -43,13 +43,17 @@ ENV MAIL_MODE=production
 # Setup and Build Backend
 WORKDIR /app/backend
 COPY backend/package*.json ./
-RUN npm ci || npm install
+# Install all dependencies (including TypeScript devDependencies) to compile
+RUN npm ci --include=dev || npm install --include=dev
 
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
 
 # Compile NestJS TypeScript to dist/
 RUN npm run build
+
+# Prune devDependencies to keep runner image lean
+RUN npm prune --omit=dev
 
 # Copy React Frontend bundle into backend/public
 COPY --from=frontend-builder /build/backend/public ./public
