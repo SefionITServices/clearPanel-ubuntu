@@ -69,10 +69,10 @@ jobs:
       - name: 🔐 Check for SSH Deployment Secrets
         id: check-secrets
         run: |
-          if [ -z "${{ secrets.SSH_HOST }}" ] || [ -z "${{ secrets.SSH_KEY }}" ]; then
+          if [ -z "${{ secrets.SSH_HOST }}" ] || ( [ -z "${{ secrets.SSH_KEY }}" ] && [ -z "${{ secrets.SSH_PASSWORD }}" ] ); then
             echo "secrets_configured=false" >> $GITHUB_OUTPUT
-            echo "⚠️ SSH_HOST or SSH_KEY secret is not yet set in GitHub repository settings."
-            echo "ℹ️ To enable automated deployment, add SSH_HOST, SSH_USER, and SSH_KEY in Settings > Secrets and variables > Actions."
+            echo "⚠️ SSH_HOST and either SSH_KEY or SSH_PASSWORD secret must be set in GitHub repository settings."
+            echo "ℹ️ To enable automated deployment, add SSH_HOST, SSH_USER, and SSH_KEY (or SSH_PASSWORD) in Settings > Secrets and variables > Actions."
           else
             echo "secrets_configured=true" >> $GITHUB_OUTPUT
           fi
@@ -84,6 +84,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER || 'root' }}
           key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script_stop: true
           script: |
