@@ -54,9 +54,10 @@ RUN npm run build
 # Copy React Frontend bundle into backend/public
 COPY --from=frontend-builder /build/backend/public ./public
 
-# Copy pre-compiled ClearMail Flutter Web Client into public/clearmail & apps directory
-COPY apps/clearmail_flutter/build/web ./public/clearmail
-COPY apps/clearmail_flutter/build/web /app/apps/clearmail_flutter/build/web
+# Ensure ClearMail Flutter Web Client is present in public/clearmail & apps directory
+COPY backend/public/clearmail ./public/clearmail
+RUN mkdir -p /app/apps/clearmail_flutter/build && \
+    cp -r ./public/clearmail /app/apps/clearmail_flutter/build/web
 
 # Create persistent storage directories
 RUN mkdir -p /app/data /etc/clearpanel/mail /app/backend/mail-state

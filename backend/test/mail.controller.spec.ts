@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -11,6 +11,7 @@ import type { AutomationLog, DkimResult } from '../src/mail/mail-automation.serv
 import type { MailHealthSnapshot } from '../src/mail/mail-status.service';
 import type { DnsServerStatus } from '../src/dns-server/dns-server.service';
 import { DnsServerService } from '../src/dns-server/dns-server.service';
+import { AuthGuard } from '../src/auth/auth.guard';
 
 const makeLog = (task: string, message?: string): AutomationLog => ({
   task,
@@ -190,8 +191,10 @@ describe('MailController integration', () => {
     const fakeDnsServerService = new FakeDnsServerService();
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 100 }] }), MailModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 100 }] }), MailModule],
     })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
       .overrideProvider(MailAutomationService)
       .useValue(fakeAutomation)
       .overrideProvider(MailStatusService)

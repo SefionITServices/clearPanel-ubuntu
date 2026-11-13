@@ -1,0 +1,109 @@
+name: clearPanel CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: 🧪 CI: Test & Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      # Backend Build & Unit Tests
+      - name: 🔧 Install Backend Dependencies
+        working-directory: backend
+        run: npm ci || npm install
+
+      - name: 🧪 Run Backend Unit Tests
+        working-directory: backend
+        run: npm test
+
+      - name: 🏗️ Compile Backend TypeScript
+        working-directory: backend
+        run: npm run build
+
+      # Frontend Build Verification
+      - name: 🔧 Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci || npm install
+
+      - name: 🎨 Build React Frontend (Vite)
+        working-directory: frontend
+        run: npm run build
+
+      # Multi-Stage Dockerfile Verification
+      - name: 🐳 Verify Docker Build
+        run: |
+          docker build -t clearpanel:ci-test .
+
+  deploy-to-vps:
+    name: 🚀 CD: Deploy to Docker VPS
+    needs: test-and-build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Check for SSH Deployment Secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ] || [ -z "${{ secrets.SSH_KEY }}" ]; then
+            echo "secrets_configured=false" >> $GITHUB_OUTPUT
+            echo "⚠️ SSH_HOST or SSH_KEY secret is not yet set in GitHub repository settings."
+            echo "ℹ️ To enable automated deployment, add SSH_HOST, SSH_USER, and SSH_KEY in Settings > Secrets and variables > Actions."
+          else
+            echo "secrets_configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🚀 SSH into VPS & Deploy Docker
+        if: steps.check-secrets.outputs.secrets_configured == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER || 'root' }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            TARGET_DIR="${{ secrets.DEPLOY_PATH || '/opt/clearpanel' }}"
+            echo "==> Deploying clearPanel in: ${TARGET_DIR}"
+            
+            if [ ! -d "${TARGET_DIR}" ]; then
+              echo "Directory ${TARGET_DIR} does not exist. Creating..."
+              mkdir -p "${TARGET_DIR}"
+              git clone https://github.com/${{ github.repository }}.git "${TARGET_DIR}"
+            fi
+
+            cd "${TARGET_DIR}"
+            
+            echo "==> Pulling latest changes from Git..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Ensuring deployment script has execute permissions..."
+            chmod +x scripts/deploy-docker.sh
+
+            echo "==> Running deploy-docker.sh..."
+            ./scripts/deploy-docker.sh
