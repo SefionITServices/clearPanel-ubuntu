@@ -40,6 +40,7 @@ import { MailingListsModule } from './mailing-lists/mailing-lists.module';
 import { SpamFilterModule } from './spam-filter/spam-filter.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { BaasModule } from './baas/baas.module';
+import { CloudModule } from './cloud/cloud.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { BaasModule } from './baas/baas.module';
     SpamFilterModule,
     NotificationsModule,
     BaasModule,
+    CloudModule,
   ],
 })
 export class AppModule implements NestModule {
