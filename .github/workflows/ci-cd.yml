@@ -94,6 +94,12 @@ jobs:
 
             cd "${TARGET_DIR}"
             
+            echo "==> Cleaning local working copy and syncing to remote main..."
+            git fetch origin main
+            git checkout -f main 2>/dev/null || true
+            git reset --hard origin/main
+            git clean -fd
+
             # Stop any orphan docker containers if created during previous docker attempt
             docker stop clearpanel 2>/dev/null || true
             docker rm clearpanel 2>/dev/null || true
