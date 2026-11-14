@@ -38,6 +38,7 @@ const BackupPage = lazy(() => import('./pages/Backup'));
 const TwoFactorPage = lazy(() => import('./pages/TwoFactor'));
 const ProcessesPage = lazy(() => import('./pages/Processes'));
 const GitPage = lazy(() => import('./pages/Git'));
+const BaaSPage = lazy(() => import('./pages/BaaS'));
 const FtpManagerPage = lazy(() => import('./pages/FtpManager'));
 const RedirectsPage = lazy(() => import('./pages/Redirects'));
 const IpBlockerPage = lazy(() => import('./pages/IpBlocker'));
@@ -413,6 +414,14 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <GitPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/baas"
+              element={
+                <ProtectedRoute>
+                  <BaaSPage />
                 </ProtectedRoute>
               }
             />
