@@ -470,4 +470,36 @@ export class GitController {
       return res.status(400).json({ success: false, error: e.message });
     }
   }
+
+  // ── Auto CI/CD & Quick Deploy ──────────────────────────────────────────
+
+  @Post('detect-recipe')
+  async detectRecipe(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.detectRecipe(this.user(req), body.path);
+      return res.json({ success: true, ...data });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('generate-workflow')
+  async generateWorkflow(@Body() body: any, @Res() res: Response) {
+    try {
+      const workflow = this.git.generateWorkflow(body);
+      return res.json({ success: true, workflow });
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
+
+  @Post('quick-deploy')
+  async quickDeploy(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+    try {
+      const data = await this.git.quickDeployProject(this.user(req), body);
+      return res.json(data);
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+  }
 }

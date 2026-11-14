@@ -61,7 +61,10 @@ import RestoreIcon from '@mui/icons-material/Restore';
 import SaveIcon from '@mui/icons-material/Save';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import UndoIcon from '@mui/icons-material/Undo';
-import { gitApi, Commit, GitStatus, PathOption, ManagedRepo, HeadCommit, WebhookLog } from '../api/git';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import { gitApi, Commit, GitStatus, PathOption, ManagedRepo, HeadCommit, WebhookLog, FrameworkDetectionResult } from '../api/git';
+import { QuickDeployModal } from '../components/git/QuickDeployModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -286,6 +289,13 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
   const [webhookId, setWebhookId] = useState(repo.webhookId || '');
   const [webhookSecret, setWebhookSecret] = useState(repo.webhookSecret || '');
   const [autoDeploy, setAutoDeploy] = useState(repo.autoDeployEnabled || false);
+
+  // CI/CD Recipe & Workflow state
+  const [frameworkResult, setFrameworkResult] = useState<FrameworkDetectionResult | null>(null);
+  const [detectingFramework, setDetectingFramework] = useState(false);
+  const [workflowYaml, setWorkflowYaml] = useState('');
+  const [generatingWorkflow, setGeneratingWorkflow] = useState(false);
+  const [workflowTriggerType, setWorkflowTriggerType] = useState<'webhook' | 'ssh'>('webhook');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [diffContent, setDiffContent] = useState('');
   const [diffTitle, setDiffTitle] = useState('');
@@ -413,6 +423,40 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
       showToast('Webhook disabled');
     } catch (e: any) { showToast(e.message, 'error'); }
     finally { setOpBusy(false); }
+  };
+
+  const doDetectRecipe = async () => {
+    setDetectingFramework(true);
+    try {
+      const res = await gitApi.detectRecipe(repoPath);
+      setFrameworkResult(res);
+      showToast(`Detected framework: ${res.framework}`);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setDetectingFramework(false);
+    }
+  };
+
+  const doGenerateWorkflow = async (type: 'webhook' | 'ssh') => {
+    setGeneratingWorkflow(true);
+    setWorkflowTriggerType(type);
+    try {
+      const res = await gitApi.generateWorkflow({
+        projectName: repoName || 'my-project',
+        deployPath: repoPath,
+        deployMethod: type,
+        branch: branches.current || 'main',
+        webhookUrl: webhookId ? `${window.location.origin}/api/git-webhook/github/${webhookId}` : undefined,
+        webhookSecret: webhookSecret || undefined,
+      });
+      setWorkflowYaml(res.workflow);
+      showToast('GitHub Actions workflow generated');
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setGeneratingWorkflow(false);
+    }
   };
 
   const doCreateBranch = async (name: string, from?: string) => {
@@ -650,11 +694,42 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
               )}
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
-              <Typography variant="h6" fontWeight={700} gutterBottom>Deploy HEAD Commit</Typography>
+            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="h6" fontWeight={700}>Deploy HEAD Commit</Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={detectingFramework ? <CircularProgress size={14} /> : <AutoFixHighIcon />}
+                  onClick={doDetectRecipe}
+                  disabled={detectingFramework || opBusy}
+                >
+                  {detectingFramework ? 'Detecting…' : 'Detect Framework Recipe'}
+                </Button>
+              </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Edit the deploy script below (runs as bash from your repository root).
               </Typography>
+
+              {frameworkResult && (
+                <Alert
+                  severity="info"
+                  sx={{ mb: 2 }}
+                  action={
+                    <Button
+                      size="small"
+                      color="inherit"
+                      variant="outlined"
+                      onClick={() => setDeployScript(frameworkResult.suggestedDeployScript)}
+                    >
+                      Apply Suggested Script
+                    </Button>
+                  }
+                >
+                  Detected: <strong>{frameworkResult.frameworkName}</strong> ({frameworkResult.recommendedRuntime} runtime).
+                </Alert>
+              )}
+
               <TextField
                 multiline minRows={8} maxRows={16} fullWidth size="small"
                 value={deployScript} onChange={e => setDeployScript(e.target.value)}
@@ -675,7 +750,7 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
               )}
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, mb: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                 <Box>
                   <Typography variant="h6" fontWeight={700} gutterBottom>Auto-Deploy (Webhook)</Typography>
@@ -707,6 +782,71 @@ function ManageView({ repo, onBack }: { repo: ManagedRepo; onBack: () => void })
                       <CopyButton text={webhookSecret} />
                     </Stack>
                   </InfoRow>
+                </Box>
+              )}
+            </Paper>
+
+            {/* ── CI/CD Pipeline Generator ── */}
+            <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <RocketLaunchIcon sx={{ mr: 1, color: 'primary.main', fontSize: 22 }} />
+                <Typography variant="h6" fontWeight={700}>GitHub Actions CI/CD Pipeline</Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Generate a ready-to-use <code>.github/workflows/deploy.yml</code> for automated GitHub Actions CI/CD.
+              </Typography>
+
+              <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
+                <Button
+                  variant={workflowTriggerType === 'webhook' && workflowYaml ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => doGenerateWorkflow('webhook')}
+                  disabled={generatingWorkflow}
+                >
+                  {generatingWorkflow && workflowTriggerType === 'webhook' ? 'Generating…' : 'Generate Webhook CI/CD'}
+                </Button>
+                <Button
+                  variant={workflowTriggerType === 'ssh' && workflowYaml ? 'contained' : 'outlined'}
+                  size="small"
+                  onClick={() => doGenerateWorkflow('ssh')}
+                  disabled={generatingWorkflow}
+                >
+                  {generatingWorkflow && workflowTriggerType === 'ssh' ? 'Generating…' : 'Generate SSH VPS CI/CD'}
+                </Button>
+              </Stack>
+
+              {workflowYaml && (
+                <Box sx={{ mt: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      File: <code>.github/workflows/deploy.yml</code>
+                    </Typography>
+                    <Button
+                      size="small"
+                      startIcon={<ContentCopyIcon />}
+                      onClick={() => {
+                        navigator.clipboard.writeText(workflowYaml);
+                        showToast('Workflow YAML copied to clipboard');
+                      }}
+                    >
+                      Copy YAML
+                    </Button>
+                  </Box>
+                  <Box
+                    sx={{
+                      p: 2,
+                      bgcolor: '#0d1117',
+                      borderRadius: 1,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      color: '#58a6ff',
+                      whiteSpace: 'pre-wrap',
+                      maxHeight: 260,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {workflowYaml}
+                  </Box>
                 </Box>
               )}
             </Paper>
@@ -1151,7 +1291,15 @@ function CreateView({ onBack, onCreated, pathOptions }: { onBack: () => void; on
 
 // ─── Repository List View ─────────────────────────────────────────────────────
 
-function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) => void; onCreate: () => void }) {
+function ListViewPage({
+  onManage,
+  onCreate,
+  onQuickDeploy,
+}: {
+  onManage: (repo: ManagedRepo) => void;
+  onCreate: () => void;
+  onQuickDeploy: () => void;
+}) {
   const [repos, setRepos] = useState<ManagedRepo[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -1190,12 +1338,21 @@ function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) =>
         <Typography variant="h5" fontWeight={700} sx={{ flexGrow: 1 }}>Git™ Version Control</Typography>
         <Stack direction="row" spacing={1}>
           <Tooltip title="Refresh"><IconButton onClick={loadRepos}><RefreshIcon /></IconButton></Tooltip>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>Create</Button>
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={onCreate}>Create</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<RocketLaunchIcon />}
+            onClick={onQuickDeploy}
+            sx={{ fontWeight: 600 }}
+          >
+            Deploy & Auto-CI/CD
+          </Button>
         </Stack>
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        Manage Git repositories hosted on this server. Click <strong>Create</strong> to clone a remote repository or initialize a new one.
+        Manage Git repositories hosted on this server. Click <strong>Deploy & Auto-CI/CD</strong> to quickly clone, detect framework, configure build recipes, and generate automated GitHub Actions pipelines.
       </Alert>
 
       {loading ? (
@@ -1205,9 +1362,22 @@ function ListViewPage({ onManage, onCreate }: { onManage: (repo: ManagedRepo) =>
           <GitHubIcon sx={{ fontSize: 56, opacity: 0.15, mb: 2 }} />
           <Typography variant="h6" color="text.secondary" gutterBottom>No repositories yet</Typography>
           <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
-            Clone a remote repository, initialize a new one, or add an existing directory.
+            Deploy a Git repository with automatic framework detection and CI/CD pipelines, or initialize a clean repository.
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>Create Repository</Button>
+          <Stack direction="row" spacing={2} justifyContent="center">
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<RocketLaunchIcon />}
+              onClick={onQuickDeploy}
+              sx={{ fontWeight: 600 }}
+            >
+              Deploy New Project (Auto-CI/CD)
+            </Button>
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={onCreate}>
+              Create Repository
+            </Button>
+          </Stack>
         </Paper>
       ) : (
         <Paper sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
@@ -1272,6 +1442,7 @@ export default function GitPage() {
   const [view, setView] = useState<View>('list');
   const [selectedRepo, setSelectedRepo] = useState<ManagedRepo | null>(null);
   const [pathOptions, setPathOptions] = useState<PathOption[]>([]);
+  const [quickDeployOpen, setQuickDeployOpen] = useState(false);
 
   useEffect(() => {
     gitApi.listPaths().then(r => setPathOptions(r.paths)).catch(() => {});
@@ -1283,6 +1454,7 @@ export default function GitPage() {
         <ListViewPage
           onManage={repo => { setSelectedRepo(repo); setView('manage'); }}
           onCreate={() => setView('create')}
+          onQuickDeploy={() => setQuickDeployOpen(true)}
         />
       )}
       {view === 'create' && (
@@ -1298,6 +1470,15 @@ export default function GitPage() {
           onBack={() => setView('list')}
         />
       )}
+
+      <QuickDeployModal
+        open={quickDeployOpen}
+        onClose={() => setQuickDeployOpen(false)}
+        onSuccess={repo => {
+          setSelectedRepo(repo);
+          setView('manage');
+        }}
+      />
     </DashboardLayout>
   );
 }

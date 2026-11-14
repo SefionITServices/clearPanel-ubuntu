@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import { getDataFilePath } from '../common/paths';
+import { CicdRecipeService, FrameworkDetectionResult, WorkflowOptions } from './cicd-recipe.service';
 
 // ─── Managed Repo ─────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ const execFile = promisify(execFileCb);
 @Injectable()
 export class GitService {
   private readonly logger = new Logger(GitService.name);
+
+  constructor(private readonly cicdRecipe: CicdRecipeService) {}
 
   // ── Path helpers (same sandbox as FilesService) ──────────────────────────
 
@@ -908,5 +911,69 @@ export class GitService {
       stderr = e.stderr || e.message || 'Deploy script failed';
     }
     return { success: true, output: stdout + (stderr ? `\nSTDERR:\n${stderr}` : '') };
+  }
+
+  // ── CI/CD Recipe & Quick Deploy ──────────────────────────────────────────
+
+  async detectRecipe(username: string, repoPath: string): Promise<FrameworkDetectionResult> {
+    const abs = this.validatePath(repoPath, username);
+    return this.cicdRecipe.detectFramework(abs);
+  }
+
+  generateWorkflow(options: WorkflowOptions): string {
+    return this.cicdRecipe.generateWorkflow(options);
+  }
+
+  async quickDeployProject(
+    username: string,
+    options: {
+      url: string;
+      dest?: string;
+      name?: string;
+      token?: string;
+      gitUser?: string;
+      customDeployScript?: string;
+      autoDeploy?: boolean;
+    },
+  ) {
+    // 1. Clone repository
+    const cloneRes = await this.clone(
+      username,
+      options.url,
+      options.dest || '',
+      options.name,
+      options.token,
+      options.gitUser,
+    );
+
+    const repoPath = cloneRes.path;
+    const abs = this.validatePath(repoPath, username);
+
+    // 2. Detect framework & recipe
+    const detection = await this.cicdRecipe.detectFramework(abs);
+    const scriptToSave = options.customDeployScript || detection.suggestedDeployScript;
+    await this.setDeployScript(username, repoPath, scriptToSave);
+
+    // 3. Enable Webhook for Auto CI/CD if requested
+    let webhookInfo: any = null;
+    if (options.autoDeploy !== false) {
+      webhookInfo = await this.enableWebhook(username, repoPath);
+    }
+
+    // 4. Initial deployment run
+    let initialDeploy: any = null;
+    try {
+      initialDeploy = await this.deploy(username, repoPath);
+    } catch (err: any) {
+      initialDeploy = { success: false, error: err.message };
+    }
+
+    return {
+      success: true,
+      repo: cloneRes,
+      detection,
+      webhook: webhookInfo,
+      deployResult: initialDeploy,
+    };
   }
 }

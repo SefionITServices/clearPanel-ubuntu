@@ -98,6 +98,40 @@ export interface WebhookLog {
   branch?: string;
 }
 
+export interface FrameworkDetectionResult {
+  framework: string;
+  frameworkName: string;
+  icon: string;
+  suggestedBuildCommand: string;
+  suggestedDeployScript: string;
+  detectedFiles: string[];
+  recommendedRuntime: 'docker' | 'node' | 'python' | 'php' | 'static';
+}
+
+export interface WorkflowOptions {
+  projectName: string;
+  repoUrl?: string;
+  branch?: string;
+  deployMethod: 'webhook' | 'ssh';
+  serverHost?: string;
+  serverUser?: string;
+  deployPath?: string;
+  webhookUrl?: string;
+  webhookSecret?: string;
+  testCommand?: string;
+  buildCommand?: string;
+}
+
+export interface QuickDeployDto {
+  url: string;
+  dest?: string;
+  name?: string;
+  token?: string;
+  gitUser?: string;
+  customDeployScript?: string;
+  autoDeploy?: boolean;
+}
+
 export interface RemoveRepoResult {
   success: boolean;
   warning?: string;
@@ -286,4 +320,21 @@ export const gitApi = {
     fetchJSON<{ success: boolean; logs: WebhookLog[] }>(
       `${API_BASE}/webhook-logs?path=${encodeURIComponent(path)}`,
     ),
+
+  // ── Auto CI/CD & Quick Deploy ──────────────────────────────────────────────
+
+  detectRecipe: (path: string) =>
+    post<FrameworkDetectionResult & { success: boolean }>(`${API_BASE}/detect-recipe`, { path }),
+
+  generateWorkflow: (options: WorkflowOptions) =>
+    post<{ success: boolean; workflow: string }>(`${API_BASE}/generate-workflow`, options),
+
+  quickDeploy: (options: QuickDeployDto) =>
+    post<{
+      success: boolean;
+      repo: ManagedRepo;
+      detection: FrameworkDetectionResult;
+      webhook?: { webhookUrl: string; webhookSecret: string };
+      deployResult?: { success: boolean; output: string };
+    }>(`${API_BASE}/quick-deploy`, options),
 };
