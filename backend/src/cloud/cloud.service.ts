@@ -34,6 +34,7 @@ export class CloudService {
 
   // Encryption key for Vault (AES-256-GCM)
   private vaultKey = crypto.createHash('sha256').update(process.env.SESSION_SECRET || 'clearpanel_cloud_vault_master_key_default').digest();
+  private s3StorageDir?: string;
 
   constructor(private readonly baasService: BaasService) {}
 
@@ -92,7 +93,11 @@ export class CloudService {
   // ── 2. ClearStorage (Amazon S3 Alternative) ────────────────────────────────
 
   private getS3StorageDir(): string {
-    return os.platform() === 'linux' ? '/var/lib/clearpanel/s3' : path.join(getDataDir(), 's3');
+    if (this.s3StorageDir) return this.s3StorageDir;
+    if (os.platform() === 'linux' && process.env.NODE_ENV === 'production' && !process.env.CI) {
+      return '/var/lib/clearpanel/s3';
+    }
+    return path.join(getDataDir(), 's3');
   }
 
   async listBuckets(): Promise<S3Bucket[]> {
@@ -136,8 +141,13 @@ export class CloudService {
       throw new BadRequestException(`Bucket "${dto.name}" already exists.`);
     }
 
-    const bucketDir = path.join(this.getS3StorageDir(), dto.name);
-    await fsp.mkdir(bucketDir, { recursive: true });
+    let bucketDir = path.join(this.getS3StorageDir(), dto.name);
+    try {
+      await fsp.mkdir(bucketDir, { recursive: true });
+    } catch {
+      bucketDir = path.join(getDataDir(), 's3', dto.name);
+      await fsp.mkdir(bucketDir, { recursive: true });
+    }
 
     const newBucket: S3Bucket = {
       name: dto.name,

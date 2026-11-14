@@ -13,8 +13,9 @@ describe('BaasService', () => {
     mockInstancesFile = path.join(tempDir, 'baas-instances.json');
 
     service = new BaasService();
-    // Point internal instancesFile to our temp test file
+    // Point internal instancesFile and baseDataDir to our temp test directory
     (service as any).instancesFile = mockInstancesFile;
+    (service as any).baseDataDir = path.join(tempDir, 'baas');
   });
 
   afterEach(async () => {

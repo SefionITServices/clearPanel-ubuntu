@@ -14,6 +14,15 @@ const exec = promisify(execCb);
 export class BaasService {
   private readonly logger = new Logger(BaasService.name);
   private instancesFile = getDataFilePath('baas-instances.json');
+  private baseDataDir?: string;
+
+  private getBaseDataDir(): string {
+    if (this.baseDataDir) return this.baseDataDir;
+    if (os.platform() === 'linux' && process.env.NODE_ENV === 'production' && !process.env.CI) {
+      return '/var/lib/clearpanel/baas';
+    }
+    return path.join(getDataDir(), 'baas');
+  }
 
   private async readInstances(): Promise<BaasInstance[]> {
     try {
@@ -33,6 +42,7 @@ export class BaasService {
     const candidates = [
       '/usr/local/bin/pocketbase',
       '/opt/clearpanel/bin/pocketbase',
+      path.join(getDataDir(), 'bin', 'pocketbase'),
       path.join(process.cwd(), 'bin', 'pocketbase'),
     ];
 
@@ -75,11 +85,20 @@ export class BaasService {
         const arch = os.arch() === 'arm64' ? 'arm64' : 'amd64';
         const version = '0.22.20';
         const url = `https://github.com/pocketbase/pocketbase/releases/download/v${version}/pocketbase_${version}_linux_${arch}.zip`;
-        const tmpZip = `/tmp/pocketbase_${Date.now()}.zip`;
-        const dest = '/usr/local/bin/pocketbase';
+        const tmpZip = path.join(os.tmpdir(), `pocketbase_${Date.now()}.zip`);
+
+        let targetDir = '/usr/local/bin';
+        let dest = '/usr/local/bin/pocketbase';
+        try {
+          await fsp.access(targetDir, fsp.constants.W_OK);
+        } catch {
+          targetDir = path.join(getDataDir(), 'bin');
+          await fsp.mkdir(targetDir, { recursive: true });
+          dest = path.join(targetDir, 'pocketbase');
+        }
 
         await exec(`curl -fSL "${url}" -o "${tmpZip}"`, { timeout: 60000 });
-        await exec(`unzip -o "${tmpZip}" pocketbase -d /usr/local/bin/`, { timeout: 30000 });
+        await exec(`unzip -o "${tmpZip}" pocketbase -d "${targetDir}"`, { timeout: 30000 });
         await exec(`chmod +x "${dest}"`);
         await fsp.unlink(tmpZip).catch(() => {});
 
@@ -204,9 +223,15 @@ export class BaasService {
     const port = dto.port || (await this.findAvailablePort(8090));
 
     // Data directory
-    const baseDataDir = os.platform() === 'linux' ? '/var/lib/clearpanel/baas' : path.join(getDataDir(), 'baas');
-    const instanceDataDir = path.join(baseDataDir, id, 'pb_data');
-    await fsp.mkdir(instanceDataDir, { recursive: true });
+    let baseDataDir = this.getBaseDataDir();
+    let instanceDataDir = path.join(baseDataDir, id, 'pb_data');
+    try {
+      await fsp.mkdir(instanceDataDir, { recursive: true });
+    } catch {
+      baseDataDir = path.join(getDataDir(), 'baas');
+      instanceDataDir = path.join(baseDataDir, id, 'pb_data');
+      await fsp.mkdir(instanceDataDir, { recursive: true });
+    }
 
     // Host configuration
     const host = dto.domain ? dto.domain.trim() : `localhost:${port}`;
@@ -225,8 +250,8 @@ export class BaasService {
       this.logger.warn(`Could not pre-seed superuser: ${err.message}. Admin can register on first visit to /_/`);
     }
 
-    // Create systemd service on Linux
-    if (os.platform() === 'linux') {
+    // Create systemd service on Linux (skip in CI or when non-root)
+    if (os.platform() === 'linux' && !process.env.CI) {
       const serviceFile = `/etc/systemd/system/clearbaas-${id}.service`;
       const serviceContent = `[Unit]
 Description=ClearPanel BaaS Instance (${dto.name})
@@ -311,7 +336,7 @@ WantedBy=multi-user.target
 
   async startInstance(id: string): Promise<{ success: boolean; message: string }> {
     const inst = await this.getInstance(id);
-    if (os.platform() === 'linux') {
+    if (os.platform() === 'linux' && !process.env.CI) {
       await exec(`systemctl start clearbaas-${inst.id}`);
     }
     return { success: true, message: `BaaS instance "${inst.name}" started` };
@@ -319,7 +344,7 @@ WantedBy=multi-user.target
 
   async stopInstance(id: string): Promise<{ success: boolean; message: string }> {
     const inst = await this.getInstance(id);
-    if (os.platform() === 'linux') {
+    if (os.platform() === 'linux' && !process.env.CI) {
       await exec(`systemctl stop clearbaas-${inst.id}`);
     }
     return { success: true, message: `BaaS instance "${inst.name}" stopped` };
@@ -327,7 +352,7 @@ WantedBy=multi-user.target
 
   async restartInstance(id: string): Promise<{ success: boolean; message: string }> {
     const inst = await this.getInstance(id);
-    if (os.platform() === 'linux') {
+    if (os.platform() === 'linux' && !process.env.CI) {
       await exec(`systemctl restart clearbaas-${inst.id}`);
     }
     return { success: true, message: `BaaS instance "${inst.name}" restarted` };
@@ -336,7 +361,7 @@ WantedBy=multi-user.target
   async deleteInstance(id: string): Promise<{ success: boolean; message: string }> {
     const inst = await this.getInstance(id);
 
-    if (os.platform() === 'linux') {
+    if (os.platform() === 'linux' && !process.env.CI) {
       try {
         await exec(`systemctl stop clearbaas-${inst.id} 2>/dev/null || true`);
         await exec(`systemctl disable clearbaas-${inst.id} 2>/dev/null || true`);
