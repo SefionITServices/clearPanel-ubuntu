@@ -51,13 +51,8 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      # Multi-Stage Dockerfile Verification
-      - name: 🐳 Verify Docker Build
-        run: |
-          docker build -t clearpanel:ci-test .
-
   deploy-to-vps:
-    name: "CD - Deploy to Docker VPS"
+    name: "CD - Deploy clearPanel to VPS"
     needs: test-and-build
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
@@ -77,7 +72,7 @@ jobs:
             echo "secrets_configured=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: "SSH into VPS & Deploy Docker"
+      - name: "SSH into VPS & Update clearPanel"
         if: steps.check-secrets.outputs.secrets_configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -89,7 +84,7 @@ jobs:
           script_stop: true
           script: |
             TARGET_DIR="${{ secrets.DEPLOY_PATH || '/opt/clearpanel' }}"
-            echo "==> Deploying clearPanel in: ${TARGET_DIR}"
+            echo "==> Updating clearPanel in: ${TARGET_DIR}"
             
             if [ ! -d "${TARGET_DIR}" ]; then
               echo "Directory ${TARGET_DIR} does not exist. Creating..."
@@ -99,12 +94,20 @@ jobs:
 
             cd "${TARGET_DIR}"
             
-            echo "==> Pulling latest changes from Git..."
-            git fetch origin main
-            git reset --hard origin/main
+            # Stop any orphan docker containers if created during previous docker attempt
+            docker stop clearpanel 2>/dev/null || true
+            docker rm clearpanel 2>/dev/null || true
 
-            echo "==> Ensuring deployment script has execute permissions..."
-            chmod +x scripts/deploy-docker.sh
-
-            echo "==> Running deploy-docker.sh..."
-            ./scripts/deploy-docker.sh
+            echo "==> Running production update.sh..."
+            chmod +x update.sh
+            ./update.sh
+            
+            echo "==> Verifying clearPanel systemd service..."
+            if systemctl is-active --quiet clearpanel; then
+              echo "✅ clearPanel service is active and running!"
+              systemctl status clearpanel --no-pager -l
+            else
+              echo "❌ clearPanel service failed to start."
+              journalctl -u clearpanel -n 50 --no-pager
+              exit 1
+            fi
