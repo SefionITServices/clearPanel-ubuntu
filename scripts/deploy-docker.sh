@@ -23,6 +23,11 @@ fi
 
 # 2. Build and start containers
 echo "🐳 Building & restarting Docker container via Compose..."
+
+# Stop any running containers that might be holding port 7510
+docker stop clearmail-web clearpanel 2>/dev/null || true
+docker compose down --remove-orphans 2>/dev/null || true
+
 docker compose up --build -d --remove-orphans
 
 # 3. Health Check
