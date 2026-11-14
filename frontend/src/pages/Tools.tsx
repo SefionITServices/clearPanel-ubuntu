@@ -41,6 +41,8 @@ import LanIcon from '@mui/icons-material/Lan';
 import LanguageIcon from '@mui/icons-material/Language';
 import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight';
 import CloudIcon from '@mui/icons-material/Cloud';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import SpeedIcon from '@mui/icons-material/Speed';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import ArticleIcon from '@mui/icons-material/Article';
 import StarIcon from '@mui/icons-material/Star';
@@ -414,6 +416,59 @@ export default function ToolsPage() {
           onClick: () => navigate('/mailing-lists'),
           color: '#7B1FA2',
           favoritePath: '/mailing-lists',
+        },
+      ],
+    },
+    {
+      title: 'Cloud Services',
+      items: [
+        {
+          label: 'ClearPanel Cloud',
+          icon: <CloudQueueIcon sx={{ fontSize: 28 }} />,
+          description: 'Self-hosted AWS, Azure & Firebase alternatives',
+          onClick: () => navigate('/cloud'),
+          color: '#F58220',
+          favoritePath: '/cloud',
+        },
+        {
+          label: 'ClearBaaS (Firebase)',
+          icon: <SpeedIcon sx={{ fontSize: 28 }} />,
+          description: 'Auth, Realtime DB & Storage (PocketBase)',
+          onClick: () => navigate('/baas'),
+          color: '#FB8C00',
+          favoritePath: '/baas',
+        },
+        {
+          label: 'ClearStorage (S3)',
+          icon: <StorageIcon sx={{ fontSize: 28 }} />,
+          description: 'S3-compatible object storage & API keys',
+          onClick: () => navigate('/cloud?tab=s3'),
+          color: '#1E88E5',
+          favoritePath: '/cloud',
+        },
+        {
+          label: 'ClearSES (Email API)',
+          icon: <EmailIcon sx={{ fontSize: 28 }} />,
+          description: 'REST API for transactional email sending',
+          onClick: () => navigate('/cloud?tab=ses'),
+          color: '#00ACC1',
+          favoritePath: '/cloud',
+        },
+        {
+          label: 'ClearVault (Secrets)',
+          icon: <VpnKeyIcon sx={{ fontSize: 28 }} />,
+          description: 'AES-256 encrypted env secrets & export',
+          onClick: () => navigate('/cloud?tab=vault'),
+          color: '#7B1FA2',
+          favoritePath: '/cloud',
+        },
+        {
+          label: 'ClearCache (Redis)',
+          icon: <MemoryIcon sx={{ fontSize: 28 }} />,
+          description: 'In-memory Redis cache & connection URIs',
+          onClick: () => navigate('/cloud?tab=redis'),
+          color: '#E53935',
+          favoritePath: '/cloud',
         },
       ],
     },

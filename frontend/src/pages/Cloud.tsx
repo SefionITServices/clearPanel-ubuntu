@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -47,7 +48,25 @@ import { cloudApi, CloudOverviewStats, S3Bucket, S3AccessKey, SesApiKey, EmailLo
 import { baasApi, BaasInstance, BaasSdkSnippet } from '../api/baas';
 
 export default function CloudPage() {
-  const [currentTab, setCurrentTab] = useState(0);
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  const getInitialTab = (): number => {
+    if (location.pathname === '/baas') return 1;
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'baas') return 1;
+    if (tabParam === 'ses') return 2;
+    if (tabParam === 's3') return 3;
+    if (tabParam === 'vault') return 4;
+    if (tabParam === 'redis') return 5;
+    return 0;
+  };
+
+  const [currentTab, setCurrentTab] = useState(getInitialTab());
+
+  useEffect(() => {
+    setCurrentTab(getInitialTab());
+  }, [location.pathname, searchParams]);
   const [loading, setLoading] = useState(true);
   const [opBusy, setOpBusy] = useState(false);
   const [stats, setStats] = useState<CloudOverviewStats | null>(null);
